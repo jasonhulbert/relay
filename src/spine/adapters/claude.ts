@@ -27,8 +27,15 @@ import type {
 import type { ExecutorContext } from '../executor';
 import type { OutcomeSpec } from '../../relay-state/index';
 
+// The cost guardrail (design §8, M4): with no per-role override the adapter pins
+// Claude's cheapest model so dev/eval spend stays bounded. A default, not
+// auto-routing (Rule 5) — `ClaudeAdapterOptions.model` is the single knob that
+// raises it, and the later Codex adapter reuses the same per-role pattern.
+export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5';
+
 export interface ClaudeAdapterOptions {
-  // Concrete model alias/name; omitted lets the CLI pick its default.
+  // Concrete model alias/name; omitted pins the cost-guardrail default
+  // (`DEFAULT_CLAUDE_MODEL`), never the CLI's own (pricier) default.
   model?: string;
   // Tools the executor may use inside its sandbox. Defaults to the editing +
   // inspection set; `-p` is non-interactive, so anything not allowed is denied
@@ -80,6 +87,41 @@ function mcpConfigArg(servers: readonly McpServerConfig[]): string {
     mcpServers[s.name] = { command: s.command, args: s.args ?? [] };
   }
   return JSON.stringify({ mcpServers });
+}
+
+// Build the full `claude -p` argv for one dispatch. Pulled out of `run` so the
+// cost-guardrail default (the `--model` flag is ALWAYS present) is testable
+// without spawning the CLI. `--model` is unconditional: the resolved model is
+// either the caller's override or `DEFAULT_CLAUDE_MODEL`, never the CLI default.
+export function buildClaudeArgs(
+  spec: OutcomeSpec,
+  context: ExecutorContext,
+  config: {
+    model: string;
+    allowedTools: readonly string[];
+    mcpServers: readonly McpServerConfig[];
+  },
+): string[] {
+  const args = [
+    '-p',
+    buildExecutorPrompt(spec, context),
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    // The worktree is the sandbox boundary; auto-accept so a non-interactive run
+    // can make its change without a hanging permission prompt. A real OS sandbox
+    // is a later milestone.
+    '--permission-mode',
+    'bypassPermissions',
+    '--allowedTools',
+    ...config.allowedTools,
+    '--model',
+    config.model,
+  ];
+  if (config.mcpServers.length > 0) {
+    args.push('--mcp-config', mcpConfigArg(config.mcpServers), '--strict-mcp-config');
+  }
+  return args;
 }
 
 // The fields the adapter pulls out of the JSONL stream. `model` comes from the
@@ -191,26 +233,9 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
       // attempts, so each run re-baselines a clean tree).
       await establishBaseline(worktree);
 
-      const args = [
-        '-p',
-        buildExecutorPrompt(spec, context),
-        '--output-format',
-        'stream-json',
-        '--verbose',
-        // The worktree is the sandbox boundary; auto-accept so a non-interactive
-        // run can make its change without a hanging permission prompt. A real OS
-        // sandbox is a later milestone.
-        '--permission-mode',
-        'bypassPermissions',
-        '--allowedTools',
-        ...allowedTools,
-      ];
-      if (opts.model) {
-        args.push('--model', opts.model);
-      }
-      if (mcpServers.length > 0) {
-        args.push('--mcp-config', mcpConfigArg(mcpServers), '--strict-mcp-config');
-      }
+      // Cost guardrail: with no explicit override, pin the cheapest model.
+      const model = opts.model ?? DEFAULT_CLAUDE_MODEL;
+      const args = buildClaudeArgs(spec, context, { model, allowedTools, mcpServers });
 
       const start = Date.now();
       const { code, stdout } = await runClaude(bin, args, worktree);

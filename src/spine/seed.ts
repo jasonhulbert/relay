@@ -14,6 +14,10 @@ export interface SeedOptions {
   // The leaf's command verification (design §6.3, kind `command`). Defaults to a
   // deterministic always-pass check so the skeleton's happy path is hermetic.
   check?: string;
+  // The concrete outcome the executor must achieve. Omitted keeps the generic
+  // walking-skeleton wording (M1–M3 fixture tests); a real run (the M4 dev
+  // harness) passes the operator's actual outcome so the executor aims at it.
+  outcome?: string;
 }
 
 export interface SeedResult {
@@ -55,7 +59,10 @@ export async function seedFixture(relayDir: string, opts: SeedOptions = {}): Pro
     parentId: rootId,
     kind: 'leaf',
     status: 'pending',
-    spec: commandSpec('the leaf produces its change and the command check passes', check),
+    spec: commandSpec(
+      opts.outcome ?? 'the leaf produces its change and the command check passes',
+      check,
+    ),
     children: [],
     selfReport: null,
     learnings: [],

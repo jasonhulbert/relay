@@ -2,7 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { buildExecutorPrompt, claudeExecutor, parseClaudeStream } from './claude';
+import {
+  DEFAULT_CLAUDE_MODEL,
+  buildClaudeArgs,
+  buildExecutorPrompt,
+  claudeExecutor,
+  parseClaudeStream,
+} from './claude';
 import type { OutcomeSpec } from '../../relay-state/index';
 
 // A representative `claude -p --output-format stream-json --verbose` capture: the
@@ -95,6 +101,50 @@ describe('buildExecutorPrompt', () => {
     expect(prompt).toContain('create hello.txt with the greeting');
     expect(prompt).toContain('[command] test -f hello.txt');
     expect(prompt).toContain('an earlier attempt over-scoped it');
+  });
+});
+
+// WHY: the cost guardrail (M4 Phase 2) is "cheapest model unless overridden." The
+// `--model` flag must ALWAYS be present (never the CLI's pricier default), pinned
+// to DEFAULT_CLAUDE_MODEL by default and to the override when one is given — that
+// single knob is what bounds dev/eval spend.
+describe('buildClaudeArgs cost guardrail', () => {
+  const spec: OutcomeSpec = { outcome: 'do a thing', verifications: [] };
+  const ctx = { learnings: [] as string[] };
+
+  test('pins the cheapest model by default and honors an override', () => {
+    const def = buildClaudeArgs(spec, ctx, {
+      model: DEFAULT_CLAUDE_MODEL,
+      allowedTools: ['Read'],
+      mcpServers: [],
+    });
+    const i = def.indexOf('--model');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(def[i + 1]).toBe('claude-haiku-4-5');
+
+    const overridden = buildClaudeArgs(spec, ctx, {
+      model: 'claude-opus-4-8',
+      allowedTools: ['Read'],
+      mcpServers: [],
+    });
+    expect(overridden[overridden.indexOf('--model') + 1]).toBe('claude-opus-4-8');
+  });
+
+  test('only adds --mcp-config when servers are granted', () => {
+    const none = buildClaudeArgs(spec, ctx, {
+      model: DEFAULT_CLAUDE_MODEL,
+      allowedTools: ['Read'],
+      mcpServers: [],
+    });
+    expect(none).not.toContain('--mcp-config');
+
+    const withMcp = buildClaudeArgs(spec, ctx, {
+      model: DEFAULT_CLAUDE_MODEL,
+      allowedTools: ['Read'],
+      mcpServers: [{ name: 's', command: 'srv' }],
+    });
+    expect(withMcp).toContain('--mcp-config');
+    expect(withMcp).toContain('--strict-mcp-config');
   });
 });
 

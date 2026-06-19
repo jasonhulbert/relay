@@ -16,7 +16,13 @@ export type {
 } from './executor';
 // The Claude executor adapter (M4 Phase 1): the first real provider behind the
 // uniform contract. Codex follows in Phase 2.
-export { claudeExecutor, parseClaudeStream, buildExecutorPrompt } from './adapters/claude';
+export {
+  claudeExecutor,
+  parseClaudeStream,
+  buildExecutorPrompt,
+  buildClaudeArgs,
+  DEFAULT_CLAUDE_MODEL,
+} from './adapters/claude';
 export type { ClaudeAdapterOptions, ParsedClaudeStream } from './adapters/claude';
 export { stubCritic, scriptedCritic } from './critic';
 export type { ScriptedCriticOptions } from './critic';
@@ -34,3 +40,22 @@ export { defaultSpawnChild } from './child-runner';
 export type { SpawnChild, ChildSpawnInput, ChildSpawnResult } from './child-runner';
 export { seedFixture, seedHierarchy } from './seed';
 export type { SeedOptions, SeedResult, HierarchySeedResult } from './seed';
+// The user-global relay store resolver (M4 Phase 2, design §4): real runs persist
+// to a stable, per-project, `git init`'d `.relay/` under `~/.relay/`.
+export {
+  relayHome,
+  projectKey,
+  readProjectIndex,
+  ensureProjectStore,
+  commitStore,
+} from './relay-home';
+export type {
+  RelayHomeOptions,
+  ProjectIndex,
+  ProjectIndexEntry,
+  ProjectStore,
+  EnsureStoreOptions,
+} from './relay-home';
+// The dev run harness (M4 Phase 2): the first operator-visible REAL run.
+export { devRun } from './dev-run';
+export type { DevRunOptions, DevRunResult } from './dev-run';
