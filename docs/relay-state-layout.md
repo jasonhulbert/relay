@@ -16,14 +16,15 @@ are authoritative where this doc is silent.
 
 ```
 .relay/
-  manifest.md          # root manifest
-  nodes/<node-id>.md   # one file per node (root -> branches -> leaves)
-  evidence/<run-id>/   # run-scoped evidence store (refs only live in nodes)
-  inbox/               # human-owned decision inbox
-  journal/<region>/    # per-region write-ahead intent journal (C8)
+  manifest.md            # root manifest
+  nodes/<node-id>.md     # one file per node (root -> branches -> leaves)
+  contracts/<node-id>.md # verified outcome contract a sub-orchestrator hands up (A7)
+  evidence/<run-id>/     # run-scoped evidence store (refs only live in nodes)
+  inbox/                 # human-owned decision inbox
+  journal/<region>/      # per-region write-ahead intent journal (C8)
 ```
 
-## The four load-bearing elements
+## The load-bearing elements
 
 ### Root manifest — `.relay/manifest.md`
 
@@ -48,6 +49,20 @@ the parent's own region, funnelled and serial within that parent (design §4).
 A `blocked` node carries its self-sufficient exhaustion summary (§3.7).
 Quarantined drained work is retained for resume but flagged un-integrated
 (§3.9).
+
+### Outcome contract — `.relay/contracts/<node-id>.md`
+
+A sub-orchestrator hands its result up to its parent as a **verified outcome
+contract**, not a diff (A7, design §3.8, §9.2). Across an orchestrator-process
+boundary there is no single merged artifact to run a critic over, so the child
+commits this record into its own region: the outcome it claims, the structural
+`.relay/` fact that its own critic gate certified it (read from the ledger, never
+its narrative), and the seam evidence the parent needs to verify composition
+(placeholder until the typed seam union, F3). It is written in the **same atomic
+transaction** as the child's `done` transition, so the parent never observes a
+`done` child without its contract. The parent reads it from the ledger to decide
+acceptance — never from the child's stdout or return value — and never re-verifies
+the child's internals.
 
 ### Evidence store — `.relay/evidence/<run-id>/`
 

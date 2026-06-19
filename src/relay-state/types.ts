@@ -94,6 +94,33 @@ export interface NodeRecord {
   blocked: BlockedRecord | null;
 }
 
+// The verified outcome contract a sub-orchestrator hands up to its parent (A7,
+// design §3.6, §3.8, §9.2). Across an orchestrator-process boundary there is no
+// single merged diff to run a critic over, so the child returns this instead: the
+// outcome it claims, the structural `.relay/` fact that its own critic gate
+// certified it (read from the ledger, never its narrative), and the seam evidence
+// the parent's integration gate needs to verify *composition*. The parent trusts
+// the structural critic-certified fact; it does not re-verify the child's
+// internals. Written into the child's own region; read by the parent.
+export interface OutcomeContract {
+  // The sub-orchestrator node-id this contract is for, and its run.
+  nodeId: string;
+  runId: string;
+  // The outcome the sub-orchestrator claims it achieved (its spec outcome).
+  claimedOutcome: string;
+  // The structural critic-certified fact: this subtree reached `done` only via a
+  // critic-pass transaction (§3.6, certified turtles-all-the-way-up). True is the
+  // only admissible value for a `done` contract; the parent gates on it.
+  criticCertified: boolean;
+  // Refs to the certifying critic verdict(s) in the evidence store — the ledger
+  // fact, not the child's say-so. Empty would mean "uncertified".
+  verdictRefs: EvidenceRef[];
+  // Seam evidence the parent needs to verify composition (A7/A8). Placeholder in
+  // M2 — the typed seam union (F3) lands in a later milestone; the field is
+  // present now so the contract shape is stable.
+  seamEvidence: EvidenceRef[];
+}
+
 // The root manifest (design §4). Describes the run and the root node; run-level
 // rollups (cost-per-outcome, §8) attach here in later milestones.
 export interface RootManifest {

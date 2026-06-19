@@ -12,15 +12,29 @@ export type {
   CriticVerdict,
   BlockedRecord,
   NodeRecord,
+  OutcomeContract,
   RootManifest,
 } from './types';
 
-export { relayPaths, assertSafeId, relativeManifestPath, relativeNodePath } from './paths';
+export {
+  relayPaths,
+  assertSafeId,
+  relativeManifestPath,
+  relativeNodePath,
+  relativeContractPath,
+} from './paths';
 export type { RelayPaths } from './paths';
 export { atomicWriteFile, fsyncDir } from './io';
 export { serializeFrontmatter, parseFrontmatter } from './frontmatter';
 export { serializeNode, deserializeNode, readNode, writeNode } from './node';
 export { serializeManifest, deserializeManifest, readManifest, writeManifest } from './manifest';
+export {
+  serializeContract,
+  deserializeContract,
+  readContract,
+  writeContract,
+  tryReadContract,
+} from './contract';
 export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } from './journal';
 export type { IntentWrite } from './journal';
 export { toCriticView, runCritic } from './projection';

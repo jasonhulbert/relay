@@ -2,7 +2,7 @@
 // property tests (node round-trip, projection chokepoint). Kept out of the
 // production bundle by being unreferenced from the spine entry point.
 import fc from 'fast-check';
-import type { NodeRecord, RootManifest } from './types';
+import type { NodeRecord, OutcomeContract, RootManifest } from './types';
 
 // Path-safe ids (matches paths.ts `assertSafeId`, which also rejects the
 // traversal segments `.` and `..`).
@@ -107,4 +107,13 @@ export const arbRootManifest: fc.Arbitrary<RootManifest> = fc.record({
   rootId: safeId,
   spec: arbSpec,
   createdAt: trickyText,
+});
+
+export const arbOutcomeContract: fc.Arbitrary<OutcomeContract> = fc.record({
+  nodeId: safeId,
+  runId: safeId,
+  claimedOutcome: trickyText,
+  criticCertified: fc.boolean(),
+  verdictRefs: fc.array(arbEvidenceRef, { maxLength: 3 }),
+  seamEvidence: fc.array(arbEvidenceRef, { maxLength: 3 }),
 });

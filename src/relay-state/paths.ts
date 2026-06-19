@@ -15,6 +15,7 @@ export function assertSafeId(id: string): void {
 
 export function relayPaths(relayDir: string) {
   const nodesDir = join(relayDir, 'nodes');
+  const contractsDir = join(relayDir, 'contracts');
   return {
     relayDir,
     manifest: join(relayDir, 'manifest.md'),
@@ -22,6 +23,11 @@ export function relayPaths(relayDir: string) {
     nodeFile: (id: string): string => {
       assertSafeId(id);
       return join(nodesDir, `${id}.md`);
+    },
+    contractsDir,
+    contractFile: (id: string): string => {
+      assertSafeId(id);
+      return join(contractsDir, `${id}.md`);
     },
     evidenceDir: (runId: string): string => {
       assertSafeId(runId);
@@ -44,4 +50,9 @@ export const relativeManifestPath = 'manifest.md';
 export function relativeNodePath(id: string): string {
   assertSafeId(id);
   return `nodes/${id}.md`;
+}
+
+export function relativeContractPath(id: string): string {
+  assertSafeId(id);
+  return `contracts/${id}.md`;
 }
