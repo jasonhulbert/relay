@@ -1,0 +1,62 @@
+// Field-projection chokepoint (C7, design §3.6, §4, §9.3). The executor's
+// self-report is INADMISSIBLE as evidence of done: a confident narrative sets the
+// frame and launders fluency into evidence, and no instruction reliably undoes
+// that. So the narrative is withheld *structurally*, not by prompting.
+//
+// The `.relay/` node record is field-partitioned into two audiences:
+//   - orchestrator-visible: self-report + learnings (admissible as learning);
+//   - critic-visible: spec + diff + evidence refs only.
+//
+// This module is the single enforcement point:
+//   1. `toCriticView` is the ONE constructor of the critic-visible projection;
+//   2. `CriticView` is a branded type — a structurally-identical plain object is
+//      NOT a `CriticView`, so the only way to obtain one is through (1);
+//   3. `runCritic` (the critic-spawn path) accepts ONLY a `CriticView`, so a raw
+//      node record cannot be handed to a critic;
+//   4. a property test asserts the constructed view carries no narrative field.
+//
+// If a critic could read the whole record, the integrity leak silently reopens.
+import type { CriticVerdict, EvidenceRef, NodeRecord, OutcomeSpec } from './types';
+
+// Phantom brand. Module-private and never exported, so no other module can name
+// it to forge a `CriticView`; the value is never set at runtime (it is a
+// type-level marker only).
+declare const criticViewBrand: unique symbol;
+
+// The critic-visible projection. Carries spec + diff + evidence refs and nothing
+// else — structurally no narrative field exists to leak.
+export interface CriticView {
+  readonly spec: OutcomeSpec;
+  readonly diff: string;
+  readonly evidenceRefs: readonly EvidenceRef[];
+  readonly [criticViewBrand]: true;
+}
+
+// The one constructor (C7). Copies only the critic-admissible fields off the
+// node record; `selfReport` and `learnings` are never read here, so they cannot
+// ride into the critic's context. `diff` is the executor's produced change — the
+// critic's evidence — passed alongside, never sourced from the narrative.
+export function toCriticView(node: NodeRecord, diff: string): CriticView {
+  const view = {
+    spec: node.spec,
+    diff,
+    evidenceRefs: node.evidenceRefs.slice(),
+  };
+  // The brand is a phantom (never set at runtime), so the object is exactly
+  // {spec, diff, evidenceRefs} — pinned by the property test. Minting the brand
+  // requires crossing through `unknown`; this single line is the only place a
+  // `CriticView` is constructed, which is precisely the chokepoint.
+  return view as unknown as CriticView;
+}
+
+// The independent critic itself (a separate agent, different provider by
+// default, §3.6). Provided by the spine; here we only fix its signature.
+export type CriticSpawn = (view: CriticView) => Promise<CriticVerdict>;
+
+// The critic-spawn path. Accepts ONLY a branded `CriticView`, so a `NodeRecord`
+// — which still carries the narrative — cannot be passed (enforced at the type
+// level; see projection.test.ts). This is the runtime chokepoint the design
+// requires: the critic is handed the restricted projection, never the record.
+export async function runCritic(spawn: CriticSpawn, view: CriticView): Promise<CriticVerdict> {
+  return spawn(view);
+}
