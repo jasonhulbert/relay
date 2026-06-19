@@ -3,10 +3,14 @@
 // One OS process per active orchestrator (C6).
 export { runOrchestrator, InjectedKill } from './orchestrator';
 export type { RunOptions, OrchestratorResult, FaultPoint, ChildInjection } from './orchestrator';
-export { stubExecutor } from './executor';
-export type { Executor, ExecutorInput, ExecutorResult } from './executor';
+export { stubExecutor, scriptedExecutor } from './executor';
+export type { Executor, ExecutorInput, ExecutorResult, ScriptedExecutorOptions } from './executor';
 export { stubCritic, scriptedCritic } from './critic';
 export type { ScriptedCriticOptions } from './critic';
+// Promotion re-decomposition (design §3.9): the deterministic stub a promoted
+// leaf's new branch children are seeded from; model-driven decomposition is M4.
+export { stubDecompose } from './decompose';
+export type { Decompose } from './decompose';
 // The escalation ladder + budget rails (design §3.7, §3.9): the bounded
 // verdict-handling machine a failing leaf walks before terminal `blocked`.
 export { EscalationLadder, LADDER_RUNGS } from './ladder';

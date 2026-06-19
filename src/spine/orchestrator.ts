@@ -33,6 +33,7 @@ import {
 } from '../relay-state/index';
 import type {
   CriticSpawn,
+  CriticVerdict,
   EvidenceRef,
   IntentWrite,
   NodeRecord,
@@ -42,6 +43,11 @@ import type {
 import { stubExecutor } from './executor';
 import type { Executor } from './executor';
 import { stubCritic } from './critic';
+import { EscalationLadder } from './ladder';
+import type { AttemptSignal } from './ladder';
+import type { RailCaps, RailUsage } from './rails';
+import { stubDecompose } from './decompose';
+import type { Decompose } from './decompose';
 import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
 
@@ -54,7 +60,13 @@ export type FaultPoint =
   | 'after-executor'
   | 'after-self-report'
   | 'leaf-done-intent'
-  | 'after-leaf-done';
+  | 'after-leaf-done'
+  // `before-promote` lands before the promotion transaction's commit point (the
+  // pre-promotion leaf is still on disk); `promote-intent` lands after that
+  // commit point but before its apply, so rehydration must roll it forward to the
+  // post-promotion branch (C8). Together they pin promotion's atomicity.
+  | 'before-promote'
+  | 'promote-intent';
 
 // Seams in THIS orchestrator's own subtree drive — where a test models a kill of
 // the *parent* process (as opposed to `FaultPoint`, which models a kill inside a
@@ -93,6 +105,13 @@ export interface RunOptions {
   workRoot?: string;
   // Test-only fault injection, scoped to one leaf so it fires deterministically.
   faultAt?: { leafId: string; point: FaultPoint };
+  // Budget caps bounding each leaf's escalation ladder (design §3.7). Defaults to
+  // generous stub caps where the attempt rail is the meaningful one; tight caps
+  // and real token/wall-clock accounting arrive with real providers (M4).
+  caps?: RailCaps;
+  // How a promoted leaf is re-decomposed into child outcomes (design §3.9).
+  // Defaults to the deterministic M3 stub; model-driven decomposition is M4.
+  decompose?: Decompose;
   // How a branch child is spawned (C6). Defaults to a real subprocess; a test may
   // inject a stand-in to isolate the parent's own behavior.
   spawnChild?: SpawnChild;
@@ -116,6 +135,10 @@ export interface OrchestratorResult {
   childStatuses: Record<string, NodeStatus>;
   // Accepted verified outcome contracts from branch children (A7), by node-id.
   childContracts: Record<string, OutcomeContract>;
+  // Leaves promoted to branches this run (design §3.9). A promoted node is now a
+  // pending sub-branch its new children get driven on a later activation, so it is
+  // reported here and counted not-done.
+  promotedNodes: string[];
   // Intent ids rolled forward at the start of this run (empty on a clean start).
   rolledForward: string[];
   // The node-id this process is bound to — its journal region (C6).
@@ -132,8 +155,45 @@ interface LeafContext {
   critic: CriticSpawn;
   workRoot: string;
   faultAt: RunOptions['faultAt'];
+  // Budget caps for this leaf's escalation ladder (design §3.7).
+  caps: RailCaps;
+  // How a promoted leaf is re-decomposed into child outcomes (design §3.9).
+  decompose: Decompose;
   // Accumulates this process's `.relay/`-relative write footprint (A6).
   writes: Set<string>;
+}
+
+// The result of driving one leaf: either it reached `done`, or its escalation
+// ladder hit the `promote` rung and it became a branch with new children
+// (design §3.9). Exhaustion without either (the `blocked` record) is M3 Phase 3.
+type LeafOutcome =
+  | { kind: 'done'; node: NodeRecord }
+  | { kind: 'promoted'; node: NodeRecord; children: NodeRecord[] };
+
+// Generous stub caps: on M3 stubs the executor produces no real tokens or
+// wall-clock, so the attempt rail is the only meaningful one, and it is set high
+// enough that persistent failure walks the full ladder to `promote` rather than
+// tripping a cap. The blocked-record exhaustion path that tight caps exercise is
+// Phase 3; real token/time accounting is M4.
+const DEFAULT_CAPS: RailCaps = {
+  maxAttempts: 100,
+  maxTokens: Number.MAX_SAFE_INTEGER,
+  maxWallClockMs: Number.MAX_SAFE_INTEGER,
+};
+
+// The compact lesson carried forward when a leaf is promoted: why it could not be
+// done as one outcome. Persisted into the new children's context before the
+// worktree is reset (design §3.5), so the re-decomposition does not relearn it.
+function promotionReflection(
+  leafId: string,
+  signal: AttemptSignal,
+  verdict: CriticVerdict | null,
+): string {
+  if (signal === 'too-big') {
+    return `leaf \`${leafId}\` was judged too big to complete as one outcome; promoted and re-decomposed.`;
+  }
+  const why = verdict ? verdict.rationale : 'no passing critic verdict';
+  return `leaf \`${leafId}\` exhausted retry/swap-provider/raise-tier without a passing verdict; promoted. Last critic rationale: ${why}`;
 }
 
 function evidenceRef(
@@ -157,16 +217,28 @@ async function discardWorktree(workRoot: string, leafId: string): Promise<void> 
   await rm(join(workRoot, leafId), { recursive: true, force: true });
 }
 
-// Drive one leaf from a clean (re-)dispatch to `done`. Every `.relay/` write is
-// an atomic journal transaction; the leaf-done transition is split into
-// write-ahead + apply so a kill can be injected between (the roll-forward case).
+// One dispatch attempt's result: the persisted active node, the ladder signal it
+// produced, and (when the critic graded it) its verdict.
+interface AttemptResult {
+  node: NodeRecord;
+  signal: AttemptSignal;
+  verdict: CriticVerdict | null;
+}
+
+// Drive one leaf: (re-)dispatch under the escalation ladder until it reaches
+// `done`, is promoted (leaf→branch), or the ladder exhausts. Every `.relay/`
+// write is an atomic journal transaction; the structural transitions (leaf-done,
+// promotion) are split into write-ahead + apply so a kill can be injected between
+// (the roll-forward case). The ladder is the C2 boundary: this code owns dispatch
+// and persistence, the pure controller only decides the next rung (design §3.9).
 async function dispatchLeaf(
   relayDir: string,
   leaf: NodeRecord,
   ctx: LeafContext,
-): Promise<NodeRecord> {
-  const { region, runId, executor, critic, workRoot, faultAt, writes } = ctx;
+): Promise<LeafOutcome> {
+  const { region, runId, executor, critic, workRoot, faultAt, caps, decompose, writes } = ctx;
   const leafId = leaf.id;
+  const evDir = relayPaths(relayDir).evidenceDir(runId);
   const evRel = (rel: string): string => `evidence/${runId}/${rel}`;
   const fault = (point: FaultPoint): void => {
     if (faultAt && faultAt.leafId === leafId && faultAt.point === point) {
@@ -180,76 +252,168 @@ async function dispatchLeaf(
     ]);
   };
 
-  fault('before-dispatch');
+  // One dispatch attempt: a clean active state, the executor in a fresh worktree,
+  // then either the executor's too-big sizing signal or the critic's graded
+  // verdict. Re-runnable: each call discards the prior attempt's worktree first,
+  // so a rehydrated run reproduces an identical record.
+  const attempt = async (): Promise<AttemptResult> => {
+    fault('before-dispatch');
 
-  // T1: fresh active state. Discarding any partial prior attempt is what makes
-  // re-dispatch idempotent — a rehydrated run reproduces an identical record.
-  let node: NodeRecord = {
-    ...leaf,
-    status: 'active',
-    selfReport: null,
-    verdict: null,
-    evidenceRefs: [],
+    // T1: fresh active state, atop a discarded prior attempt (idempotent
+    // (re-)dispatch — the same write whether this is the first rung or the fifth).
+    await discardWorktree(workRoot, leafId);
+    let node: NodeRecord = {
+      ...leaf,
+      status: 'active',
+      selfReport: null,
+      verdict: null,
+      evidenceRefs: [],
+    };
+    await commitNode(node);
+
+    const worktree = join(workRoot, leafId);
+    await mkdir(worktree, { recursive: true });
+    const result = await executor.run({ spec: node.spec, worktree });
+    fault('after-executor');
+
+    // T2: persist the self-report (orchestrator-visible) + evidence refs. The diff
+    // and self-report are written to the run-scoped evidence store; the node holds
+    // only refs (evidence-ref discipline, §4).
+    const diffRel = `${leafId}/diff.patch`;
+    const selfRel = `${leafId}/self-report.md`;
+    await atomicWriteFile(join(evDir, diffRel), result.diff);
+    await atomicWriteFile(join(evDir, selfRel), result.selfReport);
+    writes.add(evRel(diffRel));
+    writes.add(evRel(selfRel));
+    const diffRef = evidenceRef(runId, diffRel, 'diff', 'executor produced change');
+    const selfRef = evidenceRef(
+      runId,
+      selfRel,
+      'self-report',
+      'executor self-report (orchestrator-only)',
+    );
+    node = { ...node, selfReport: result.selfReport, evidenceRefs: [diffRef, selfRef] };
+    await commitNode(node);
+    fault('after-self-report');
+
+    // The executor's sizing judgment preempts the critic: a too-big outcome is not
+    // graded, it is promoted (design §3.9 "judged too big → PROMOTE").
+    if (result.sizeSignal === 'too-big') {
+      return { node, signal: 'too-big', verdict: null };
+    }
+
+    // The C7 chokepoint: the critic sees ONLY the constructed projection (spec +
+    // diff + evidence), never the node's self-report.
+    const view = toCriticView(node, result.diff);
+    const verdict = await runCritic(critic, view);
+    return { node, signal: verdict.pass ? 'pass' : 'fail', verdict };
   };
-  await commitNode(node);
-
-  // Dispatch the executor in its own worktree.
-  const worktree = join(workRoot, leafId);
-  await mkdir(worktree, { recursive: true });
-  const result = await executor.run({ spec: node.spec, worktree });
-  fault('after-executor');
-
-  // T2: persist the self-report (orchestrator-visible) + evidence refs. The diff
-  // and self-report are written to the run-scoped evidence store; the node holds
-  // only refs (evidence-ref discipline, §4).
-  const evDir = relayPaths(relayDir).evidenceDir(runId);
-  const diffRel = `${leafId}/diff.patch`;
-  const selfRel = `${leafId}/self-report.md`;
-  await atomicWriteFile(join(evDir, diffRel), result.diff);
-  await atomicWriteFile(join(evDir, selfRel), result.selfReport);
-  writes.add(evRel(diffRel));
-  writes.add(evRel(selfRel));
-  const diffRef = evidenceRef(runId, diffRel, 'diff', 'executor produced change');
-  const selfRef = evidenceRef(
-    runId,
-    selfRel,
-    'self-report',
-    'executor self-report (orchestrator-only)',
-  );
-  node = { ...node, selfReport: result.selfReport, evidenceRefs: [diffRef, selfRef] };
-  await commitNode(node);
-  fault('after-self-report');
-
-  // The C7 chokepoint: the critic sees ONLY the constructed projection (spec +
-  // diff + evidence), never the node's self-report.
-  const view = toCriticView(node, result.diff);
-  const verdict = await runCritic(critic, view);
-  if (!verdict.pass) {
-    // M1 seeds an always-pass command check; the escalation ladder is M3.
-    throw new Error(`M1 stub critic did not pass (${verdict.rationale}); the ladder lands in M3`);
-  }
 
   // T3: leaf -> done, written as a separate intent so a kill after the commit
   // point but before apply is recoverable by roll-forward at rehydration.
-  const verdictRel = `${leafId}/verdict.md`;
-  await atomicWriteFile(join(evDir, verdictRel), renderVerdict({ ...node, verdict }));
-  writes.add(evRel(verdictRel));
-  const verdictRef = evidenceRef(runId, verdictRel, 'verdict', 'critic verdict');
-  const doneNode: NodeRecord = {
-    ...node,
-    status: 'done',
-    verdict: { ...verdict, evidenceRefs: [verdictRef] },
-    evidenceRefs: [diffRef, selfRef, verdictRef],
+  const finishDone = async (node: NodeRecord, verdict: CriticVerdict): Promise<NodeRecord> => {
+    const verdictRel = `${leafId}/verdict.md`;
+    await atomicWriteFile(join(evDir, verdictRel), renderVerdict({ ...node, verdict }));
+    writes.add(evRel(verdictRel));
+    const verdictRef = evidenceRef(runId, verdictRel, 'verdict', 'critic verdict');
+    const doneNode: NodeRecord = {
+      ...node,
+      status: 'done',
+      verdict: { ...verdict, evidenceRefs: [verdictRef] },
+      evidenceRefs: [...node.evidenceRefs, verdictRef],
+    };
+    writes.add(relativeNodePath(leafId));
+    const intentId = await writeIntent(relayDir, region, [
+      { path: relativeNodePath(leafId), content: serializeNode(doneNode) },
+    ]);
+    fault('leaf-done-intent');
+    await applyIntent(relayDir, region, intentId);
+    fault('after-leaf-done');
+    return doneNode;
   };
-  writes.add(relativeNodePath(leafId));
-  const intentId = await writeIntent(relayDir, region, [
-    { path: relativeNodePath(leafId), content: serializeNode(doneNode) },
-  ]);
-  fault('leaf-done-intent');
-  await applyIntent(relayDir, region, intentId);
-  fault('after-leaf-done');
 
-  return doneNode;
+  // The `promote` rung: turn this leaf into a branch and re-decompose it into new
+  // child outcomes, carrying the failed attempt's lesson forward. The leaf→branch
+  // flip and every new child node land in ONE atomic intent-journal transaction,
+  // so rehydration sees the pre-promotion leaf or the post-promotion branch, never
+  // a torn middle (the promotion-atomicity guarantee, design §3.5).
+  const promote = async (failed: AttemptResult): Promise<LeafOutcome> => {
+    const reflection = promotionReflection(leafId, failed.signal, failed.verdict);
+    const children: NodeRecord[] = decompose(leaf.spec).map((spec, i) => ({
+      id: `${leafId}.c${i.toString()}`,
+      parentId: leafId,
+      kind: 'leaf',
+      status: 'pending',
+      spec,
+      children: [],
+      selfReport: null,
+      // Keep-lesson: the new children inherit why their parent leaf failed.
+      learnings: [reflection],
+      verdict: null,
+      evidenceRefs: [],
+      blocked: null,
+    }));
+    const branch: NodeRecord = {
+      ...leaf,
+      kind: 'branch',
+      status: 'pending',
+      children: children.map((c) => c.id),
+      selfReport: null,
+      learnings: [...leaf.learnings, reflection],
+      verdict: null,
+      evidenceRefs: [],
+      blocked: null,
+    };
+    const txn: IntentWrite[] = [
+      { path: relativeNodePath(branch.id), content: serializeNode(branch) },
+      ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
+    ];
+    writes.add(relativeNodePath(branch.id));
+    for (const c of children) {
+      writes.add(relativeNodePath(c.id));
+    }
+    fault('before-promote');
+    const intentId = await writeIntent(relayDir, region, txn);
+    fault('promote-intent');
+    await applyIntent(relayDir, region, intentId);
+    // The reflection is now durable in the children; only then reset the failed
+    // attempt's worktree to clean (persist-then-discard, design §3.5).
+    await discardWorktree(workRoot, leafId);
+    return { kind: 'promoted', node: branch, children };
+  };
+
+  // The verdict-handling loop: each iteration is one dispatch attempt whose signal
+  // the ladder turns into the next rung — exactly the controller boundary the
+  // design draws between code-owned dispatch and the pure ladder. Termination is
+  // the ladder's guarantee (a pass, the promote rung, or a budget cap), not this
+  // loop's; the empty-test `for` is bounded by the attempt cap inside `step`.
+  const ladder = new EscalationLadder(caps);
+  const usage: RailUsage = { attempts: 0, tokens: 0, elapsedMs: 0 };
+  for (;;) {
+    usage.attempts += 1;
+    const result = await attempt();
+    const step = ladder.step(result.signal, usage);
+    if (step.kind === 'done') {
+      if (!result.verdict) {
+        throw new Error(`leaf \`${leafId}\` reached done without a critic verdict`);
+      }
+      return { kind: 'done', node: await finishDone(result.node, result.verdict) };
+    }
+    if (step.kind === 'exhausted') {
+      // The ladder ran out (a budget cap, or every rung walked) without success.
+      // The self-sufficient `blocked` record and halt-and-surface that consume
+      // this land in M3 Phase 3; until then, fail loud rather than silently stop.
+      throw new Error(
+        `escalation ladder exhausted for leaf \`${leafId}\` (${step.reason.kind}); the blocked record lands in M3 Phase 3`,
+      );
+    }
+    if (step.rung === 'promote') {
+      return await promote(result);
+    }
+    // retry / swap-provider / raise-tier: re-dispatch. On stubs the rung identity
+    // does not change the executor (real provider/tier swaps arrive at M4); the
+    // loop re-attempts and the ladder advances on the next verdict.
+  }
 }
 
 // Drive one branch child as a sub-orchestrator in its own process (C6) and accept
@@ -301,6 +465,8 @@ export async function runOrchestrator(
 ): Promise<OrchestratorResult> {
   const executor = opts.executor ?? stubExecutor;
   const critic = opts.critic ?? stubCritic;
+  const caps = opts.caps ?? DEFAULT_CAPS;
+  const decompose = opts.decompose ?? stubDecompose;
   // The journal region is the bound node-id: one OS process owns one region (C6).
   const region = rootId;
   const workRoot = opts.workRoot ?? join(dirname(relayDir), 'worktrees');
@@ -319,6 +485,7 @@ export async function runOrchestrator(
   const leafStatuses: Record<string, NodeStatus> = {};
   const childStatuses: Record<string, NodeStatus> = {};
   const childContracts: Record<string, OutcomeContract> = {};
+  const promotedNodes: string[] = [];
   // The critic verdicts certifying this node's children — the structural fact that
   // rides up in this node's own contract (§3.6, certified turtles-all-the-way-up).
   const childVerdictRefs: EvidenceRef[] = [];
@@ -332,20 +499,29 @@ export async function runOrchestrator(
         }
         continue;
       }
-      // Rehydration: a non-`done` leaf is discarded and re-dispatched (§3.2).
-      await discardWorktree(workRoot, childId);
-      const done = await dispatchLeaf(relayDir, child, {
+      // Rehydration: a non-`done` leaf is (re-)dispatched under the ladder, which
+      // discards any partial prior attempt before each attempt (§3.2, §3.9).
+      const outcome = await dispatchLeaf(relayDir, child, {
         region,
         runId: manifest.runId,
         executor,
         critic,
         workRoot,
         faultAt: opts.faultAt,
+        caps,
+        decompose,
         writes,
       });
-      leafStatuses[childId] = done.status;
-      if (done.verdict) {
-        childVerdictRefs.push(...done.verdict.evidenceRefs);
+      if (outcome.kind === 'done') {
+        leafStatuses[childId] = 'done';
+        if (outcome.node.verdict) {
+          childVerdictRefs.push(...outcome.node.verdict.evidenceRefs);
+        }
+      } else {
+        // Promoted leaf→branch: now a pending sub-branch whose new children a
+        // later activation drives. Not done, so the parent cannot be done either.
+        promotedNodes.push(childId);
+        childStatuses[childId] = outcome.node.status;
       }
     } else {
       // Branch child → a sub-orchestrator in its own process (C6), accepted via
@@ -410,6 +586,7 @@ export async function runOrchestrator(
     leafStatuses,
     childStatuses,
     childContracts,
+    promotedNodes,
     rolledForward,
     region,
     ownedWrites: [...writes].sort(),

@@ -28,6 +28,11 @@ export interface ExecutorResult {
   // by the C7 projection (§3.6).
   selfReport: string;
   exitStatus: number;
+  // A sizing judgment the executor may raise instead of a gradeable change: the
+  // outcome is too large to land as one leaf (design §3.9). It preempts the
+  // critic and drives the ladder straight to promote (leaf→branch). Absent means
+  // a normal attempt the critic then grades.
+  sizeSignal?: 'too-big';
 }
 
 export interface Executor {
@@ -48,3 +53,46 @@ export const stubExecutor: Executor = {
     };
   },
 };
+
+// A controllable executor for M3's deterministic ladder tests. It produces the
+// same trivial change as `stubExecutor`, but can raise a scripted `too-big`
+// sizing judgment on a given attempt so a test can drive the ladder's
+// promote-on-too-big path through a real executor seam rather than the
+// controller boundary alone. The signal per call is consumed in order; the final
+// entry repeats once the script is exhausted, so a one-entry script is a
+// constant. The real provider CLIs arrive at M4.
+export interface ScriptedExecutorOptions {
+  // Size judgment per call, in order; the final entry repeats thereafter.
+  // `ok` makes a normal gradeable change, `too-big` raises the sizing signal.
+  signals: ('ok' | 'too-big')[];
+}
+
+export function scriptedExecutor(opts: ScriptedExecutorOptions): Executor {
+  if (opts.signals.length === 0) {
+    throw new Error('scriptedExecutor requires at least one signal');
+  }
+  let call = 0;
+  return {
+    async run({ worktree }: ExecutorInput): Promise<ExecutorResult> {
+      const signal = opts.signals[Math.min(call, opts.signals.length - 1)];
+      call += 1;
+      await mkdir(worktree, { recursive: true });
+      if (signal === 'too-big') {
+        // No gradeable change: the executor judged the outcome too large to land
+        // as one leaf and asks to be promoted instead of being critiqued.
+        return {
+          diff: '',
+          selfReport: 'Outcome is too large to complete as a single leaf; requesting promotion.',
+          exitStatus: 0,
+          sizeSignal: 'too-big',
+        };
+      }
+      await atomicWriteFile(join(worktree, CHANGE_FILE), CHANGE_BODY);
+      return {
+        diff: `A ${CHANGE_FILE}\n+${CHANGE_BODY.trimEnd()}`,
+        selfReport: 'Created CHANGE.txt exactly as asked; I am confident this is correct.',
+        exitStatus: 0,
+      };
+    },
+  };
+}
