@@ -1,0 +1,36 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "description": "Relay: a terminal-based, multi-provider loop generator and orchestrator.",
+  "license": "UNLICENSED",
+  "private": true,
+  "bin": {
+    "relay": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.3",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
+    "postject": "^1.0.0-alpha.6",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
+    "vitest": "^4.1.9"
+  }
+}
