@@ -32,6 +32,7 @@ import {
   writeIntent,
 } from '../relay-state/index';
 import type {
+  BlockedRecord,
   CriticSpawn,
   CriticVerdict,
   EvidenceRef,
@@ -44,7 +45,7 @@ import { stubExecutor } from './executor';
 import type { Executor } from './executor';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
-import type { AttemptSignal } from './ladder';
+import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
 import type { RailCaps, RailUsage } from './rails';
 import { stubDecompose } from './decompose';
 import type { Decompose } from './decompose';
@@ -163,12 +164,14 @@ interface LeafContext {
   writes: Set<string>;
 }
 
-// The result of driving one leaf: either it reached `done`, or its escalation
-// ladder hit the `promote` rung and it became a branch with new children
-// (design §3.9). Exhaustion without either (the `blocked` record) is M3 Phase 3.
+// The result of driving one leaf: it reached `done`; its escalation ladder hit
+// the `promote` rung and it became a branch with new children (design §3.9); or
+// the ladder exhausted and it is terminally `blocked` with a self-sufficient
+// record the parent chain surfaces (design §3.7).
 type LeafOutcome =
   | { kind: 'done'; node: NodeRecord }
-  | { kind: 'promoted'; node: NodeRecord; children: NodeRecord[] };
+  | { kind: 'promoted'; node: NodeRecord; children: NodeRecord[] }
+  | { kind: 'blocked'; node: NodeRecord };
 
 // Generous stub caps: on M3 stubs the executor produces no real tokens or
 // wall-clock, so the attempt rail is the only meaningful one, and it is set high
@@ -194,6 +197,18 @@ function promotionReflection(
   }
   const why = verdict ? verdict.rationale : 'no passing critic verdict';
   return `leaf \`${leafId}\` exhausted retry/swap-provider/raise-tier without a passing verdict; promoted. Last critic rationale: ${why}`;
+}
+
+// The standing "why" a leaf is terminally blocked (design §3.7), rendered from
+// the ladder's exhaustion reason. `cap` is the path the orchestrator actually
+// reaches — it takes the `promote` rung before the ladder can walk every rung, so
+// `rungs-walked` is unreachable through this loop — but both are rendered so the
+// blocked record is self-sufficient regardless of how the ladder ended.
+function exhaustionReason(reason: ExhaustionReason): string {
+  if (reason.kind === 'cap') {
+    return `budget cap \`${reason.cap}\` reached before a passing verdict`;
+  }
+  return 'every escalation rung was walked without a passing verdict';
 }
 
 function evidenceRef(
@@ -382,6 +397,32 @@ async function dispatchLeaf(
     return { kind: 'promoted', node: branch, children };
   };
 
+  // Ladder exhaustion → the terminal `blocked` record (design §3.7). Authored to
+  // be self-sufficient: a fresh orchestrator reads it in one pass and does NOT
+  // re-run the ladder, and a human can act on it from the decision inbox (Phase 4).
+  // One atomic write — no split write-ahead/apply, because no structural fan-out
+  // follows it (unlike leaf-done or promote). The failed attempt's worktree is
+  // left in place as the standing evidence of what could not be completed.
+  const finishBlocked = async (
+    failed: AttemptResult,
+    reason: ExhaustionReason,
+    rungsSpent: readonly Rung[],
+  ): Promise<NodeRecord> => {
+    const why = exhaustionReason(reason);
+    const criticReason = failed.verdict
+      ? failed.verdict.rationale
+      : 'no passing critic verdict (executor judged the outcome too big)';
+    const record: BlockedRecord = {
+      reason: why,
+      rungsSpent: [...rungsSpent],
+      criticReason,
+      humanFacing: `leaf \`${leafId}\` is blocked: ${why}. Standing critic reason: ${criticReason}.`,
+    };
+    const blockedNode: NodeRecord = { ...failed.node, status: 'blocked', blocked: record };
+    await commitNode(blockedNode);
+    return blockedNode;
+  };
+
   // The verdict-handling loop: each iteration is one dispatch attempt whose signal
   // the ladder turns into the next rung — exactly the controller boundary the
   // design draws between code-owned dispatch and the pure ladder. Termination is
@@ -400,12 +441,12 @@ async function dispatchLeaf(
       return { kind: 'done', node: await finishDone(result.node, result.verdict) };
     }
     if (step.kind === 'exhausted') {
-      // The ladder ran out (a budget cap, or every rung walked) without success.
-      // The self-sufficient `blocked` record and halt-and-surface that consume
-      // this land in M3 Phase 3; until then, fail loud rather than silently stop.
-      throw new Error(
-        `escalation ladder exhausted for leaf \`${leafId}\` (${step.reason.kind}); the blocked record lands in M3 Phase 3`,
-      );
+      // The ladder ran out (a budget cap; the rungs-walked branch is unreachable
+      // here because the loop takes the `promote` rung before the ladder can walk
+      // past it). Write the self-sufficient `blocked` record and halt — no
+      // route-around (design §3.7); `runOrchestrator` surfaces it up the parent
+      // chain to root.
+      return { kind: 'blocked', node: await finishBlocked(result, step.reason, ladder.rungsSpent) };
     }
     if (step.rung === 'promote') {
       return await promote(result);
@@ -499,6 +540,12 @@ export async function runOrchestrator(
         }
         continue;
       }
+      if (child.status === 'blocked') {
+        // A terminal-blocked leaf is read in ONE pass and never re-dispatched: its
+        // self-sufficient record already says "do not re-run the ladder" (§3.7).
+        leafStatuses[childId] = 'blocked';
+        continue;
+      }
       // Rehydration: a non-`done` leaf is (re-)dispatched under the ladder, which
       // discards any partial prior attempt before each attempt (§3.2, §3.9).
       const outcome = await dispatchLeaf(relayDir, child, {
@@ -517,6 +564,10 @@ export async function runOrchestrator(
         if (outcome.node.verdict) {
           childVerdictRefs.push(...outcome.node.verdict.evidenceRefs);
         }
+      } else if (outcome.kind === 'blocked') {
+        // Ladder exhausted: the leaf is terminally blocked. Not done, so the
+        // parent cannot be done — the propagation gate below surfaces it up.
+        leafStatuses[childId] = 'blocked';
       } else {
         // Promoted leaf→branch: now a pending sub-branch whose new children a
         // later activation drives. Not done, so the parent cannot be done either.
@@ -545,6 +596,32 @@ export async function runOrchestrator(
   // the subtree must reconstitute without re-running the already-done child).
   if (opts.selfFaultAt === 'after-child-contract') {
     throw new InjectedKill('after-child-contract');
+  }
+
+  // Halt-and-surface (design §3.7): a branch with ANY blocked descendant can never
+  // be `done`. It takes a `blocked` status carrying a self-sufficient record that
+  // names the blocked child and inherits its standing reason, so the failure
+  // propagates up the parent chain to root with no route-around. Checked before the
+  // done gate; the two are mutually exclusive (a blocked child is never `done`).
+  // Idempotent on rehydration: a branch already `blocked` is left untouched.
+  const blockedChildId = root.children.find(
+    (id) => leafStatuses[id] === 'blocked' || childStatuses[id] === 'blocked',
+  );
+  if (root.status !== 'blocked' && blockedChildId !== undefined) {
+    const childBlocked = (await readNode(relayDir, blockedChildId)).blocked;
+    const record: BlockedRecord = {
+      reason: `descendant \`${blockedChildId}\` is blocked`,
+      rungsSpent: [],
+      criticReason: childBlocked?.criticReason ?? 'a descendant could not be completed',
+      humanFacing:
+        childBlocked?.humanFacing ??
+        `branch \`${rootId}\` halted: descendant \`${blockedChildId}\` is blocked.`,
+    };
+    root = { ...root, status: 'blocked', blocked: record };
+    writes.add(relativeNodePath(rootId));
+    await commit(relayDir, region, [
+      { path: relativeNodePath(rootId), content: serializeNode(root) },
+    ]);
   }
 
   // Integration gate is required only when children ran concurrently (§3.8); M2 is
