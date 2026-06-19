@@ -16,6 +16,8 @@ Commands:
     [--project <path>]       Project to run for (default: cwd).
     [--provider <name>]      Primary executor: claude | codex (default: claude).
     [--model <name>]         Executor model override (default: cheapest).
+    [--critic-provider <n>]  Critic provider (default: the not-the-author one).
+    [--critic-model <name>]  Critic model override (default: cheapest).
     [--check <command>]      Leaf command verification (default: always-pass).
 
 Options:
@@ -48,6 +50,18 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   }
   const model = flag(args, '--model');
   if (model !== undefined) devOpts.executorModel = model;
+  const criticProvider = flag(args, '--critic-provider');
+  if (criticProvider !== undefined) {
+    if (criticProvider !== 'claude' && criticProvider !== 'codex') {
+      process.stderr.write(
+        `dev-run: --critic-provider must be claude or codex (got ${criticProvider})\n`,
+      );
+      return 2;
+    }
+    devOpts.criticProvider = criticProvider satisfies Provider;
+  }
+  const criticModel = flag(args, '--critic-model');
+  if (criticModel !== undefined) devOpts.criticModel = criticModel;
   const check = flag(args, '--check');
   if (check !== undefined) devOpts.check = check;
   const out = await devRun(devOpts);

@@ -450,9 +450,13 @@ async function dispatchLeaf(
     }
 
     // The C7 chokepoint: the critic sees ONLY the constructed projection (spec +
-    // diff + evidence), never the node's self-report.
+    // diff + evidence), never the node's self-report. Alongside the projection it is
+    // granted the non-evidentiary context an independent critic needs to act — the
+    // produced-change worktree it runs its declared verification kinds against, and
+    // the same mcp_servers the executor gets (§3.252, C9). The grant is empty until
+    // the Phase 5 MCP loop populates it, exactly like the executor above.
     const view = toCriticView(node, result.diff);
-    const verdict = await runCritic(critic, view);
+    const verdict = await runCritic(critic, view, { worktree, mcpServers: [] });
     return { node, signal: verdict.pass ? 'pass' : 'fail', verdict };
   };
 

@@ -3,6 +3,7 @@
 // idempotent roll-forward on rehydration (design §4, §9.3). Code is the sole
 // writer of `.relay/` (C2). See docs/relay-state-layout.md for the conventions.
 export type {
+  McpServerConfig,
   NodeKind,
   NodeStatus,
   VerificationKind,
@@ -41,4 +42,4 @@ export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } 
 export type { IntentWrite } from './journal';
 export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';
 export { toCriticView, runCritic } from './projection';
-export type { CriticView, CriticSpawn } from './projection';
+export type { CriticView, CriticSpawn, CriticContext } from './projection';

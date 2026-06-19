@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { devRun } from './dev-run';
+import { agentCritic } from './agent-critic';
 import { projectKey } from './relay-home';
-import type { Executor, ExecutorInput, ExecutorResult } from './executor';
+import { readNode } from '../relay-state/index';
+import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
 
 const execFileP = promisify(execFile);
 
@@ -118,6 +120,57 @@ describe('devRun (hermetic executor)', () => {
         log: () => {},
       });
       expect(again.storeDir).toBe(res.storeDir);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+
+  // WHY: the independent critic must be cross-provider by default (design §3.6).
+  // With a Claude author the harness must select a Codex critic and surface it in
+  // the recap, so an operator can see who graded done-ness. The real agentCritic is
+  // driven with a faked model invoke so the assertion stays hermetic.
+  test('selects the not-the-author provider for the critic and recaps its verdict', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'relay-home-'));
+    const project = await mkdtemp(join(tmpdir(), 'relay-proj-'));
+    try {
+      const usages: ExecutorUsage[] = [];
+      const res = await devRun({
+        projectPath: project,
+        outcome: 'create CHANGE.txt',
+        home,
+        // Author Claude → critic defaults to Codex (the other provider).
+        provider: 'claude',
+        executor: fakeExecutor('fake-cheap'),
+        critic: agentCritic({
+          provider: 'codex',
+          invoke: () =>
+            Promise.resolve({
+              stdout: [
+                JSON.stringify({
+                  type: 'item.completed',
+                  item: { type: 'agent_message', text: 'graded on the diff\nVERDICT: PASS' },
+                }),
+                JSON.stringify({
+                  type: 'turn.completed',
+                  usage: { input_tokens: 4, output_tokens: 2 },
+                }),
+              ].join('\n'),
+              code: 0,
+            }),
+          onUsage: (u) => usages.push(u),
+        }),
+        now: () => '2026-03-03T00:00:00.000Z',
+        log: () => {},
+      });
+
+      // The harness resolved the cross-provider critic and it certified the leaf.
+      expect(res.criticProvider).toBe('codex');
+      expect(res.result.leafStatuses['leaf-1']).toBe('done');
+      const leaf = await readNode(res.storeDir, 'leaf-1');
+      expect(leaf.verdict?.provider).toBe('codex');
+      // The recap surfaces who graded done-ness (a different provider than the author).
+      expect(res.recap).toContain('critic [codex] -> PASS');
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(project, { recursive: true, force: true });

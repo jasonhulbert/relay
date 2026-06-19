@@ -8,6 +8,20 @@
 // no field anywhere below for raw transcript bytes; `selfReport` is a bounded
 // narrative summary, not a transcript.
 
+// A granted MCP server the spine mediates into a model's judgment (C9, design
+// §3.6, §9.4). The orchestrator grants the same shape to BOTH the executor and the
+// critic — the critic needs tools too (e.g. a Surface server to reach the app for a
+// visual outcome). A pure capability descriptor, so it lives with the durable
+// types rather than the executor adapter; `spine/executor.ts` re-exports it for the
+// adapters. The real code-owned MCP tool loop that populates a grant is Phase 5;
+// the type rides the contracts now so the executor and critic surfaces are stable.
+export interface McpServerConfig {
+  name: string;
+  // The stdio command (and args) the spine launches as the MCP server.
+  command: string;
+  args?: string[];
+}
+
 export type NodeKind = 'branch' | 'leaf';
 
 // Node lifecycle. M1 drives a leaf pending -> active -> done; `blocked` is the

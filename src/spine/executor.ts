@@ -12,17 +12,12 @@
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { atomicWriteFile } from '../relay-state/index';
-import type { OutcomeSpec } from '../relay-state/index';
-
-// A granted MCP server the spine mediates into the executor's judgment (C9). The
-// real code-owned MCP tool loop is M4 Phase 4; the param rides the contract now
-// so the adapter surface is stable across phases.
-export interface McpServerConfig {
-  name: string;
-  // The stdio command (and args) the spine launches as the MCP server.
-  command: string;
-  args?: string[];
-}
+import type { McpServerConfig, OutcomeSpec } from '../relay-state/index';
+// The granted-MCP-server descriptor is a durable capability type, so it lives in
+// relay-state alongside the other `.relay/` contracts; re-exported here so the
+// executor adapters keep importing it from `../executor` (the critic grants the
+// same shape — design §3.6, C9). The real code-owned MCP loop is Phase 5.
+export type { McpServerConfig } from '../relay-state/index';
 
 // What an executor is handed beyond its unit and sandbox: the keep-lesson
 // reflections already accumulated on the node (design §3.5), so a retried or

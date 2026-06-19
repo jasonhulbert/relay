@@ -35,6 +35,20 @@ export {
 export type { CodexAdapterOptions, ParsedCodexStream } from './adapters/codex';
 export { stubCritic, scriptedCritic } from './critic';
 export type { ScriptedCriticOptions } from './critic';
+// The real cross-provider critic (M4 Phase 4): the independent agent that grades
+// done-ness on the C7 projection + the deterministic verification kinds, on a
+// different provider than the author by default (design §3.6, §6.1, §6.3).
+export { agentCritic, buildCriticPrompt, parseCriticVerdict } from './agent-critic';
+export type {
+  AgentCriticOptions,
+  CriticProvider,
+  CriticInvocation,
+  CriticInvocationResult,
+} from './agent-critic';
+// The deterministic verification kinds (M4 Phase 4, design §6.3): code-checkable
+// command/test/artifact predicates the critic grounds its verdict on (Rule 5).
+export { runVerification, runDeterministicVerifications, isDeterministicKind } from './verify';
+export type { VerificationResult } from './verify';
 // Promotion re-decomposition (design §3.9): the deterministic stub a promoted
 // leaf's new branch children are seeded from; model-driven decomposition is M4.
 export { stubDecompose } from './decompose';

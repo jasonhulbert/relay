@@ -21,6 +21,9 @@ import { codexExecutor } from './adapters/codex';
 import type { CodexAdapterOptions } from './adapters/codex';
 import { runOrchestrator } from './orchestrator';
 import type { OrchestratorResult, RunOptions } from './orchestrator';
+import { agentCritic } from './agent-critic';
+import type { AgentCriticOptions } from './agent-critic';
+import type { CriticSpawn } from '../relay-state/index';
 import { seedFixture } from './seed';
 import type { SeedOptions } from './seed';
 import { commitStore, ensureProjectStore } from './relay-home';
@@ -45,9 +48,19 @@ export interface DevRunOptions {
   // Per-role model override (the cost-guardrail knob). Omitted → the adapter's
   // cheapest default (`claude-haiku-4-5`).
   executorModel?: string;
+  // Which provider renders the independent critic's verdict (design §3.6). Defaults
+  // to the NOT-the-author provider, so the critic is cross-provider by default.
+  criticProvider?: Provider;
+  // Per-role cost-guardrail knob for the critic. Omitted → the critic provider's
+  // cheapest default.
+  criticModel?: string;
   // The executor to drive. Defaults to the real Claude adapter; tests inject a
   // deterministic stand-in so the harness is exercisable without the CLI.
   executor?: Executor;
+  // The critic to gate done-ness. Defaults to the real cross-provider agent critic
+  // on a REAL run; tests inject a deterministic stand-in (and a test that injects
+  // its own `executor` keeps the orchestrator's hermetic default critic).
+  critic?: CriticSpawn;
   // Injected clock for the index's timestamps (deterministic tests).
   now?: () => string;
   // Recap sink; defaults to stdout.
@@ -62,7 +75,10 @@ export interface DevRunResult {
   storeDir: string;
   runId: string;
   result: OrchestratorResult;
-  // Per-call usage in dispatch order (not yet node-attributed — Phase 6).
+  // The provider the independent critic ran (different from the author by default).
+  criticProvider: Provider;
+  // Per-call usage in dispatch order (not yet node-attributed — Phase 6). Spans
+  // both executor and critic calls on a real run.
   usages: ExecutorUsage[];
   // The rendered recap (also written to `log`).
   recap: string;
@@ -129,6 +145,11 @@ async function renderRecap(
     const id = file.slice(0, -3);
     const node = await readNode(storeDir, id);
     lines.push(`  ${id} [${node.kind}] -> ${node.status}`);
+    if (node.verdict) {
+      // The independent critic's verdict (design §3.6): who graded it (a different
+      // provider than the author by default) and the result it certified.
+      lines.push(`    critic [${node.verdict.provider}] -> ${node.verdict.pass ? 'PASS' : 'FAIL'}`);
+    }
     if (node.blocked) {
       lines.push(`    blocked: ${node.blocked.humanFacing}`);
     }
@@ -195,6 +216,8 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   const provider: Provider = opts.provider ?? 'claude';
   // The provider the swap-provider rung re-dispatches under.
   const otherProvider: Provider = provider === 'claude' ? 'codex' : 'claude';
+  // The independent critic is cross-provider by default: the not-the-author one.
+  const criticProvider: Provider = opts.criticProvider ?? otherProvider;
 
   const primaryInner = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
   const executor = recordingExecutor(primaryInner, usages);
@@ -209,6 +232,21 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   // injects its own executor — it then owns the swap behavior too.
   if (opts.executor === undefined) {
     runOpts.swapExecutor = recordingExecutor(buildProviderExecutor(otherProvider), usages);
+  }
+  // The real cross-provider critic gates done-ness (design §3.6). An explicit
+  // injected critic wins; otherwise the real agent critic is wired only on a real
+  // run (no injected executor), so a test injecting just an executor keeps the
+  // orchestrator's hermetic default critic. The critic's per-call usage records
+  // into the same sink as the executor so the recap surfaces it.
+  if (opts.critic !== undefined) {
+    runOpts.critic = opts.critic;
+  } else if (opts.executor === undefined) {
+    const criticOpts: AgentCriticOptions = {
+      provider: criticProvider,
+      onUsage: (u) => usages.push(u),
+    };
+    if (opts.criticModel !== undefined) criticOpts.model = opts.criticModel;
+    runOpts.critic = agentCritic(criticOpts);
   }
 
   const result = await runOrchestrator(relayDir, 'root', runOpts);
@@ -233,6 +271,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     storeDir: relayDir,
     runId,
     result,
+    criticProvider,
     usages,
     recap,
     committed,

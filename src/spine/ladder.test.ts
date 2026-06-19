@@ -46,7 +46,7 @@ async function walkLadder(
   // Bounded so a controller bug surfaces as a failure, not a hang.
   for (let i = 0; i < 50; i += 1) {
     usage.attempts += 1;
-    const verdict = await runCritic(critic, view);
+    const verdict = await runCritic(critic, view, { worktree: '', mcpServers: [] });
     const signal: AttemptSignal = verdict.pass ? 'pass' : 'fail';
     const step = ladder.step(signal, usage);
     if (step.kind === 'done' || step.kind === 'exhausted') {

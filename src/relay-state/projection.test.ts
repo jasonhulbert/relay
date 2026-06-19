@@ -2,8 +2,12 @@ import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { arbNodeRecord } from './arbitraries';
 import { runCritic, toCriticView } from './projection';
-import type { CriticSpawn, CriticView } from './projection';
+import type { CriticContext, CriticSpawn, CriticView } from './projection';
 import type { CriticVerdict, NodeRecord } from './types';
+
+// The non-evidentiary context every critic-spawn is granted alongside the view;
+// nothing in it is graded, so it cannot reopen the C7 leak.
+const CTX: CriticContext = { worktree: '/tmp/wt', mcpServers: [] };
 
 // Field names that carry the orchestrator-visible narrative. None may appear in
 // the critic-visible projection (design §3.6, §4).
@@ -86,16 +90,16 @@ describe('critic-spawn path admits only a constructed CriticView', () => {
     };
 
     // @ts-expect-error — a raw NodeRecord is not a CriticView (no diff, no brand).
-    void runCritic(spawn, node);
+    void runCritic(spawn, node, CTX);
 
     // A structurally-similar object still lacks the brand: only toCriticView mints one.
     const lookAlike = { spec: node.spec, diff: 'd', evidenceRefs: node.evidenceRefs };
     // @ts-expect-error — an unbranded look-alike cannot reach the critic-spawn path.
-    void runCritic(spawn, lookAlike);
+    void runCritic(spawn, lookAlike, CTX);
 
     // The supported path: construct the projection first, then spawn.
     const view: CriticView = toCriticView(node, 'd');
-    void runCritic(spawn, view);
+    void runCritic(spawn, view, CTX);
 
     expect(typeof spawn).toBe('function');
   });
