@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { pendingIntents, readNode } from '../relay-state/index';
 import type { Executor, ExecutorResult, RailCaps } from './index';
-import { runOrchestrator, scriptedCritic, scriptedExecutor, seedFixture } from './index';
+import {
+  runOrchestrator,
+  scriptedCritic,
+  scriptedExecutor,
+  seedFixture,
+  stubCapabilities,
+} from './index';
 
 const ROOT_ID = 'root';
 const LEAF_ID = 'leaf-1';
@@ -27,6 +33,7 @@ async function freshRelay(): Promise<{ base: string; relayDir: string; workRoot:
 // An executor that fails the test if it ever runs — used to prove a fresh
 // orchestrator does NOT re-dispatch an already-blocked leaf.
 const refusingExecutor: Executor = {
+  capabilities: () => stubCapabilities,
   run(): Promise<ExecutorResult> {
     throw new Error('a blocked leaf must not be re-dispatched');
   },
@@ -69,6 +76,7 @@ describe('ladder exhaustion writes a self-sufficient blocked record', () => {
       // the cap halted it, rather than blocking on the first failure.
       let dispatches = 0;
       const counting: Executor = {
+        capabilities: () => stubCapabilities,
         async run(input): Promise<ExecutorResult> {
           dispatches += 1;
           return scriptedExecutor({ signals: ['ok'] }).run(input);

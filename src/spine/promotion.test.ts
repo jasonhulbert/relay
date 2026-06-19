@@ -10,6 +10,7 @@ import {
   scriptedCritic,
   scriptedExecutor,
   seedFixture,
+  stubCapabilities,
 } from './index';
 
 const ROOT_ID = 'root';
@@ -68,6 +69,7 @@ describe('persistent failure promotes the leaf, keeping the lesson', () => {
       // retry/swap/raise rungs rather than promoting on the first failure.
       let dispatches = 0;
       const counting: Executor = {
+        capabilities: () => stubCapabilities,
         async run(input): Promise<ExecutorResult> {
           dispatches += 1;
           return scriptedExecutor({ signals: ['ok'] }).run(input);
@@ -133,6 +135,7 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
 
       let dispatches = 0;
       const tooBig: Executor = {
+        capabilities: () => stubCapabilities,
         async run(input): Promise<ExecutorResult> {
           dispatches += 1;
           return scriptedExecutor({ signals: ['too-big'] }).run(input);

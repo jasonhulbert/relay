@@ -3,8 +3,21 @@
 // One OS process per active orchestrator (C6).
 export { runOrchestrator, InjectedKill } from './orchestrator';
 export type { RunOptions, OrchestratorResult, FaultPoint, ChildInjection } from './orchestrator';
-export { stubExecutor, scriptedExecutor } from './executor';
-export type { Executor, ExecutorInput, ExecutorResult, ScriptedExecutorOptions } from './executor';
+export { stubExecutor, scriptedExecutor, stubCapabilities, STUB_USAGE } from './executor';
+export type {
+  Executor,
+  ExecutorInput,
+  ExecutorResult,
+  ExecutorContext,
+  ExecutorUsage,
+  ExecutorCapabilities,
+  McpServerConfig,
+  ScriptedExecutorOptions,
+} from './executor';
+// The Claude executor adapter (M4 Phase 1): the first real provider behind the
+// uniform contract. Codex follows in Phase 2.
+export { claudeExecutor, parseClaudeStream, buildExecutorPrompt } from './adapters/claude';
+export type { ClaudeAdapterOptions, ParsedClaudeStream } from './adapters/claude';
 export { stubCritic, scriptedCritic } from './critic';
 export type { ScriptedCriticOptions } from './critic';
 // Promotion re-decomposition (design §3.9): the deterministic stub a promoted

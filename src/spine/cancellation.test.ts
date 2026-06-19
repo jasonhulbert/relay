@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { pendingIntents, readNode, writeDecision } from '../relay-state/index';
 import type { Executor, ExecutorResult } from './index';
-import { runOrchestrator, seedFixture } from './index';
+import { runOrchestrator, seedFixture, stubCapabilities } from './index';
 
 const ROOT_ID = 'root';
 const LEAF_ID = 'leaf-1';
@@ -18,6 +18,7 @@ async function freshRelay(): Promise<{ base: string; relayDir: string; workRoot:
 // target terminal BEFORE the dispatch loop, so a correctly-wired orchestrator never
 // reaches this — it is the proof that cancellation preempts work, not the reverse.
 const refusingExecutor: Executor = {
+  capabilities: () => stubCapabilities,
   run(): Promise<ExecutorResult> {
     throw new Error('a cancelled node must not be dispatched');
   },

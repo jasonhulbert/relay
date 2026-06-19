@@ -393,7 +393,15 @@ async function dispatchLeaf(
 
     const worktree = join(workRoot, leafId);
     await mkdir(worktree, { recursive: true });
-    const result = await executor.run({ spec: node.spec, worktree });
+    // Carry the node's accumulated learnings as context so a retried or
+    // re-decomposed unit does not relearn them (design §3.5). No MCP servers are
+    // granted yet — the code-owned MCP loop is Phase 4.
+    const result = await executor.run({
+      spec: node.spec,
+      context: { learnings: node.learnings },
+      worktree,
+      mcpServers: [],
+    });
     fault('after-executor');
 
     // T2: persist the self-report (orchestrator-visible) + evidence refs. The diff
