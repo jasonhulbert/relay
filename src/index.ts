@@ -2,7 +2,7 @@
 declare const __RELAY_VERSION__: string;
 
 import { devRun } from './spine/index';
-import type { DevRunOptions } from './spine/index';
+import type { DevRunOptions, Provider } from './spine/index';
 
 const USAGE = `relay v${__RELAY_VERSION__}
 A terminal-based, multi-provider loop generator and orchestrator.
@@ -14,6 +14,7 @@ Commands:
   dev-run --outcome <text>   Run the REAL orchestrator against this project's
                              user-global ~/.relay/ store and print a recap.
     [--project <path>]       Project to run for (default: cwd).
+    [--provider <name>]      Primary executor: claude | codex (default: claude).
     [--model <name>]         Executor model override (default: cheapest).
     [--check <command>]      Leaf command verification (default: always-pass).
 
@@ -37,6 +38,14 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
     projectPath: flag(args, '--project') ?? process.cwd(),
     outcome,
   };
+  const provider = flag(args, '--provider');
+  if (provider !== undefined) {
+    if (provider !== 'claude' && provider !== 'codex') {
+      process.stderr.write(`dev-run: --provider must be claude or codex (got ${provider})\n`);
+      return 2;
+    }
+    devOpts.provider = provider satisfies Provider;
+  }
   const model = flag(args, '--model');
   if (model !== undefined) devOpts.executorModel = model;
   const check = flag(args, '--check');

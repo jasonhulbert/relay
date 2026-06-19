@@ -24,6 +24,15 @@ export {
   DEFAULT_CLAUDE_MODEL,
 } from './adapters/claude';
 export type { ClaudeAdapterOptions, ParsedClaudeStream } from './adapters/claude';
+// The Codex executor adapter (M4 Phase 3): the second real provider behind the
+// uniform contract, which the swap-provider rung switches to on failure.
+export {
+  codexExecutor,
+  parseCodexStream,
+  buildCodexArgs,
+  DEFAULT_CODEX_MODEL,
+} from './adapters/codex';
+export type { CodexAdapterOptions, ParsedCodexStream } from './adapters/codex';
 export { stubCritic, scriptedCritic } from './critic';
 export type { ScriptedCriticOptions } from './critic';
 // Promotion re-decomposition (design §3.9): the deterministic stub a promoted
@@ -58,4 +67,4 @@ export type {
 } from './relay-home';
 // The dev run harness (M4 Phase 2): the first operator-visible REAL run.
 export { devRun } from './dev-run';
-export type { DevRunOptions, DevRunResult } from './dev-run';
+export type { DevRunOptions, DevRunResult, Provider } from './dev-run';

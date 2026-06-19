@@ -102,6 +102,11 @@ export interface ChildInjection {
 
 export interface RunOptions {
   executor?: Executor;
+  // The alternate-provider executor the `swap-provider` rung re-dispatches under
+  // (design §3.7): when a leaf fails on the primary, the ladder swaps Claude↔Codex
+  // rather than re-running the same provider. Omitted (the M1–M3 stub path) keeps
+  // the swap rung re-dispatching the primary, so stub ladder tests are unaffected.
+  swapExecutor?: Executor;
   critic?: CriticSpawn;
   // Worktree root; defaults to a `worktrees/` sibling of `.relay/`. Worktrees are
   // executor sandboxes, never part of the `.relay/` record.
@@ -159,6 +164,9 @@ interface LeafContext {
   region: string;
   runId: string;
   executor: Executor;
+  // The alternate provider the `swap-provider` rung dispatches under; falls back
+  // to `executor` when no second provider is configured (the stub path).
+  swapExecutor: Executor;
   critic: CriticSpawn;
   workRoot: string;
   faultAt: RunOptions['faultAt'];
@@ -356,7 +364,18 @@ async function dispatchLeaf(
   leaf: NodeRecord,
   ctx: LeafContext,
 ): Promise<LeafOutcome> {
-  const { region, runId, executor, critic, workRoot, faultAt, caps, decompose, writes } = ctx;
+  const {
+    region,
+    runId,
+    executor,
+    swapExecutor,
+    critic,
+    workRoot,
+    faultAt,
+    caps,
+    decompose,
+    writes,
+  } = ctx;
   const leafId = leaf.id;
   const evDir = relayPaths(relayDir).evidenceDir(runId);
   const evRel = (rel: string): string => `evidence/${runId}/${rel}`;
@@ -376,7 +395,7 @@ async function dispatchLeaf(
   // then either the executor's too-big sizing signal or the critic's graded
   // verdict. Re-runnable: each call discards the prior attempt's worktree first,
   // so a rehydrated run reproduces an identical record.
-  const attempt = async (): Promise<AttemptResult> => {
+  const attempt = async (exec: Executor): Promise<AttemptResult> => {
     fault('before-dispatch');
 
     // T1: fresh active state, atop a discarded prior attempt (idempotent
@@ -396,7 +415,7 @@ async function dispatchLeaf(
     // Carry the node's accumulated learnings as context so a retried or
     // re-decomposed unit does not relearn them (design §3.5). No MCP servers are
     // granted yet — the code-owned MCP loop is Phase 4.
-    const result = await executor.run({
+    const result = await exec.run({
       spec: node.spec,
       context: { learnings: node.learnings },
       worktree,
@@ -543,9 +562,15 @@ async function dispatchLeaf(
   // loop's; the empty-test `for` is bounded by the attempt cap inside `step`.
   const ladder = new EscalationLadder(caps);
   const usage: RailUsage = { attempts: 0, tokens: 0, elapsedMs: 0 };
+  // The provider the next attempt dispatches under. Starts on the primary; the
+  // `swap-provider` rung flips it to the alternate so a leaf that fails on one
+  // provider is re-tried under the other (design §3.7). On the stub path
+  // `swapExecutor === executor`, so the swap is a no-op and the rung is a plain
+  // re-dispatch — exactly the pre-M4 behavior.
+  let activeExecutor = executor;
   for (;;) {
     usage.attempts += 1;
-    const result = await attempt();
+    const result = await attempt(activeExecutor);
     const step = ladder.step(result.signal, usage);
     if (step.kind === 'done') {
       if (!result.verdict) {
@@ -564,9 +589,14 @@ async function dispatchLeaf(
     if (step.rung === 'promote') {
       return await promote(result);
     }
-    // retry / swap-provider / raise-tier: re-dispatch. On stubs the rung identity
-    // does not change the executor (real provider/tier swaps arrive at M4); the
-    // loop re-attempts and the ladder advances on the next verdict.
+    // retry / swap-provider / raise-tier: re-dispatch. `swap-provider` flips to the
+    // alternate provider for the next attempt (a real Claude↔Codex swap at M4);
+    // retry and raise-tier keep the current provider. The loop re-attempts and the
+    // ladder advances on the next verdict. (raise-tier as a real model-tier bump is
+    // a later milestone; today it is a same-provider re-dispatch.)
+    if (step.rung === 'swap-provider') {
+      activeExecutor = swapExecutor;
+    }
   }
 }
 
@@ -618,6 +648,8 @@ export async function runOrchestrator(
   opts: RunOptions = {},
 ): Promise<OrchestratorResult> {
   const executor = opts.executor ?? stubExecutor;
+  // No second provider configured → swap re-dispatches the primary (stub path).
+  const swapExecutor = opts.swapExecutor ?? executor;
   const critic = opts.critic ?? stubCritic;
   const caps = opts.caps ?? DEFAULT_CAPS;
   const decompose = opts.decompose ?? stubDecompose;
@@ -689,6 +721,7 @@ export async function runOrchestrator(
         region,
         runId: manifest.runId,
         executor,
+        swapExecutor,
         critic,
         workRoot,
         faultAt: opts.faultAt,

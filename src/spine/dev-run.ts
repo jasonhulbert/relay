@@ -17,18 +17,26 @@ import type { ExecutorUsage } from './executor';
 import type { Executor } from './executor';
 import { claudeExecutor } from './adapters/claude';
 import type { ClaudeAdapterOptions } from './adapters/claude';
+import { codexExecutor } from './adapters/codex';
+import type { CodexAdapterOptions } from './adapters/codex';
 import { runOrchestrator } from './orchestrator';
-import type { OrchestratorResult } from './orchestrator';
+import type { OrchestratorResult, RunOptions } from './orchestrator';
 import { seedFixture } from './seed';
 import type { SeedOptions } from './seed';
 import { commitStore, ensureProjectStore } from './relay-home';
 import type { EnsureStoreOptions } from './relay-home';
+
+export type Provider = 'claude' | 'codex';
 
 export interface DevRunOptions {
   // The project the run is for; its absolute path keys the global store.
   projectPath: string;
   // The concrete outcome the executor must achieve (seeded onto the leaf).
   outcome: string;
+  // Which provider drives the primary executor; defaults to Claude. The
+  // swap-provider rung re-dispatches under the OTHER provider (cheapest model),
+  // so a Codex run is observable through the same recap.
+  provider?: Provider;
   // The leaf's command verification; defaults to an always-pass check so the
   // harness's happy path does not depend on a real test command existing yet.
   check?: string;
@@ -74,6 +82,20 @@ function recordingExecutor(inner: Executor, sink: ExecutorUsage[]): Executor {
       return result;
     },
   };
+}
+
+// Build a real provider executor at its cheapest default, with an optional
+// per-role model override (the cost-guardrail knob). Both adapters expose the
+// same `{ model }` option shape, so provider selection is a single switch.
+function buildProviderExecutor(provider: Provider, model?: string): Executor {
+  if (provider === 'claude') {
+    const claudeOpts: ClaudeAdapterOptions = {};
+    if (model !== undefined) claudeOpts.model = model;
+    return claudeExecutor(claudeOpts);
+  }
+  const codexOpts: CodexAdapterOptions = {};
+  if (model !== undefined) codexOpts.model = model;
+  return codexExecutor(codexOpts);
 }
 
 function formatUsd(cost: number | null): string {
@@ -170,16 +192,26 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   await seedFixture(relayDir, seedOpts);
 
   const usages: ExecutorUsage[] = [];
-  const claudeOpts: ClaudeAdapterOptions = {};
-  if (opts.executorModel !== undefined) claudeOpts.model = opts.executorModel;
-  const inner = opts.executor ?? claudeExecutor(claudeOpts);
-  const executor = recordingExecutor(inner, usages);
+  const provider: Provider = opts.provider ?? 'claude';
+  // The provider the swap-provider rung re-dispatches under.
+  const otherProvider: Provider = provider === 'claude' ? 'codex' : 'claude';
 
-  const result = await runOrchestrator(relayDir, 'root', {
+  const primaryInner = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
+  const executor = recordingExecutor(primaryInner, usages);
+
+  const runOpts: RunOptions = {
     executor,
     // Worktrees are executor sandboxes, kept OUTSIDE the git-tracked store.
     workRoot: store.workRoot,
-  });
+  };
+  // The swap-provider rung dispatches under the OTHER provider at its cheapest
+  // default (the per-role override raises only the primary). Skipped when a test
+  // injects its own executor — it then owns the swap behavior too.
+  if (opts.executor === undefined) {
+    runOpts.swapExecutor = recordingExecutor(buildProviderExecutor(otherProvider), usages);
+  }
+
+  const result = await runOrchestrator(relayDir, 'root', runOpts);
 
   const recap = await renderRecap(
     relayDir,
