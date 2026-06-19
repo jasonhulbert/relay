@@ -22,6 +22,38 @@ function runCommand(check: string): Promise<number> {
   });
 }
 
+// A controllable critic for M3's deterministic failure tests: it returns a
+// scripted sequence of verdicts so a test can inject persistent failure
+// (`['fail']`) or fail-then-succeed (`['fail', 'fail', 'pass']`) without a real
+// provider. The last entry repeats once the script is exhausted, so a one-entry
+// script is a constant. The command critic above is unchanged; the real
+// agent-critic arrives at M4.
+export interface ScriptedCriticOptions {
+  // Verdict per call, consumed in order; the final entry repeats thereafter.
+  results: ('pass' | 'fail')[];
+  provider?: string;
+}
+
+export function scriptedCritic(opts: ScriptedCriticOptions): CriticSpawn {
+  if (opts.results.length === 0) {
+    throw new Error('scriptedCritic requires at least one result');
+  }
+  const provider = opts.provider ?? 'stub-critic';
+  let call = 0;
+  // The scripted verdict ignores the projection; a zero-arg function still
+  // satisfies `CriticSpawn`.
+  return (): Promise<CriticVerdict> => {
+    const result = opts.results[Math.min(call, opts.results.length - 1)];
+    call += 1;
+    return Promise.resolve({
+      pass: result === 'pass',
+      provider,
+      rationale: `scripted critic returned ${result} (call ${call.toString()})`,
+      evidenceRefs: [],
+    });
+  };
+}
+
 export const stubCritic: CriticSpawn = async (view): Promise<CriticVerdict> => {
   const command = view.spec.verifications.find((v) => v.kind === 'command');
   if (!command) {
