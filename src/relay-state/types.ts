@@ -11,8 +11,10 @@
 export type NodeKind = 'branch' | 'leaf';
 
 // Node lifecycle. M1 drives a leaf pending -> active -> done; `blocked` is the
-// terminal exhaustion state (design §3.7). Later milestones add quarantine.
-export type NodeStatus = 'pending' | 'active' | 'done' | 'blocked';
+// terminal exhaustion state (design §3.7) and `cancelled` is the terminal state a
+// human decision drives from the decision inbox (design §3.9, §3.11). Later
+// milestones add quarantine.
+export type NodeStatus = 'pending' | 'active' | 'done' | 'blocked' | 'cancelled';
 
 // Verification kinds, cheapest-first (design §6.3). M1 exercises `command`.
 export type VerificationKind =
@@ -119,6 +121,29 @@ export interface OutcomeContract {
   // M2 — the typed seam union (F3) lands in a later milestone; the field is
   // present now so the contract shape is stable.
   seamEvidence: EvidenceRef[];
+}
+
+// A human decision queued in the decision inbox (I4, design §3.11). The inbox is
+// a human-OWNED region: the human writes decisions into it and the orchestrator
+// only reads and drains them at activation, applying each as an atomic transition
+// within its own node region (never mutating the inbox — sole-writer ownership
+// holds at both ends). `cancel` is the lone decision kind in M3 (serial-form
+// cancellation); budget adjustments and gate approvals are later milestones.
+export type DecisionKind = 'cancel';
+
+export interface DecisionRecord {
+  // Stable id, unique within the inbox; also the inbox filename stem. The
+  // orchestrator never rewrites the inbox, so idempotency on re-drain comes from
+  // the target node's own terminal status, not from removing this file.
+  decisionId: string;
+  kind: DecisionKind;
+  // The node this decision acts on. The orchestrator applies only decisions whose
+  // target is a node it owns (its branch or an in-process leaf child); a decision
+  // for a sub-orchestrator's node is drained by that child's own process.
+  targetNodeId: string;
+  // Optional human note, folded into the cancellation reflection persisted to the
+  // node before its worktree is discarded (the keep-lesson pattern, §3.5/§3.9).
+  note: string | null;
 }
 
 // The root manifest (design §4). Describes the run and the root node; run-level

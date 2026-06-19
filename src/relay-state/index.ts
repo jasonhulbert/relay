@@ -13,6 +13,8 @@ export type {
   BlockedRecord,
   NodeRecord,
   OutcomeContract,
+  DecisionKind,
+  DecisionRecord,
   RootManifest,
 } from './types';
 
@@ -37,5 +39,6 @@ export {
 } from './contract';
 export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } from './journal';
 export type { IntentWrite } from './journal';
+export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';
 export { toCriticView, runCritic } from './projection';
 export type { CriticView, CriticSpawn } from './projection';

@@ -18,6 +18,7 @@ import {
   applyIntent,
   atomicWriteFile,
   commit,
+  readInbox,
   readManifest,
   readNode,
   relativeContractPath,
@@ -35,6 +36,7 @@ import type {
   BlockedRecord,
   CriticSpawn,
   CriticVerdict,
+  DecisionRecord,
   EvidenceRef,
   IntentWrite,
   NodeRecord,
@@ -140,6 +142,10 @@ export interface OrchestratorResult {
   // pending sub-branch its new children get driven on a later activation, so it is
   // reported here and counted not-done.
   promotedNodes: string[];
+  // Nodes cancelled by a drained human decision this run (design §3.9, §3.11). A
+  // cancelled node is terminal and not-done, so it halts and surfaces like a
+  // blocked one; reported here for observability.
+  cancelledNodes: string[];
   // Intent ids rolled forward at the start of this run (empty on a clean start).
   rolledForward: string[];
   // The node-id this process is bound to — its journal region (C6).
@@ -230,6 +236,105 @@ function renderVerdict(node: NodeRecord): string {
 
 async function discardWorktree(workRoot: string, leafId: string): Promise<void> {
   await rm(join(workRoot, leafId), { recursive: true, force: true });
+}
+
+// A node that is terminal but NOT done — blocked (ladder exhaustion, §3.7) or
+// cancelled (human decision, §3.9). Either makes an ancestor unable to integrate a
+// complete layer, so the halt-and-surface gate treats them the same: the parent
+// can never be `done`.
+function isTerminalNotDone(status: NodeStatus | undefined): boolean {
+  return status === 'blocked' || status === 'cancelled';
+}
+
+// The keep-lesson reflection persisted to a node when a human cancels it (§3.5's
+// persist-then-discard pattern, extended to cancelled work, §3.9). Authored so the
+// reason the work stopped survives the worktree reset.
+function cancellationReflection(nodeId: string, d: DecisionRecord): string {
+  const base = `node \`${nodeId}\` was cancelled by human decision \`${d.decisionId}\``;
+  const why = d.note === null ? base : `${base}: ${d.note}`;
+  return `${why}. Worktree discarded; learnings persisted.`;
+}
+
+// The self-sufficient record a parent takes when it halts-and-surfaces above a
+// terminal-not-done child (§3.7). A blocked child contributes its standing critic
+// reason; a cancelled child contributes its cancellation reflection. Either way the
+// parent names the descendant so a reader up the chain sees what is wrong without
+// descending.
+function surfacedRecord(rootId: string, childId: string, child: NodeRecord): BlockedRecord {
+  if (child.blocked !== null) {
+    return {
+      reason: `descendant \`${childId}\` is blocked`,
+      rungsSpent: [],
+      criticReason: child.blocked.criticReason,
+      humanFacing: child.blocked.humanFacing,
+    };
+  }
+  // Cancelled child: no blocked record, but the cancellation reflection (the last
+  // learning) carries the standing reason.
+  const reflection = child.learnings[child.learnings.length - 1];
+  return {
+    reason: `descendant \`${childId}\` was cancelled`,
+    rungsSpent: [],
+    criticReason: reflection ?? `descendant \`${childId}\` was cancelled by human decision`,
+    humanFacing: `branch \`${rootId}\` halted: descendant \`${childId}\` was cancelled.`,
+  };
+}
+
+// Drain the decision inbox at activation (design §3.10, §3.11). The inbox is a
+// human-owned region this process only READS; for each pending decision targeting
+// a node THIS process owns (its branch or an in-process leaf child), apply it as
+// an atomic transition within this region. In M3 the lone decision kind is
+// `cancel`: persist the keep-lesson reflection and flip the node to the terminal
+// `cancelled` status in ONE atomic commit, then discard its worktree
+// (persist-then-discard, §3.5). Idempotent across rehydration without ever writing
+// the inbox back: a node already terminal is skipped, so its own terminal status —
+// not a removed inbox file — is the applied-marker. A decision for a sub-
+// orchestrator's node is left for that child's own process to drain.
+async function drainDecisionInbox(
+  relayDir: string,
+  region: string,
+  root: NodeRecord,
+  workRoot: string,
+  writes: Set<string>,
+): Promise<{ root: NodeRecord; cancelled: string[] }> {
+  const decisions = await readInbox(relayDir);
+  const cancelled: string[] = [];
+  let current = root;
+  for (const d of decisions) {
+    const targetId = d.targetNodeId;
+    // Ownership: this process may write only its own branch node and its in-process
+    // leaf children. A decision targeting a branch child (its own region/process)
+    // or an unrelated node is not ours to apply.
+    let owned = targetId === root.id;
+    if (!owned && root.children.includes(targetId)) {
+      owned = (await readNode(relayDir, targetId)).kind === 'leaf';
+    }
+    if (!owned) {
+      continue;
+    }
+    const node = await readNode(relayDir, targetId);
+    // Idempotent: a terminal node is never re-cancelled (re-drain after a teardown
+    // lands here and stops). A still-running node is taken terminal.
+    if (node.status === 'done' || isTerminalNotDone(node.status)) {
+      continue;
+    }
+    const cancelledNode: NodeRecord = {
+      ...node,
+      status: 'cancelled',
+      learnings: [...node.learnings, cancellationReflection(targetId, d)],
+    };
+    writes.add(relativeNodePath(targetId));
+    await commit(relayDir, region, [
+      { path: relativeNodePath(targetId), content: serializeNode(cancelledNode) },
+    ]);
+    // Learnings are now durable; only then reset the worktree (§3.5/§3.9).
+    await discardWorktree(workRoot, targetId);
+    cancelled.push(targetId);
+    if (targetId === root.id) {
+      current = cancelledNode;
+    }
+  }
+  return { root: current, cancelled };
 }
 
 // One dispatch attempt's result: the persisted active node, the ladder signal it
@@ -527,6 +632,29 @@ export async function runOrchestrator(
   const childStatuses: Record<string, NodeStatus> = {};
   const childContracts: Record<string, OutcomeContract> = {};
   const promotedNodes: string[] = [];
+
+  // Rehydration step 2: drain the decision inbox before driving any work (§3.10).
+  // A pending human decision is applied as an atomic transition in this region; in
+  // M3 that is serial-form cancellation, which takes its target terminal.
+  const drained = await drainDecisionInbox(relayDir, region, root, workRoot, writes);
+  root = drained.root;
+  const cancelledNodes = drained.cancelled;
+  // Cancelling the branch itself halts the whole activation: dispatch nothing new,
+  // surface the terminal node, and return. (Serial form — no seam graph to trace
+  // and no independent work to drain; both are deferred to concurrency, M10.)
+  if (root.status === 'cancelled') {
+    return {
+      rootStatus: 'cancelled',
+      leafStatuses,
+      childStatuses,
+      childContracts,
+      promotedNodes,
+      cancelledNodes,
+      rolledForward,
+      region,
+      ownedWrites: [...writes].sort(),
+    };
+  }
   // The critic verdicts certifying this node's children — the structural fact that
   // rides up in this node's own contract (§3.6, certified turtles-all-the-way-up).
   const childVerdictRefs: EvidenceRef[] = [];
@@ -540,10 +668,11 @@ export async function runOrchestrator(
         }
         continue;
       }
-      if (child.status === 'blocked') {
-        // A terminal-blocked leaf is read in ONE pass and never re-dispatched: its
-        // self-sufficient record already says "do not re-run the ladder" (§3.7).
-        leafStatuses[childId] = 'blocked';
+      if (isTerminalNotDone(child.status)) {
+        // A terminal leaf is read in ONE pass and never (re-)dispatched: a blocked
+        // leaf's record already says "do not re-run the ladder" (§3.7), and a
+        // cancelled leaf was taken terminal by a drained human decision (§3.9).
+        leafStatuses[childId] = child.status;
         continue;
       }
       // Rehydration: a non-`done` leaf is (re-)dispatched under the ladder, which
@@ -598,26 +727,25 @@ export async function runOrchestrator(
     throw new InjectedKill('after-child-contract');
   }
 
-  // Halt-and-surface (design §3.7): a branch with ANY blocked descendant can never
-  // be `done`. It takes a `blocked` status carrying a self-sufficient record that
-  // names the blocked child and inherits its standing reason, so the failure
-  // propagates up the parent chain to root with no route-around. Checked before the
-  // done gate; the two are mutually exclusive (a blocked child is never `done`).
-  // Idempotent on rehydration: a branch already `blocked` is left untouched.
-  const blockedChildId = root.children.find(
-    (id) => leafStatuses[id] === 'blocked' || childStatuses[id] === 'blocked',
+  // Halt-and-surface (design §3.7, §3.9): a branch with ANY terminal-not-done
+  // descendant — blocked (ladder exhaustion) or cancelled (human decision) — can
+  // never be `done`. It takes a `blocked` status carrying a self-sufficient record
+  // that names the descendant and inherits its standing reason, so the failure (or
+  // cancellation) propagates up the parent chain to root with no route-around.
+  // Checked before the done gate; the two are mutually exclusive (a terminal child
+  // is never `done`). Idempotent on rehydration: a branch already terminal is left
+  // untouched.
+  const terminalChildId = root.children.find(
+    (id) => isTerminalNotDone(leafStatuses[id]) || isTerminalNotDone(childStatuses[id]),
   );
-  if (root.status !== 'blocked' && blockedChildId !== undefined) {
-    const childBlocked = (await readNode(relayDir, blockedChildId)).blocked;
-    const record: BlockedRecord = {
-      reason: `descendant \`${blockedChildId}\` is blocked`,
-      rungsSpent: [],
-      criticReason: childBlocked?.criticReason ?? 'a descendant could not be completed',
-      humanFacing:
-        childBlocked?.humanFacing ??
-        `branch \`${rootId}\` halted: descendant \`${blockedChildId}\` is blocked.`,
+  // root is already non-cancelled here: a cancelled root returned early above.
+  if (root.status !== 'blocked' && terminalChildId !== undefined) {
+    const childNode = await readNode(relayDir, terminalChildId);
+    root = {
+      ...root,
+      status: 'blocked',
+      blocked: surfacedRecord(rootId, terminalChildId, childNode),
     };
-    root = { ...root, status: 'blocked', blocked: record };
     writes.add(relativeNodePath(rootId));
     await commit(relayDir, region, [
       { path: relativeNodePath(rootId), content: serializeNode(root) },
@@ -664,6 +792,7 @@ export async function runOrchestrator(
     childStatuses,
     childContracts,
     promotedNodes,
+    cancelledNodes,
     rolledForward,
     region,
     ownedWrites: [...writes].sort(),

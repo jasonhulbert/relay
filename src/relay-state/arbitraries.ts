@@ -2,7 +2,7 @@
 // property tests (node round-trip, projection chokepoint). Kept out of the
 // production bundle by being unreferenced from the spine entry point.
 import fc from 'fast-check';
-import type { NodeRecord, OutcomeContract, RootManifest } from './types';
+import type { DecisionRecord, NodeRecord, OutcomeContract, RootManifest } from './types';
 
 // Path-safe ids (matches paths.ts `assertSafeId`, which also rejects the
 // traversal segments `.` and `..`).
@@ -92,7 +92,7 @@ export const arbNodeRecord: fc.Arbitrary<NodeRecord> = fc.record({
   id: safeId,
   parentId: fc.option(safeId, { nil: null }),
   kind: fc.constantFrom('branch', 'leaf'),
-  status: fc.constantFrom('pending', 'active', 'done', 'blocked'),
+  status: fc.constantFrom('pending', 'active', 'done', 'blocked', 'cancelled'),
   spec: arbSpec,
   children: fc.array(safeId, { maxLength: 5 }),
   selfReport: fc.option(trickyText, { nil: null }),
@@ -107,6 +107,13 @@ export const arbRootManifest: fc.Arbitrary<RootManifest> = fc.record({
   rootId: safeId,
   spec: arbSpec,
   createdAt: trickyText,
+});
+
+export const arbDecisionRecord: fc.Arbitrary<DecisionRecord> = fc.record({
+  decisionId: safeId,
+  kind: fc.constant('cancel'),
+  targetNodeId: safeId,
+  note: fc.option(trickyText, { nil: null }),
 });
 
 export const arbOutcomeContract: fc.Arbitrary<OutcomeContract> = fc.record({
