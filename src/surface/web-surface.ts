@@ -16,14 +16,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServerConfig } from '../relay-state/index';
-import type {
-  AccessibilitySnapshot,
-  Interaction,
-  QueryStateRequest,
-  QueryStateResult,
-  Screenshot,
-  Surface,
-  SurfaceCapabilities,
+import {
+  SurfaceCallError,
+  type AccessibilitySnapshot,
+  type Interaction,
+  type QueryStateRequest,
+  type QueryStateResult,
+  type Screenshot,
+  type Surface,
+  type SurfaceCapabilities,
 } from './types';
 
 // Pinned at build time (the verified-tooling discipline, design constraint): the
@@ -77,8 +78,7 @@ export function webSurfaceCapabilities(): SurfaceCapabilities {
 // text content, so we lift that into a thrown Error rather than parsing on.
 function assertOk(result: CallToolResult, tool: string): void {
   if (result.isError === true) {
-    const text = textOf(result);
-    throw new Error(`playwright mcp ${tool} failed: ${text || '(no detail)'}`);
+    throw new SurfaceCallError(tool, textOf(result));
   }
 }
 

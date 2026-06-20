@@ -12,6 +12,12 @@ import type { Server } from 'node:http';
 // The fixture markup. The heading and button text are the semantic anchors the
 // snapshot assertions key on; clicking the button sets `#status` to a known string,
 // which `queryState` reads back to prove an interaction took effect.
+//
+// Two regions support the visual critic path (Phase 3): a stable target component
+// (`#panel`, the heading + status + button) the critic scopes its check to (V7), and
+// an UNRELATED self-updating region (`#clock`, a tick counter on a timer) that
+// changes every frame. A component-scoped check must ignore the ticking clock — that
+// is the V7 isolation the scoped snapshot/screenshot proves.
 export const FIXTURE_HTML = `<!doctype html>
 <html lang="en">
   <head>
@@ -20,7 +26,9 @@ export const FIXTURE_HTML = `<!doctype html>
     <title>Relay Surface Fixture</title>
   </head>
   <body>
-    <main>
+    <!-- Unrelated changing region: ticks on a timer, must not affect a scoped check. -->
+    <aside id="clock" aria-label="clock" data-testid="clock">tick 0</aside>
+    <main id="panel" aria-label="panel">
       <h1>Relay Surface Fixture</h1>
       <p id="status" data-testid="status">idle</p>
       <button id="go" type="button">Run check</button>
@@ -29,6 +37,11 @@ export const FIXTURE_HTML = `<!doctype html>
       document.getElementById('go').addEventListener('click', () => {
         document.getElementById('status').textContent = 'ran';
       });
+      let ticks = 0;
+      setInterval(() => {
+        ticks += 1;
+        document.getElementById('clock').textContent = 'tick ' + ticks;
+      }, 50);
     </script>
   </body>
 </html>

@@ -11,6 +11,7 @@ export type {
   QueryStateRequest,
   QueryStateResult,
 } from './types';
+export { SurfaceCallError } from './types';
 export {
   WebSurface,
   webSurfaceCapabilities,
@@ -41,3 +42,14 @@ export type {
   CaffeinateController,
   TccGate,
 } from './local-host-runner';
+export { parseRefs, replayPath, classifyReplayFailure, replayAndGrade } from './visual-critic';
+export type {
+  MatchGranularity,
+  ElementScope,
+  VisualVerification,
+  IntentEvidence,
+  VisualGrade,
+  IntentJudge,
+  ReplayClassification,
+  VisualVerdict,
+} from './visual-critic';

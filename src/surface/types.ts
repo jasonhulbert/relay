@@ -95,6 +95,24 @@ export interface QueryStateResult {
   value: string;
 }
 
+// A typed Surface failure (design §13, V5). A driver call that fails surfaces this
+// rather than a bare `Error`, so the visual critic's failure classification keys off
+// a structural `tool` + `detail` — never a brittle parse of a free-text message
+// (Rule 11: fail loud, and loudly *typed*). `tool` is the driver operation that
+// failed (e.g. the Playwright `browser_*` tool); `detail` is the driver's reason,
+// carried verbatim so a transient mode (`timeout`, navigation error) is recognizable
+// without a model call.
+export class SurfaceCallError extends Error {
+  readonly tool: string;
+  readonly detail: string;
+  constructor(tool: string, detail: string) {
+    super(`playwright mcp ${tool} failed: ${detail || '(no detail)'}`);
+    this.name = 'SurfaceCallError';
+    this.tool = tool;
+    this.detail = detail;
+  }
+}
+
 // The one Surface contract every driver implements (design §13). Lifecycle is
 // explicit: `launch` brings the surface up at a target and `close` tears it down;
 // the spine owns one long-lived instance and shares it across checks rather than
