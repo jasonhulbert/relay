@@ -10,6 +10,7 @@
 // path (the M4 constraint). A model with no row is reported `unpriced` rather than
 // crashing a completed run; the rollup surfaces the gap loudly (Rule 11) so a
 // missing rate is visible, not silently counted as $0.
+import { composeRunCost } from '../relay-state/index';
 import type { ExecutorUsage } from './executor';
 import type { CallUsage, CostSource } from '../relay-state/index';
 
@@ -65,53 +66,34 @@ function fmtUsd(cost: number | null): string {
   return cost === null ? 'n/a (unpriced)' : `$${cost.toFixed(6)}`;
 }
 
-// Sum a set of records' costs, treating an `unpriced` (null) figure as a gap rather
-// than zero: the total is reported alongside a count of uncosted calls so a missing
-// price row never silently understates the run cost.
-function sumCost(records: readonly CallUsage[]): { total: number; uncosted: number } {
-  let total = 0;
-  let uncosted = 0;
-  for (const r of records) {
-    if (r.costUsd === null) uncosted += 1;
-    else total += r.costUsd;
-  }
-  return { total, uncosted };
-}
-
 // Render the per-run cost rollup (Markdown, F5). Two sections: per-node (per-outcome)
-// attribution — each node's calls summed, by role — and the run total. Composed
-// purely from the persisted per-call records, so it is a faithful projection of the
-// evidence store, not a separate source of truth.
+// attribution — each node's calls summed, by role — and the run total. Composed from
+// the structured `composeRunCost` projection of the persisted per-call records, the
+// SAME projection the operator web view renders, so the Markdown and the view can
+// never disagree on a node's burn or the run total. It is a faithful projection of
+// the evidence store, not a separate source of truth.
 export function renderCostRollup(runId: string, records: readonly CallUsage[]): string {
+  const rollup = composeRunCost(records);
   const lines: string[] = [`# cost rollup \`${runId}\``, ''];
 
-  const run = sumCost(records);
   lines.push(
-    `- Calls: ${records.length.toString()}`,
-    `- Run total: ${fmtUsd(records.length === 0 ? null : run.total)}` +
-      (run.uncosted > 0 ? `  (+${run.uncosted.toString()} uncosted call(s))` : ''),
+    `- Calls: ${rollup.calls.toString()}`,
+    `- Run total: ${fmtUsd(rollup.calls === 0 ? null : rollup.total)}` +
+      (rollup.uncosted > 0 ? `  (+${rollup.uncosted.toString()} uncosted call(s))` : ''),
     '',
     '## Per-node (per-outcome)',
   );
 
-  if (records.length === 0) {
+  if (rollup.calls === 0) {
     lines.push('- (no model calls this run)');
   }
 
-  const byNode = new Map<string, CallUsage[]>();
-  for (const r of records) {
-    const list = byNode.get(r.nodeId) ?? [];
-    list.push(r);
-    byNode.set(r.nodeId, list);
-  }
-  for (const nodeId of [...byNode.keys()].sort()) {
-    const nodeRecords = byNode.get(nodeId) ?? [];
-    const node = sumCost(nodeRecords);
+  for (const node of rollup.perNode) {
     lines.push(
-      `- \`${nodeId}\`: ${fmtUsd(node.total)}` +
+      `- \`${node.nodeId}\`: ${fmtUsd(node.total)}` +
         (node.uncosted > 0 ? `  (+${node.uncosted.toString()} uncosted)` : ''),
     );
-    for (const r of nodeRecords) {
+    for (const r of node.calls) {
       lines.push(
         `  - [${r.role} #${r.seq.toString()}] ${r.provider}` +
           `${r.model === null ? '' : `/${r.model}`} ` +

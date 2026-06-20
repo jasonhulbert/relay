@@ -2,8 +2,9 @@ import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { writeManifest, writeNode } from '../relay-state/index';
-import type { NodeRecord, OutcomeSpec, RootManifest } from '../relay-state/index';
+import { writeManifest, writeNode, writeUsage } from '../relay-state/index';
+import type { CallUsage, NodeRecord, OutcomeSpec, RootManifest } from '../relay-state/index';
+import { renderCostRollup } from '../spine/cost';
 import { projectRun } from './projection';
 
 function spec(outcome: string): OutcomeSpec {
@@ -135,6 +136,7 @@ describe('webview read-time projection', () => {
         ],
         blocked: null,
         depth: 2,
+        cost: null,
       };
       const leaf2View = {
         id: 'leaf-2',
@@ -152,6 +154,7 @@ describe('webview read-time projection', () => {
           humanFacing: 'needs a human decision',
         },
         depth: 1,
+        cost: null,
       };
       const midView = {
         id: 'mid',
@@ -164,6 +167,7 @@ describe('webview read-time projection', () => {
         evidenceRefs: [],
         blocked: null,
         depth: 1,
+        cost: null,
       };
       const rootView = {
         id: 'root',
@@ -176,6 +180,7 @@ describe('webview read-time projection', () => {
         evidenceRefs: [],
         blocked: null,
         depth: 0,
+        cost: null,
       };
 
       expect(projection).toEqual({
@@ -193,6 +198,8 @@ describe('webview read-time projection', () => {
         // Pre-order: root, then mid's subtree, then leaf-2.
         runLog: [rootView, midView, leaf1View, leaf2View],
         orphans: [],
+        // The fixture seeds no usage records, so the rollup is the empty-run shape.
+        cost: { calls: 0, total: 0, uncosted: 0, perNode: [] },
       });
     } finally {
       await rm(base, { recursive: true, force: true });
@@ -275,6 +282,80 @@ describe('webview read-time projection', () => {
       const projection = await projectRun(relayDir);
       expect(projection.orphans.map((o) => o.id)).toEqual(['stray']);
       expect(projection.runLog.map((n) => n.id)).toEqual(['root']);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // WHY: Phase 3 — the F5 cost rollup is the operator's cost-per-outcome view, and
+  // it must be composed at read time from the per-call usage records (not a stored
+  // artifact) and must MATCH the `.relay/` rollup M4 writes. This seeds usage
+  // records, then asserts (a) each node carries its attributed burn, with an
+  // unpriced call surfaced as a gap not folded into the total, (b) the run total
+  // sums the priced calls, and (c) the numbers equal what `renderCostRollup` (the
+  // persisted Markdown rollup) reports — both compose from the same projection, so a
+  // drift between the view and the rollup fails here.
+  test('surfaces per-node and per-run cost matching the rollup', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'relay-webview-'));
+    const relayDir = join(base, '.relay');
+    try {
+      await seedFixture(relayDir);
+
+      const call = (
+        over: Partial<CallUsage> & Pick<CallUsage, 'nodeId' | 'role' | 'seq'>,
+      ): CallUsage => ({
+        runId: 'run-1',
+        provider: 'codex',
+        model: 'gpt-5.4-mini',
+        inputTokens: 100,
+        cachedInputTokens: 0,
+        outputTokens: 50,
+        wallClockMs: 10,
+        costUsd: 0.002,
+        costSource: 'price-table',
+        ...over,
+      });
+      const records: CallUsage[] = [
+        call({ nodeId: 'leaf-1', role: 'executor', seq: 1, costUsd: 0.002 }),
+        call({
+          nodeId: 'leaf-1',
+          role: 'critic',
+          seq: 1,
+          provider: 'claude',
+          costUsd: 0.4,
+          costSource: 'direct',
+        }),
+        call({ nodeId: 'root', role: 'brain', seq: 0, costUsd: 0.01 }),
+        // An unpriced call on root — a gap, not $0.
+        call({ nodeId: 'root', role: 'executor', seq: 1, costUsd: null, costSource: 'unpriced' }),
+      ];
+      for (const r of records) await writeUsage(relayDir, r);
+
+      const projection = await projectRun(relayDir);
+
+      // Run total sums only the priced calls; the unpriced call is a surfaced gap.
+      expect(projection.cost.calls).toBe(4);
+      expect(projection.cost.total).toBeCloseTo(0.412, 10);
+      expect(projection.cost.uncosted).toBe(1);
+
+      // Per-node burn is attributed to the right outcome and reachable off the tree.
+      const byId = new Map(projection.runLog.map((n) => [n.id, n]));
+      expect(byId.get('leaf-1')?.cost?.total).toBeCloseTo(0.402, 10);
+      expect(byId.get('leaf-1')?.cost?.uncosted).toBe(0);
+      expect(byId.get('root')?.cost?.total).toBeCloseTo(0.01, 10);
+      expect(byId.get('root')?.cost?.uncosted).toBe(1);
+      // A node with no attributed call has no cost (a purely structural branch).
+      expect(byId.get('mid')?.cost).toBeNull();
+      expect(byId.get('leaf-2')?.cost).toBeNull();
+
+      // The view's numbers match the persisted Markdown rollup, byte-for-byte on the
+      // formatted figures — both are projections of the same records.
+      const rollup = renderCostRollup('run-1', records);
+      expect(rollup).toContain('Run total: $0.412000');
+      expect(rollup).toContain('`leaf-1`: $0.402000');
+      expect(rollup).toContain('`root`: $0.010000');
+      expect(`$${projection.cost.total.toFixed(6)}`).toBe('$0.412000');
+      expect(`$${(byId.get('leaf-1')?.cost?.total ?? 0).toFixed(6)}`).toBe('$0.402000');
     } finally {
       await rm(base, { recursive: true, force: true });
     }

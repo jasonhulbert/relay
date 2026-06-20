@@ -50,6 +50,8 @@ export {
 } from './contract';
 export { serializeLayer, deserializeLayer, readLayer, writeLayer, tryReadLayer } from './layer';
 export { serializeUsage, deserializeUsage, writeUsage, readRunUsage } from './usage';
+export { composeRunCost } from './cost-rollup';
+export type { NodeCost, RunCost } from './cost-rollup';
 export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } from './journal';
 export type { IntentWrite } from './journal';
 export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';

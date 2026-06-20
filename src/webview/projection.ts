@@ -9,14 +9,22 @@
 // Reads go through the existing `.relay/` readers (readManifest/readNode) so the
 // codec stays single-sourced; this module only enumerates and stitches.
 import { readdir } from 'node:fs/promises';
-import { readManifest, readNode, relayPaths } from '../relay-state/index';
+import {
+  composeRunCost,
+  readManifest,
+  readNode,
+  readRunUsage,
+  relayPaths,
+} from '../relay-state/index';
 import type {
   BlockedRecord,
   CriticVerdict,
   EvidenceRef,
+  NodeCost,
   NodeKind,
   NodeRecord,
   NodeStatus,
+  RunCost,
 } from '../relay-state/index';
 
 // A node's supervision summary — the operator-facing fields lifted off a
@@ -25,7 +33,10 @@ import type {
 // facts (status, provider, verdict, evidence refs), not the self-report. `provider`
 // is the critic's provider off the verdict (the model that graded the node), or
 // `null` before a verdict exists. `depth` is the node's distance from the root, so
-// a renderer can indent without re-deriving the hierarchy.
+// a renderer can indent without re-deriving the hierarchy. `cost` is this node's
+// budget burn (F5) — its attributed per-call spend, composed at read time from the
+// usage records — or `null` when no model call was attributed to the node (a purely
+// structural branch that only decomposed).
 export interface NodeView {
   id: string;
   parentId: string | null;
@@ -37,6 +48,7 @@ export interface NodeView {
   evidenceRefs: EvidenceRef[];
   blocked: BlockedRecord | null;
   depth: number;
+  cost: NodeCost | null;
 }
 
 // The composed tree node: a `NodeView` plus its children, recursively. The child
@@ -51,7 +63,9 @@ export interface TreeNode extends NodeView {
 // then each child subtree in declared order) — the global run log composed at read
 // time (design §4). `orphans` are node files present on disk but unreachable from
 // the root; they are surfaced rather than silently dropped (Rule 11) so a corrupt
-// or mid-write tree is visible to the operator instead of hidden.
+// or mid-write tree is visible to the operator instead of hidden. `cost` is the
+// whole-run F5 rollup (per-node spend and the run total), composed from the same
+// per-call usage records the per-node `cost` fields draw from.
 export interface RunProjection {
   runId: string;
   rootId: string;
@@ -60,9 +74,14 @@ export interface RunProjection {
   tree: TreeNode;
   runLog: NodeView[];
   orphans: NodeView[];
+  cost: RunCost;
 }
 
-function toNodeView(node: NodeRecord, depth: number): NodeView {
+function toNodeView(
+  node: NodeRecord,
+  depth: number,
+  costByNode: ReadonlyMap<string, NodeCost>,
+): NodeView {
   return {
     id: node.id,
     parentId: node.parentId,
@@ -74,6 +93,7 @@ function toNodeView(node: NodeRecord, depth: number): NodeView {
     evidenceRefs: node.evidenceRefs,
     blocked: node.blocked,
     depth,
+    cost: costByNode.get(node.id) ?? null,
   };
 }
 
@@ -100,6 +120,13 @@ export async function projectRun(relayDir: string): Promise<RunProjection> {
     );
   }
 
+  // The F5 cost rollup, composed at read time from the per-call usage records — the
+  // same projection the persisted Markdown rollup renders (composeRunCost), so the
+  // view's per-node burn and run total always match the `.relay/` rollup. Each
+  // node's `cost` is looked up from here; a node with no calls gets `null`.
+  const cost = composeRunCost(await readRunUsage(relayDir, manifest.runId));
+  const costByNode = new Map<string, NodeCost>(cost.perNode.map((n) => [n.nodeId, n]));
+
   const runLog: NodeView[] = [];
   const reached = new Set<string>();
 
@@ -110,13 +137,15 @@ export async function projectRun(relayDir: string): Promise<RunProjection> {
   function build(id: string, depth: number, ancestors: ReadonlySet<string>): TreeNode {
     const node = byId.get(id);
     if (node === undefined) {
-      throw new Error(`.relay/ projection: node \`${id}\` is referenced as a child but has no file`);
+      throw new Error(
+        `.relay/ projection: node \`${id}\` is referenced as a child but has no file`,
+      );
     }
     if (ancestors.has(id)) {
       throw new Error(`.relay/ projection: cycle detected at node \`${id}\``);
     }
     reached.add(id);
-    const view = toNodeView(node, depth);
+    const view = toNodeView(node, depth, costByNode);
     runLog.push(view);
     const childAncestors = new Set(ancestors).add(id);
     const children = node.children.map((childId) => build(childId, depth + 1, childAncestors));
@@ -130,7 +159,7 @@ export async function projectRun(relayDir: string): Promise<RunProjection> {
     if (reached.has(id)) continue;
     const node = byId.get(id);
     if (node === undefined) continue;
-    orphans.push(toNodeView(node, 0));
+    orphans.push(toNodeView(node, 0, costByNode));
   }
 
   return {
@@ -141,5 +170,6 @@ export async function projectRun(relayDir: string): Promise<RunProjection> {
     tree,
     runLog,
     orphans,
+    cost,
   };
 }

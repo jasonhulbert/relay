@@ -6,11 +6,12 @@
 // critic verdict, evidence refs, blocked record) and CANNOT show the
 // orchestrator-visible narrative — `NodeView` does not carry it (C7, design §3.6).
 //
-// Scope (Phase 2): tree + per-node status/provider/verdict/evidence. Budget burn
-// and the F5 cost rollups are Phase 3 — they are not in the projection yet (see
-// the Phase 1 notes), so they are deliberately absent here. The evidence drill-in
-// panel is M9, not this; evidence refs render as their summary + path only.
-import type { CriticVerdict, EvidenceRef } from '../relay-state/index';
+// Scope: tree + per-node status/provider/verdict/evidence (Phase 2) plus the F5
+// budget burn and cost rollup (Phase 3) — per-node spend on each card and the
+// whole-run total in the header, sourced from the projection's cost fields. The
+// evidence drill-in panel is M9, not this; evidence refs render as their summary +
+// path only.
+import type { CriticVerdict, EvidenceRef, NodeCost, RunCost } from '../relay-state/index';
 import type { NodeView, RunProjection, TreeNode } from './projection';
 
 // Minimal HTML-attribute/text escaping. The projection's strings are operator
@@ -22,6 +23,28 @@ function esc(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Dollars to the per-MTok precision the F5 rollup uses (6 dp), so the view reads
+// identically to the persisted `cost.md`.
+function fmtUsd(cost: number): string {
+  return `$${cost.toFixed(6)}`;
+}
+
+// One node's budget burn (F5): its priced total, and — surfaced not hidden (Rule
+// 11) — a count of any unpriced calls, since an unpriced call means the total
+// understates real spend rather than being exact. A node with no attributed call
+// has `cost === null` and renders nothing.
+function costHtml(cost: NodeCost | null): string {
+  if (cost === null) return '';
+  const uncosted =
+    cost.uncosted === 0
+      ? ''
+      : ` <span class="cost-uncosted">+${cost.uncosted.toString()} uncosted</span>`;
+  return (
+    `<div class="cost"><span class="cost-label">burn</span> ` +
+    `<span class="cost-total">${fmtUsd(cost.total)}</span>${uncosted}</div>`
+  );
 }
 
 function verdictHtml(verdict: CriticVerdict): string {
@@ -67,6 +90,7 @@ function nodeHtml(node: NodeView): string {
     provider +
     `</div>` +
     `<div class="outcome">${esc(node.outcome)}</div>` +
+    costHtml(node.cost) +
     verdict +
     blocked +
     evidenceHtml(node.evidenceRefs)
@@ -108,6 +132,12 @@ const STYLE = `
   .verdict-fail .verdict-mark { color: #a00; }
   .verdict-mark { font-weight: 600; }
   .blocked { font-size: 0.85rem; color: #a00; margin: 0.15rem 0; }
+  .run-cost { color: #444; font-size: 0.9rem; margin: -1rem 0 1.5rem; }
+  .run-cost .cost-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cost { font-size: 0.8rem; color: #555; margin: 0.15rem 0; }
+  .cost-label { text-transform: uppercase; font-size: 0.7rem; color: #888; }
+  .cost-total { font-variant-numeric: tabular-nums; }
+  .cost-uncosted { color: #a60; font-weight: 600; }
   ul.evidence { margin: 0.15rem 0; padding-left: 1.2rem; font-size: 0.8rem; color: #555; }
   .evidence-kind { font-weight: 600; }
   .evidence-path { color: #888; }
@@ -125,9 +155,28 @@ function page(title: string, body: string): string {
   );
 }
 
-// The whole-run page: header (run id, root outcome, created-at), the composed
-// tree, and — surfaced not dropped (Rule 11) — any orphan node files unreachable
-// from the root.
+// The whole-run F5 rollup line for the header: the run total, call count, and any
+// uncosted-call gap. `calls === 0` is a run that spent no model call (distinct from
+// an all-$0 run), so it reads "no model calls" rather than "$0".
+function runCostHtml(cost: RunCost): string {
+  if (cost.calls === 0) {
+    return `<div class="run-cost">cost <span class="cost-total">no model calls</span></div>`;
+  }
+  const uncosted =
+    cost.uncosted === 0
+      ? ''
+      : ` <span class="cost-uncosted">+${cost.uncosted.toString()} uncosted call${
+          cost.uncosted === 1 ? '' : 's'
+        }</span>`;
+  return (
+    `<div class="run-cost">cost <span class="cost-total">${fmtUsd(cost.total)}</span> ` +
+    `over ${cost.calls.toString()} call${cost.calls === 1 ? '' : 's'}${uncosted}</div>`
+  );
+}
+
+// The whole-run page: header (run id, root outcome, created-at, F5 cost rollup),
+// the composed tree with per-node burn, and — surfaced not dropped (Rule 11) — any
+// orphan node files unreachable from the root.
 export function renderRunPage(projection: RunProjection): string {
   const orphans =
     projection.orphans.length === 0
@@ -141,6 +190,7 @@ export function renderRunPage(projection: RunProjection): string {
     `<div class="meta">run <code>${esc(projection.runId)}</code> · ` +
     `root <code>${esc(projection.rootId)}</code> · ` +
     `created ${esc(projection.createdAt)}</div>` +
+    runCostHtml(projection.cost) +
     `<section class="tree">${treeHtml(projection.tree)}</section>` +
     orphans;
 
