@@ -49,6 +49,12 @@ export type {
 // command/test/artifact predicates the critic grounds its verdict on (Rule 5).
 export { runVerification, runDeterministicVerifications, isDeterministicKind } from './verify';
 export type { VerificationResult } from './verify';
+// The visual critic bridge (M9, design §6.3 #5, §7.4–7.5): the `visual`-kind gate that
+// replays the semantic-action path against a live Surface, grades at the declared
+// match-granularity, and captures-and-promotes a baseline on a structural-or-better
+// pass — the M8 visual subsystem wired into the loop's critic path.
+export { visualCritic, parseVisualCheck } from './visual-critic';
+export type { VisualCriticOptions } from './visual-critic';
 // The orchestrator brain (M4 Phase 5, design §3.3, §3.4): the model judgment for
 // decomposing a layer (children + footprints + seams) and classifying each child
 // leaf-vs-branch. `stubBrain` is the deterministic default for the spine tests;

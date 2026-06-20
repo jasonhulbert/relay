@@ -70,6 +70,16 @@ function evidenceHtml(refs: EvidenceRef[]): string {
   return `<ul class="evidence">${items}</ul>`;
 }
 
+// The route the evidence drill-in panel for `nodeId` is reached at (M9). Capture 0 is
+// the bare `/node/<id>`; later captures ride a `?capture=<n>` query — plain GET, no
+// stored state (I3). The single source for both the run-page open-evidence link and
+// the panel's prev/next navigation, so the served URLs always agree, and it mirrors
+// the dogfood `PANEL_FIXTURE.panelRouteFor` the seed's path resolves against.
+export function panelHref(nodeId: string, capture: number): string {
+  const base = `/node/${encodeURIComponent(nodeId)}`;
+  return capture <= 0 ? base : `${base}?capture=${capture.toString()}`;
+}
+
 // One node's supervision card. `provider` is the critic provider lifted onto the
 // view (null before a verdict); blocked nodes surface their human-facing reason so
 // the operator sees what needs a decision without opening the file.
@@ -82,6 +92,15 @@ function nodeHtml(node: NodeView): string {
       ? ''
       : `<div class="blocked"><span class="blocked-reason">blocked: ${esc(node.blocked.reason)}</span> ` +
         `<span class="blocked-human">${esc(node.blocked.humanFacing)}</span></div>`;
+  // A node carrying evidence gets a drill-in control (M9): it opens that node's
+  // evidence panel (`/node/<id>`). The `data-testid` is the panel DOM contract the
+  // dogfood's semantic-action path clicks (PANEL_FIXTURE.selectors.openEvidence). A
+  // node with no evidence has nothing to drill into, so it gets no control.
+  const openEvidence =
+    node.evidenceRefs.length === 0
+      ? ''
+      : `<a class="open-evidence" data-testid="open-evidence-${esc(node.id)}" ` +
+        `href="${esc(panelHref(node.id, 0))}">open evidence →</a>`;
   return (
     `<div class="node-head">` +
     `<span class="status status-${esc(node.status)}">${esc(node.status)}</span> ` +
@@ -93,7 +112,8 @@ function nodeHtml(node: NodeView): string {
     costHtml(node.cost) +
     verdict +
     blocked +
-    evidenceHtml(node.evidenceRefs)
+    evidenceHtml(node.evidenceRefs) +
+    openEvidence
   );
 }
 
@@ -141,6 +161,18 @@ const STYLE = `
   ul.evidence { margin: 0.15rem 0; padding-left: 1.2rem; font-size: 0.8rem; color: #555; }
   .evidence-kind { font-weight: 600; }
   .evidence-path { color: #888; }
+  .open-evidence { display: inline-block; margin: 0.2rem 0; font-size: 0.8rem; color: #27a; text-decoration: none; }
+  .open-evidence:hover { text-decoration: underline; }
+  .panel { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-top: 0.5rem; max-width: 32rem; }
+  .panel-node { font-size: 0.85rem; color: #555; margin-bottom: 0.6rem; }
+  .panel-pos { font-size: 0.7rem; text-transform: uppercase; color: #888; letter-spacing: 0.03em; }
+  .panel-kind { font-size: 0.9rem; margin: 0.2rem 0; }
+  .panel-summary { color: #1a1a1a; margin: 0.2rem 0 0.4rem; }
+  .panel-empty { color: #a60; }
+  .panel-nav { display: flex; gap: 1rem; margin-top: 0.8rem; font-size: 0.85rem; }
+  .panel-nav a { color: #27a; text-decoration: none; }
+  .panel-nav a:hover { text-decoration: underline; }
+  .back { color: #27a; text-decoration: none; }
   .orphans { margin-top: 2rem; border-top: 2px solid #c33; padding-top: 0.5rem; }
   .orphans h2 { font-size: 1rem; color: #c33; }
   .error { color: #a00; }
@@ -195,6 +227,77 @@ export function renderRunPage(projection: RunProjection): string {
     orphans;
 
   return page(`relay · ${projection.runId}`, body);
+}
+
+// One evidence capture rendered inside the drill-in panel (M9): its semantic facts —
+// kind, summary, path — which are exactly what the structural visual check grades
+// against (the node id is on the panel container). Drawn from the projection's
+// evidence refs, never from a re-read of the capture file (I3, single-sourced codec).
+function panelCaptureHtml(ref: EvidenceRef, index: number, total: number): string {
+  return (
+    `<div class="panel-capture">` +
+    `<div class="panel-pos">capture ${(index + 1).toString()} of ${total.toString()}</div>` +
+    `<div class="panel-kind evidence-kind">${esc(ref.kind)}</div>` +
+    `<div class="panel-summary">${esc(ref.summary)}</div>` +
+    `<code class="evidence-path">${esc(ref.path)}</code>` +
+    `</div>`
+  );
+}
+
+// The evidence drill-in panel for one node (M9, design §12 / D3): opening a node
+// renders its evidence and navigating advances through that node's ordered captures.
+// This is the bounded new feature on the M5 read-only view the second dogfood drives
+// through the full visual path — the host surface the visual outcome's semantic-action
+// path drives (V1) and its structural check grades, scoped to the `evidence-panel`
+// element (V7). Strictly a view (I3): it renders ONE capture index and links to the
+// next, navigation is plain GET on `?capture=<n>` (panelHref), and it writes nothing.
+// The `data-testid`s are the panel DOM contract the dogfood's PANEL_FIXTURE selectors
+// address, so the seed's path/scope/expectSubtree resolve against exactly this markup.
+// The header sits OUTSIDE the scoped panel so a check scoped to `evidence-panel`
+// ignores it — orientation only, never the capture facts (the V7 isolation point).
+export function renderNodePanel(
+  projection: RunProjection,
+  node: NodeView,
+  captureIndex: number,
+): string {
+  const refs = node.evidenceRefs;
+  const total = refs.length;
+  const header =
+    `<h1>evidence · <code>${esc(node.id)}</code></h1>` +
+    `<div class="meta">run <code>${esc(projection.runId)}</code> · ` +
+    `<a class="back" href="/">← run</a></div>`;
+
+  if (total === 0) {
+    const empty =
+      header +
+      `<section class="panel" data-testid="evidence-panel">` +
+      `<div class="panel-node">node <code>${esc(node.id)}</code></div>` +
+      `<div class="panel-empty">no evidence captures for this node</div>` +
+      `</section>`;
+    return page(`relay · ${node.id} · evidence`, empty);
+  }
+
+  // Clamp `?capture=` to a real index so an out-of-range request lands on the last
+  // capture rather than rendering a blank panel (fail visible, not silent — Rule 11).
+  const idx = Math.max(0, Math.min(captureIndex, total - 1));
+  const ref = refs[idx];
+  const prev =
+    idx > 0 ? `<a class="panel-prev" href="${esc(panelHref(node.id, idx - 1))}">← prev</a>` : '';
+  // `evidence-next` is the in-panel control the semantic-action path clicks to advance
+  // a capture; present only when there is a next capture to reach.
+  const next =
+    idx < total - 1
+      ? `<a class="panel-next" data-testid="evidence-next" href="${esc(panelHref(node.id, idx + 1))}">next →</a>`
+      : '';
+
+  const body =
+    header +
+    `<section class="panel" data-testid="evidence-panel">` +
+    `<div class="panel-node">node <code>${esc(node.id)}</code></div>` +
+    panelCaptureHtml(ref, idx, total) +
+    `<div class="panel-nav">${prev}${next}</div>` +
+    `</section>`;
+  return page(`relay · ${node.id} · evidence`, body);
 }
 
 // The error page. `projectRun` fails loud on an incoherent tree (missing root,

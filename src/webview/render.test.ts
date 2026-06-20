@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { RunProjection, TreeNode } from './projection';
-import { renderErrorPage, renderRunPage } from './render';
+import type { EvidenceRef } from '../relay-state/index';
+import type { NodeView, RunProjection, TreeNode } from './projection';
+import { panelHref, renderErrorPage, renderNodePanel, renderRunPage } from './render';
 
 function leaf(over: Partial<TreeNode> & Pick<TreeNode, 'id'>): TreeNode {
   return {
@@ -132,5 +133,122 @@ describe('webview render', () => {
     const html = renderErrorPage('cycle detected at node `a`');
     expect(html).toContain('Cannot render this run');
     expect(html).toContain('cycle detected at node `a`');
+  });
+});
+
+// The M9 evidence drill-in panel render. These pin the panel DOM contract the dogfood
+// drives (the `data-testid`s and `/node/<id>` route shape), capture navigation, and
+// the V7 isolation the structural visual check relies on.
+describe('webview evidence drill-in panel (M9)', () => {
+  const ref = (kind: EvidenceRef['kind'], summary: string, path: string): EvidenceRef => ({
+    runId: 'run-1',
+    path,
+    kind,
+    summary,
+  });
+
+  // Extract the `evidence-panel` section the way a scoped snapshot/screenshot does
+  // (V7): only this subtree is graded, so a test asserting scoping reads exactly it.
+  function panelScope(html: string): string {
+    const at = html.indexOf('data-testid="evidence-panel"');
+    expect(at).toBeGreaterThan(-1);
+    const start = html.lastIndexOf('<', at);
+    const end = html.indexOf('</section>', at) + '</section>'.length;
+    return html.slice(start, end);
+  }
+
+  const withEvidence = (over: Partial<NodeView> = {}): NodeView =>
+    leaf({
+      id: 'sample-leaf',
+      status: 'done',
+      evidenceRefs: [
+        ref('diff', 'unified diff sample-leaf produced', 'sample-leaf/diff.md'),
+        ref('self-report', 'sample-leaf executor self-report', 'sample-leaf/self-report.md'),
+        ref('verdict', 'critic verdict accepting sample-leaf', 'sample-leaf/verdict.md'),
+      ],
+      ...over,
+    });
+
+  // WHY (panelHref is the single source for the open-evidence link AND the panel's own
+  // prev/next): if the two ever disagreed, a click would 404 or skip a capture. Capture
+  // 0 is the bare route; later captures ride `?capture=`.
+  test('panelHref pins the route shape capture 0 and capture n', () => {
+    expect(panelHref('sample-leaf', 0)).toBe('/node/sample-leaf');
+    expect(panelHref('sample-leaf', 2)).toBe('/node/sample-leaf?capture=2');
+  });
+
+  // WHY (Validation: the panel renders a node's evidence): the open-evidence control is
+  // the run-page entry point the semantic-action path clicks. It must carry the exact
+  // `data-testid` the dogfood addresses and link to the node's panel route.
+  test('the run page gives a node with evidence an open-evidence control', () => {
+    const node = withEvidence();
+    const html = renderRunPage(projection({ tree: { ...node, children: [] } }));
+    expect(html).toContain('data-testid="open-evidence-sample-leaf"');
+    expect(html).toContain('href="/node/sample-leaf"');
+  });
+
+  // WHY: a node with no evidence has nothing to drill into, so it must NOT get a
+  // control — a dead link would be worse than no link.
+  test('a node with no evidence gets no open-evidence control', () => {
+    const html = renderRunPage(projection({}));
+    expect(html).not.toContain('open-evidence-');
+  });
+
+  // WHY (Validation: navigating advances through the ordered captures): the panel
+  // renders ONE capture at the requested index and exposes the `evidence-next` control
+  // pointing at the following capture — the exact step the dogfood's path replays.
+  test('renders the requested capture and links to the next', () => {
+    const node = withEvidence();
+    const html = renderNodePanel(projection({}), node, 1);
+    const scope = panelScope(html);
+    // The second capture's semantic facts — the structural expectation — are present.
+    expect(scope).toContain('sample-leaf');
+    expect(scope).toContain('self-report');
+    expect(scope).toContain('sample-leaf executor self-report');
+    expect(scope).toContain('capture 2 of 3');
+    // The next control advances to capture 2.
+    expect(scope).toContain('data-testid="evidence-next"');
+    expect(scope).toContain('href="/node/sample-leaf?capture=2"');
+  });
+
+  // WHY (V7 isolation, the whole reason the check is element-scoped): the capture facts
+  // must live INSIDE the scoped panel, not in the surrounding header. If a graded fact
+  // leaked into an unscoped region, a check scoped to the panel could pass on the wrong
+  // evidence — the false-verdict failure mode V7 closes.
+  test('the graded capture facts are inside the scoped panel, not the header', () => {
+    const node = withEvidence();
+    const html = renderNodePanel(projection({}), node, 1);
+    const scope = panelScope(html);
+    const outsidePanel = html.replace(scope, '');
+    expect(outsidePanel).not.toContain('sample-leaf executor self-report');
+  });
+
+  // WHY: the last capture has nothing after it, so the next control must be absent —
+  // otherwise the path could click past the end into a clamped no-op.
+  test('the last capture exposes no next control', () => {
+    const node = withEvidence();
+    const html = renderNodePanel(projection({}), node, 2);
+    expect(panelScope(html)).not.toContain('data-testid="evidence-next"');
+  });
+
+  // WHY (Rule 11, fail visible): an out-of-range `?capture=` must clamp to a real
+  // capture rather than render a blank panel — the operator sees the last one, not
+  // nothing.
+  test('an out-of-range capture clamps to the last real one', () => {
+    const node = withEvidence();
+    const html = renderNodePanel(projection({}), node, 99);
+    const scope = panelScope(html);
+    expect(scope).toContain('capture 3 of 3');
+    expect(scope).not.toContain('data-testid="evidence-next"');
+  });
+
+  // WHY: a node with no captures must render the panel shell with an explicit "no
+  // evidence" message, not crash or 500 — the route exists for the node even if empty.
+  test('a node with no evidence renders an explicit empty panel', () => {
+    const node = leaf({ id: 'bare', evidenceRefs: [] });
+    const html = renderNodePanel(projection({}), node, 0);
+    const scope = panelScope(html);
+    expect(scope).toContain('no evidence captures');
+    expect(scope).not.toContain('data-testid="evidence-next"');
   });
 });

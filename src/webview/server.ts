@@ -8,12 +8,39 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { projectRun } from './projection';
-import { renderErrorPage, renderRunPage } from './render';
+import { renderErrorPage, renderNodePanel, renderRunPage } from './render';
+import type { NodeView } from './projection';
 
 export interface WebViewServerOptions {
   // The `.relay/` store directory to render (the per-project global store for a
   // real run; a temp dir in tests). Read-only.
   relayDir: string;
+}
+
+// Parse the drill-in panel's `?capture=<n>` index off the request URL. A missing,
+// non-numeric, or negative value is capture 0 (the panel's opening capture) — the
+// render clamps an over-large index to the last real capture, so navigation is always
+// well-defined regardless of the query.
+function parseCaptureParam(url: string): number {
+  const q = url.indexOf('?');
+  if (q === -1) return 0;
+  const raw = new URLSearchParams(url.slice(q + 1)).get('capture');
+  if (raw === null) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+// Look a node up in the composed projection by id — across the reachable tree
+// (runLog) and the surfaced orphans — so a panel request resolves the same node the
+// run page rendered. Undefined when no such node file exists (the server 404s).
+function findNode(
+  projection: { runLog: NodeView[]; orphans: NodeView[] },
+  nodeId: string,
+): NodeView | undefined {
+  return (
+    projection.runLog.find((n) => n.id === nodeId) ??
+    projection.orphans.find((n) => n.id === nodeId)
+  );
 }
 
 // Build (but do not start) the HTTP server. The caller owns `listen`/`close`, so
@@ -29,7 +56,37 @@ export function createWebViewServer(opts: WebViewServerOptions): Server {
       return;
     }
 
-    const path = (req.url ?? '/').split('?')[0];
+    const url = req.url ?? '/';
+    const path = url.split('?')[0];
+
+    // The evidence drill-in panel (M9): `/node/<id>` renders one node's evidence
+    // panel, `?capture=<n>` navigates its ordered captures — both plain GET, so the
+    // read-only contract is unbroken (I3). Like the run page, it recomposes the
+    // projection per request and fails loud on an incoherent tree; an unknown node id
+    // is a 404, the same as any unknown path.
+    if (path.startsWith('/node/')) {
+      const nodeId = decodeURIComponent(path.slice('/node/'.length));
+      const capture = parseCaptureParam(url);
+      projectRun(opts.relayDir).then(
+        (projection) => {
+          const node = findNode(projection, nodeId);
+          if (node === undefined) {
+            res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('not found\n');
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+          res.end(renderNodePanel(projection, node, capture));
+        },
+        (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
+          res.end(renderErrorPage(message));
+        },
+      );
+      return;
+    }
+
     if (path !== '/' && path !== '/index.html') {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('not found\n');

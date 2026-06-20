@@ -260,4 +260,82 @@ describe('webview HTTP server', () => {
       await rm(base, { recursive: true, force: true });
     }
   });
+
+  // A run whose leaf carries ordered evidence captures — the shape the drill-in panel
+  // route renders. Kept local to the server test so it exercises the real HTTP path
+  // (projectRun → renderNodePanel) end to end over a seeded store.
+  async function seedWithEvidence(relayDir: string): Promise<void> {
+    await writeManifest(relayDir, {
+      runId: 'run-1',
+      rootId: 'root',
+      spec: spec('a run whose leaf carries evidence'),
+      sketch: { notes: [] },
+      createdAt: '2026-06-18T00:00:00.000Z',
+    });
+    await writeNode(
+      relayDir,
+      node({ id: 'root', kind: 'branch', status: 'done', children: ['leaf'] }),
+    );
+    await writeNode(
+      relayDir,
+      node({
+        id: 'leaf',
+        parentId: 'root',
+        kind: 'leaf',
+        status: 'done',
+        evidenceRefs: [
+          { runId: 'run-1', path: 'leaf/diff.md', kind: 'diff', summary: 'the diff' },
+          {
+            runId: 'run-1',
+            path: 'leaf/self-report.md',
+            kind: 'self-report',
+            summary: 'the report',
+          },
+        ],
+      }),
+    );
+  }
+
+  // WHY (Validation: the panel renders a node's evidence over a plain GET, I3): the
+  // `/node/<id>` route with `?capture=<n>` must serve the requested capture's panel —
+  // navigation is GET, so this is the whole drive path the dogfood replays.
+  test('serves the drill-in panel for a node, navigating captures by GET', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
+    const relayDir = join(base, '.relay');
+    try {
+      await seedWithEvidence(relayDir);
+      const url = await serve(relayDir);
+
+      const first = await fetch(`${url}/node/leaf`);
+      expect(first.status).toBe(200);
+      expect(first.headers.get('content-type')).toMatch(/text\/html/);
+      const firstHtml = await first.text();
+      expect(firstHtml).toContain('data-testid="evidence-panel"');
+      expect(firstHtml).toContain('the diff');
+      expect(firstHtml).toContain('capture 1 of 2');
+
+      const second = await fetch(`${url}/node/leaf?capture=1`);
+      expect(second.status).toBe(200);
+      const secondHtml = await second.text();
+      expect(secondHtml).toContain('the report');
+      expect(secondHtml).toContain('capture 2 of 2');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // WHY: a node id with no file is a 404, the same as any unknown path — the route
+  // must not 500 or render a blank panel for a node that does not exist.
+  test('returns 404 for an unknown node id', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
+    const relayDir = join(base, '.relay');
+    try {
+      await seedWithEvidence(relayDir);
+      const url = await serve(relayDir);
+      const res = await fetch(`${url}/node/ghost`);
+      expect(res.status).toBe(404);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
 });
