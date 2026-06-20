@@ -59,4 +59,4 @@ export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } 
 export type { IntentWrite } from './journal';
 export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';
 export { toCriticView, runCritic } from './projection';
-export type { CriticView, CriticSpawn, CriticContext } from './projection';
+export type { CriticView, CriticSpawn, CriticContext, CriticCallUsage } from './projection';

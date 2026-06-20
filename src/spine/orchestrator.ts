@@ -13,7 +13,7 @@
 // child's return value or stdout. Leaf children keep the M1 in-process path.
 // Executor + critic stay stubbed; the failure ladder (§3.9) is M3.
 import { dirname, join } from 'node:path';
-import { mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rm } from 'node:fs/promises';
 import {
   applyIntent,
   atomicWriteFile,
@@ -70,6 +70,7 @@ import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
 import { buildSchedule } from './schedule';
 import { FootprintViolation, footprintEscapes } from './footprint';
+import { runIntegrationGate } from './integration-gate';
 
 // Points at which a test may model a process kill. A thrown `InjectedKill` is
 // indistinguishable from a SIGKILL for the rehydration contract: `.relay/` is the
@@ -222,7 +223,17 @@ interface LeafContext {
 // the ladder exhausted and it is terminally `blocked` with a self-sufficient
 // record the parent chain surfaces (design §3.7).
 type LeafOutcome =
-  | { kind: 'done'; node: NodeRecord }
+  // A `done` leaf carries up the actual writes (its WAL footprint) and produced diff
+  // the parent's integration gate needs to verify the merged concurrent layer (A4):
+  // the writes feed the footprint layer, the diff the critic's merged view. Absent on
+  // the hermetic stub path (the executor reported neither), which the gate treats as
+  // an empty footprint and an empty diff segment.
+  | {
+      kind: 'done';
+      node: NodeRecord;
+      writes?: readonly string[] | undefined;
+      diff?: string | undefined;
+    }
   | { kind: 'promoted'; node: NodeRecord; children: NodeRecord[] }
   | { kind: 'blocked'; node: NodeRecord };
 
@@ -237,6 +248,11 @@ interface ChildResult {
   contract?: OutcomeContract;
   promoted?: boolean;
   verdictRefs: readonly EvidenceRef[];
+  // A `done` leaf child's actual writes and produced diff, carried for the integration
+  // gate (A4) when this layer ran concurrently. Only leaves contribute; a sub-
+  // orchestrator's composition rides in its contract's seam evidence instead.
+  writes?: readonly string[] | undefined;
+  diff?: string | undefined;
 }
 
 // Generous stub caps: on M3 stubs the executor produces no real tokens or
@@ -332,6 +348,30 @@ function renderVerdict(node: NodeRecord): string {
 
 async function discardWorktree(workRoot: string, leafId: string): Promise<void> {
   await rm(join(workRoot, leafId), { recursive: true, force: true });
+}
+
+// Merge a completed concurrent layer's child worktrees into one tree the integration
+// gate verifies (A4, §3.8). Each child wrote a disjoint repo footprint — that
+// disjointness is what licensed their concurrency (A2) — so copying every child
+// worktree into one directory composes the layer with no file collision. Rebuilt from
+// scratch each call so a rehydrated re-gate is deterministic; a missing child worktree
+// (a writes-free or rehydrated child) is skipped. The merged tree is a throwaway gate
+// sandbox under `worktrees/`, never part of the `.relay/` record.
+async function mergeLayerWorktrees(
+  workRoot: string,
+  childIds: readonly string[],
+  mergedDir: string,
+): Promise<void> {
+  await rm(mergedDir, { recursive: true, force: true });
+  await mkdir(mergedDir, { recursive: true });
+  for (const id of childIds) {
+    try {
+      await cp(join(workRoot, id), mergedDir, { recursive: true });
+    } catch {
+      // No worktree for this child (it reported no writes, or this is a rehydrated
+      // run) — there is nothing to merge from it.
+    }
+  }
 }
 
 // Materialize a brain decomposition into the durable layer the orchestrator commits
@@ -490,6 +530,12 @@ interface AttemptResult {
   node: NodeRecord;
   signal: AttemptSignal;
   verdict: CriticVerdict | null;
+  // The executor's produced diff and actual write footprint from THIS attempt, carried
+  // so a `done` leaf can hand them to the parent's integration gate (A4). Set on a
+  // graded attempt; absent on a loud-violation or too-big attempt (neither reaches
+  // done).
+  writes?: readonly string[] | undefined;
+  diff?: string | undefined;
   // The standing reason a loud failure (a footprint violation, A3) produced this
   // `fail`, when there is no critic verdict to cite. Folded into the `blocked`
   // record so an exhaustion that began as a loud violation says so honestly,
@@ -671,7 +717,13 @@ async function dispatchLeaf(
     for (const u of criticUsages) {
       await persistUsage(relayDir, runId, leafId, 'critic', seq, u, priceTable, writes);
     }
-    return { node, signal: verdict.pass ? 'pass' : 'fail', verdict };
+    return {
+      node,
+      signal: verdict.pass ? 'pass' : 'fail',
+      verdict,
+      writes: result.writes,
+      diff: result.diff,
+    };
   };
 
   // T3: leaf -> done, written as a separate intent so a kill after the commit
@@ -797,7 +849,12 @@ async function dispatchLeaf(
       if (!result.verdict) {
         throw new Error(`leaf \`${leafId}\` reached done without a critic verdict`);
       }
-      return { kind: 'done', node: await finishDone(result.node, result.verdict) };
+      return {
+        kind: 'done',
+        node: await finishDone(result.node, result.verdict),
+        writes: result.writes,
+        diff: result.diff,
+      };
     }
     if (step.kind === 'exhausted') {
       // The ladder ran out (a budget cap; the rungs-walked branch is unreachable
@@ -991,6 +1048,10 @@ export async function runOrchestrator(
     const child = await readNode(relayDir, childId);
     if (child.kind === 'leaf') {
       if (child.status === 'done') {
+        // A leaf already `done` on entry (rehydration) contributes no fresh writes/diff
+        // to the gate — its attempt ran in a prior process. The gate runs only on a
+        // layer this process drove concurrently, where the leaves go through dispatch
+        // below; a fully-rehydrated done layer is not re-gated.
         return { leafStatus: 'done', verdictRefs: child.verdict?.evidenceRefs ?? [] };
       }
       if (isTerminalNotDone(child.status)) {
@@ -1017,7 +1078,12 @@ export async function runOrchestrator(
         writes,
       });
       if (outcome.kind === 'done') {
-        return { leafStatus: 'done', verdictRefs: outcome.node.verdict?.evidenceRefs ?? [] };
+        return {
+          leafStatus: 'done',
+          verdictRefs: outcome.node.verdict?.evidenceRefs ?? [],
+          writes: outcome.writes,
+          diff: outcome.diff,
+        };
       }
       if (outcome.kind === 'blocked') {
         // Ladder exhausted: the leaf is terminally blocked. Not done, so the parent
@@ -1053,7 +1119,11 @@ export async function runOrchestrator(
 
   // Fold the per-child results into the run's status maps in deterministic child
   // order, so the contract's verdict refs and the reported statuses are independent
-  // of which sibling finished first.
+  // of which sibling finished first. The per-child actual writes and produced diffs
+  // are collected in the same order for the integration gate (A4): the writes feed its
+  // footprint layer, the diffs compose the merged view its critic layer grades.
+  const childWrites: Record<string, readonly string[]> = {};
+  const mergedDiffParts: string[] = [];
   for (const childId of root.children) {
     const r = results.get(childId);
     if (r === undefined) continue;
@@ -1068,6 +1138,12 @@ export async function runOrchestrator(
     }
     if (r.contract) {
       childContracts[childId] = r.contract;
+    }
+    if (r.writes !== undefined) {
+      childWrites[childId] = r.writes;
+    }
+    if (r.diff !== undefined && r.diff !== '') {
+      mergedDiffParts.push(r.diff);
     }
     childVerdictRefs.push(...r.verdictRefs);
   }
@@ -1107,9 +1183,82 @@ export async function runOrchestrator(
     ]);
   }
 
-  // Integration gate is required only when children ran concurrently (§3.8); M2 is
-  // serial with one child, so the branch is `done` once its children are.
-  if (root.status !== 'done' && root.children.every(childDone)) {
+  // The branch-level integration gate (A4, design §3.8) — concurrency pays for it.
+  // When a layer ran ANY children concurrently, no per-child critic witnessed their
+  // combination: each child forked from the same pre-layer base, graded its own diff
+  // in isolation, blind to its siblings. So before the branch may be `done`, merge the
+  // completed layer and verify the merged whole deterministic-first — footprint from
+  // the WAL, then each seam predicate, then this node's OWN critic on the merged whole
+  // against this node's spec. A serial layer skips the gate: each child's critic
+  // already saw the only state that existed when it ran (the M2/M3 single-stage path).
+  const ranConcurrently = schedule.stages.some((stage) => stage.length > 1);
+  if (
+    root.status !== 'done' &&
+    root.status !== 'blocked' &&
+    ranConcurrently &&
+    root.children.every(childDone)
+  ) {
+    const mergedDir = join(workRoot, `${root.id}__merged`);
+    await mergeLayerWorktrees(workRoot, root.children, mergedDir);
+    // The gate's own critic call is a metered model call attributed to this branch
+    // node (F5, design §8) — collected via the sink and persisted like the leaf path;
+    // the deterministic-only critic spends none, so the hermetic stub run is unchanged.
+    const gateUsages: ExecutorUsage[] = [];
+    const gate = await runIntegrationGate({
+      parentNode: root,
+      mergedDiff: mergedDiffParts.join('\n'),
+      mergedWorktree: mergedDir,
+      layer,
+      childWrites,
+      critic,
+      mcpServers,
+      onUsage: (u) => gateUsages.push(u),
+    });
+    for (const u of gateUsages) {
+      await persistUsage(relayDir, manifest.runId, rootId, 'critic', 0, u, priceTable, writes);
+    }
+    if (!gate.ok) {
+      // The merged layer could not be composed — a footprint clash (WAL), a broken
+      // seam, or a silent semantic conflict the parent's critic caught. The branch can
+      // never be `done` (§3.7, no route-around): author a self-sufficient blocked
+      // record naming the failed gate layer and halt-and-surface it up the parent
+      // chain, exactly like a blocked descendant. The merged tree is left in place as
+      // the standing evidence of what could not compose.
+      const record: BlockedRecord = {
+        reason: `integration gate failed at the ${gate.layer} layer`,
+        rungsSpent: [],
+        criticReason: gate.reason,
+        humanFacing: `branch \`${rootId}\` halted: its concurrent layer failed the integration gate at the ${gate.layer} layer: ${gate.reason}`,
+      };
+      root = { ...root, status: 'blocked', blocked: record };
+      writes.add(relativeNodePath(rootId));
+      await commit(relayDir, region, [
+        { path: relativeNodePath(rootId), content: serializeNode(root) },
+      ]);
+    } else if (gate.verdict) {
+      // The gate certified the merged whole: persist its verdict as branch-level
+      // evidence and ride its ref up in this node's verdict refs, so the concurrent
+      // layer's `done` carries a critic certification of its COMPOSITION — the cross-
+      // sibling verification a per-child verdict structurally could not provide.
+      const verdictRel = `${rootId}/integration-verdict.md`;
+      const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+      await atomicWriteFile(
+        join(evDir, verdictRel),
+        renderVerdict({ ...root, verdict: gate.verdict }),
+      );
+      writes.add(`evidence/${manifest.runId}/${verdictRel}`);
+      childVerdictRefs.push(
+        evidenceRef(manifest.runId, verdictRel, 'verdict', 'integration gate verdict'),
+      );
+    }
+  }
+
+  // The done transition (design §3.6/§3.8). A concurrent layer reaches here only after
+  // passing the integration gate above; a serial layer reaches it directly — each
+  // child's own critic already certified the only state it ran against. A root already
+  // `blocked` (halt-and-surface above, or a failed integration gate) is terminal and
+  // never re-opened to `done`.
+  if (root.status !== 'done' && root.status !== 'blocked' && root.children.every(childDone)) {
     root = { ...root, status: 'done' };
     writes.add(relativeNodePath(rootId));
     const txn: IntentWrite[] = [{ path: relativeNodePath(rootId), content: serializeNode(root) }];
