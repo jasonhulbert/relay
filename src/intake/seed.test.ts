@@ -101,3 +101,59 @@ describe('compileSeed rejects a malformed seed loudly', () => {
     expect(() => compileSeed('no json here, just chatter')).toThrow(/no JSON/);
   });
 });
+
+// A `visual` outcome (design §13) carries a structured replay spec in `check`, not a
+// shell line: the match-granularity it grades at (V4) and the semantic-action path the
+// critic replays (V1). Intake REQUIRES both — a visual outcome missing either is
+// unjudgeable, exactly what §6/Rule 11 reject — so each is validated at compile time,
+// where the seed is produced, not deferred to an opaque crash at run time.
+describe('compileSeed validates a visual verification’s match-granularity and path', () => {
+  // A well-formed visual check: a structural-granularity spec with a one-step path.
+  const visualCheck = JSON.stringify({
+    granularity: 'structural',
+    path: [{ kind: 'click', ref: '[data-testid="panel"]' }],
+    expectSubtree: ['ok'],
+  });
+  const seedWith = (check: string): string =>
+    JSON.stringify({
+      outcome: 'the panel renders',
+      verifications: [{ kind: 'visual', grounding: 'against the deterministic fixture', check }],
+      sketch: { notes: [] },
+    });
+
+  test('accepts a visual check carrying a match-granularity and a semantic-action path', () => {
+    const seed = compileSeed(seedWith(visualCheck));
+    expect(seed.spec.verifications[0].kind).toBe('visual');
+    // The structured spec round-trips through `check` for the Phase 2 critic to replay.
+    const spec = JSON.parse(seed.spec.verifications[0].check) as {
+      granularity: string;
+      path: unknown[];
+    };
+    expect(spec.granularity).toBe('structural');
+    expect(spec.path).toHaveLength(1);
+  });
+
+  test('rejects a visual check with no match-granularity (V4)', () => {
+    const check = JSON.stringify({ path: [{ kind: 'click', ref: 'x' }] });
+    expect(() => compileSeed(seedWith(check))).toThrow(/match-granularity/);
+  });
+
+  test('rejects a visual check with an unknown match-granularity', () => {
+    const check = JSON.stringify({ granularity: 'pixelish', path: [{ kind: 'click', ref: 'x' }] });
+    expect(() => compileSeed(seedWith(check))).toThrow(/match-granularity/);
+  });
+
+  test('rejects a visual check with an empty semantic-action path (V1)', () => {
+    const check = JSON.stringify({ granularity: 'structural', path: [] });
+    expect(() => compileSeed(seedWith(check))).toThrow(/path/);
+  });
+
+  test('rejects a visual check whose path step has no kind', () => {
+    const check = JSON.stringify({ granularity: 'structural', path: [{ ref: 'x' }] });
+    expect(() => compileSeed(seedWith(check))).toThrow(/kind/);
+  });
+
+  test('rejects a visual check that is not JSON', () => {
+    expect(() => compileSeed(seedWith('vitest run panel'))).toThrow(/JSON replay spec/);
+  });
+});

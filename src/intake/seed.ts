@@ -31,6 +31,55 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
+// The match granularities a visual outcome may declare (design §7.5, V4). Mirrored
+// here as runtime values because intake validates the seed without depending on the
+// surface module (whose `MatchGranularity` is a compile-time type only); the small
+// duplication is the same kind the file already tolerates for `asRecord` and is
+// pinned by `intake-rejects-an-unknown-granularity` in the test.
+const VISUAL_GRANULARITIES = ['intent', 'structural', 'baseline-diff'] as const;
+
+// Validate a `visual`-kind verification's `check`. A visual check is NOT a shell line
+// but a structured replay spec (design §13, V1/V4/V7): the executor-emitted
+// semantic-action path the critic replays plus the match-granularity it grades at. It
+// rides as a JSON document in `check` so the durable `Verification` shape is untouched
+// — "the runnable check" for a visual kind is this spec — and the visual critic (M9
+// Phase 2) parses it back into a `VisualVerification`. Intake REQUIRES both fields:
+// a visual outcome with no granularity is unjudgeable and one with no path replays
+// nothing, exactly what §6/Rule 11 reject — so a missing field fails loud here, where
+// the seed is compiled, rather than surfacing as an opaque crash at run time.
+function validateVisualCheck(check: string): void {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(check);
+  } catch {
+    throw new Error('intake seed `visual` verification `check` must be a JSON replay spec');
+  }
+  const spec = asRecord(doc);
+  if (!spec) {
+    throw new Error('intake seed `visual` verification `check` is not a JSON object');
+  }
+  if (
+    typeof spec.granularity !== 'string' ||
+    !(VISUAL_GRANULARITIES as readonly string[]).includes(spec.granularity)
+  ) {
+    throw new Error(
+      `intake seed \`visual\` verification missing match-granularity (one of ${VISUAL_GRANULARITIES.join(
+        '/',
+      )}) (V4)`,
+    );
+  }
+  if (!Array.isArray(spec.path) || spec.path.length === 0) {
+    throw new Error(
+      'intake seed `visual` verification missing a non-empty semantic-action `path` (V1)',
+    );
+  }
+  if (
+    spec.path.some((step) => asRecord(step) === null || typeof asRecord(step)?.kind !== 'string')
+  ) {
+    throw new Error('intake seed `visual` verification `path` step missing string `kind`');
+  }
+}
+
 // Extract the seed's JSON document from the interviewer's final message. Prefer the
 // last fenced ```json block; fall back to the first `{` … last `}` span so a model
 // that emits bare JSON still parses. Mirrors the brain's `extractJson` — kept local
@@ -65,6 +114,12 @@ function parseVerifications(value: unknown): Verification[] {
     }
     if (typeof v.grounding !== 'string' || v.grounding.trim() === '') {
       throw new Error('intake seed verification missing non-empty `grounding` (§6)');
+    }
+    // A `visual` outcome carries a structured replay spec in `check` (design §13); its
+    // match-granularity and semantic-action path are required, validated the same way
+    // and at the same point grounding is — a visual seed missing either fails loud.
+    if (v.kind === 'visual') {
+      validateVisualCheck(v.check);
     }
     return {
       kind: v.kind as Verification['kind'],
