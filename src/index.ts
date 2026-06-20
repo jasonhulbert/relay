@@ -1,8 +1,11 @@
 // Injected at build time by scripts/build.mjs.
 declare const __RELAY_VERSION__: string;
 
-import { devRun } from './spine/index';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+import { devRun, projectKey, relayHome } from './spine/index';
 import type { DevRunOptions, Provider } from './spine/index';
+import { startWebView } from './webview/index';
 
 const USAGE = `relay v${__RELAY_VERSION__}
 A terminal-based, multi-provider loop generator and orchestrator.
@@ -21,6 +24,11 @@ Commands:
     [--brain-provider <n>]   Decompose-judgment provider (default: the author).
     [--brain-model <name>]   Brain model override (default: cheapest).
     [--check <command>]      Leaf command verification (default: always-pass).
+
+  web                        Serve the read-only web view of this project's
+                             user-global ~/.relay/ store in a browser.
+    [--project <path>]       Project whose store to render (default: cwd).
+    [--port <n>]             Port to bind on loopback (default: 4317).
 
 Options:
   -v, --version   Print the version and exit.
@@ -84,6 +92,55 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   return out.result.rootStatus === 'done' ? 0 : 1;
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// `relay web`: serve the read-only render of the project's global `.relay/` store.
+// It RESOLVES the existing store (never creating one — the view writes nothing,
+// I3); a project with no store yet is a loud error, not an empty page. The server
+// recomposes the projection on every request, so it keeps running until the
+// operator interrupts it (Ctrl-C). Returns a promise that only settles on a bind
+// failure — while listening it stays pending so the process does not exit.
+async function webCommand(args: readonly string[]): Promise<number> {
+  const projectPath = flag(args, '--project') ?? process.cwd();
+  const portArg = flag(args, '--port');
+  let port = 4317;
+  if (portArg !== undefined) {
+    const parsed = Number(portArg);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+      process.stderr.write(`web: --port must be an integer 0-65535 (got ${portArg})\n`);
+      return 2;
+    }
+    port = parsed;
+  }
+
+  // Resolve the store the same way the orchestrator does, but read-only: no
+  // ensureProjectStore (that would create/`git init` a store the operator never ran).
+  const storeDir = join(relayHome({}), projectKey(projectPath));
+  if (!(await exists(join(storeDir, 'manifest.md')))) {
+    process.stderr.write(
+      `web: no relay store for ${projectPath} at ${storeDir}\n` +
+        `     run \`relay dev-run --outcome ...\` for this project first.\n`,
+    );
+    return 1;
+  }
+
+  const { url } = await startWebView({ relayDir: storeDir, port });
+  process.stdout.write(`relay web: serving ${storeDir}\n  ${url}\n  (read-only; Ctrl-C to stop)\n`);
+
+  // Stay alive while the server listens. The server keeps the event loop busy; the
+  // returned promise never resolves on the happy path, so `main` does not exit.
+  return new Promise<number>(() => {
+    /* runs until the process is signalled */
+  });
+}
+
 async function main(argv: readonly string[]): Promise<number> {
   const args = argv.slice(2);
 
@@ -99,6 +156,10 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (args[0] === 'dev-run') {
     return devRunCommand(args.slice(1));
+  }
+
+  if (args[0] === 'web') {
+    return webCommand(args.slice(1));
   }
 
   // No other subcommands exist yet. Invoked with no (or unknown) args, print usage

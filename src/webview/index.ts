@@ -5,3 +5,6 @@
 // surface (Phase 2) and cost rollups (Phase 3) build on it.
 export { projectRun } from './projection';
 export type { NodeView, TreeNode, RunProjection } from './projection';
+export { renderRunPage, renderErrorPage } from './render';
+export { createWebViewServer, startWebView } from './server';
+export type { WebViewServerOptions, StartedWebView } from './server';
