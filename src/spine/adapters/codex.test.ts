@@ -98,17 +98,17 @@ describe('buildCodexArgs cost guardrail', () => {
   const ctx = { learnings: [] as string[] };
 
   test('pins the cheapest model by default and honors an override', () => {
-    const def = buildCodexArgs(spec, ctx, { model: DEFAULT_CODEX_MODEL });
+    const def = buildCodexArgs(spec, ctx, { model: DEFAULT_CODEX_MODEL, mcpServers: [] });
     const i = def.indexOf('--model');
     expect(i).toBeGreaterThanOrEqual(0);
     expect(def[i + 1]).toBe('gpt-5.4-mini');
 
-    const overridden = buildCodexArgs(spec, ctx, { model: 'gpt-5.5' });
+    const overridden = buildCodexArgs(spec, ctx, { model: 'gpt-5.5', mcpServers: [] });
     expect(overridden[overridden.indexOf('--model') + 1]).toBe('gpt-5.5');
   });
 
   test('drives the documented non-interactive JSONL exec surface', () => {
-    const args = buildCodexArgs(spec, ctx, { model: DEFAULT_CODEX_MODEL });
+    const args = buildCodexArgs(spec, ctx, { model: DEFAULT_CODEX_MODEL, mcpServers: [] });
     expect(args[0]).toBe('exec');
     expect(args).toContain('--json');
     expect(args.slice(args.indexOf('--sandbox'), args.indexOf('--sandbox') + 2)).toEqual([
@@ -118,34 +118,33 @@ describe('buildCodexArgs cost guardrail', () => {
     // The prompt is the trailing positional argument (after every flag).
     expect(args[args.length - 1]).toContain('do a thing');
   });
+
+  // WHY: Phase 5 wires Codex's MCP grant through config (`-c mcp_servers.*`), not a
+  // single flag like Claude. A granted server must appear as the dotted config
+  // overrides Codex parses as TOML, so the agent can connect to the spine-hosted
+  // server as a client.
+  test('routes a granted MCP server through `-c mcp_servers.*` config overrides', () => {
+    const args = buildCodexArgs(spec, ctx, {
+      model: DEFAULT_CODEX_MODEL,
+      mcpServers: [{ name: 'probe', command: 'srv', args: ['--flag'] }],
+    });
+    expect(args).toContain('mcp_servers.probe.command="srv"');
+    expect(args).toContain('mcp_servers.probe.args=["--flag"]');
+    // The prompt still trails every flag.
+    expect(args[args.length - 1]).toContain('do a thing');
+  });
 });
 
 describe('codexExecutor capabilities', () => {
-  test('reports json/resume/sandbox support; MCP wiring is Phase 5', () => {
+  test('reports json/resume/sandbox/mcp support (Phase 5 wires the MCP grant)', () => {
     const caps = codexExecutor().capabilities();
     expect(caps).toEqual({
       provider: 'codex',
       json: true,
       resume: true,
       sandbox: true,
-      mcp: false,
+      mcp: true,
     });
-  });
-
-  test('fails loud if MCP servers are granted before the Phase 5 wiring exists', async () => {
-    const base = await mkdtemp(join(tmpdir(), 'relay-codex-mcp-'));
-    try {
-      await expect(
-        codexExecutor().run({
-          spec: { outcome: 'x', verifications: [] },
-          context: { learnings: [] },
-          worktree: join(base, 'wt'),
-          mcpServers: [{ name: 's', command: 'srv' }],
-        }),
-      ).rejects.toThrow(/MCP/);
-    } finally {
-      await rm(base, { recursive: true, force: true });
-    }
   });
 });
 

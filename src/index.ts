@@ -18,6 +18,8 @@ Commands:
     [--model <name>]         Executor model override (default: cheapest).
     [--critic-provider <n>]  Critic provider (default: the not-the-author one).
     [--critic-model <name>]  Critic model override (default: cheapest).
+    [--brain-provider <n>]   Decompose-judgment provider (default: the author).
+    [--brain-model <name>]   Brain model override (default: cheapest).
     [--check <command>]      Leaf command verification (default: always-pass).
 
 Options:
@@ -62,6 +64,18 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   }
   const criticModel = flag(args, '--critic-model');
   if (criticModel !== undefined) devOpts.criticModel = criticModel;
+  const brainProvider = flag(args, '--brain-provider');
+  if (brainProvider !== undefined) {
+    if (brainProvider !== 'claude' && brainProvider !== 'codex') {
+      process.stderr.write(
+        `dev-run: --brain-provider must be claude or codex (got ${brainProvider})\n`,
+      );
+      return 2;
+    }
+    devOpts.brainProvider = brainProvider satisfies Provider;
+  }
+  const brainModel = flag(args, '--brain-model');
+  if (brainModel !== undefined) devOpts.brainModel = brainModel;
   const check = flag(args, '--check');
   if (check !== undefined) devOpts.check = check;
   const out = await devRun(devOpts);

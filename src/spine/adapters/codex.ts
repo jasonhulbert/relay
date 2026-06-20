@@ -23,6 +23,7 @@ import { captureDiff, establishBaseline } from './worktree-diff';
 // The executor prompt is provider-agnostic; reuse the Claude adapter's builder so
 // both providers aim the executor at the same outcome + verifications + learnings.
 import { buildExecutorPrompt } from './claude';
+import { codexMcpArgs } from '../../mcp/index';
 import type {
   Executor,
   ExecutorCapabilities,
@@ -30,6 +31,7 @@ import type {
   ExecutorInput,
   ExecutorResult,
   ExecutorUsage,
+  McpServerConfig,
 } from '../executor';
 import type { OutcomeSpec } from '../../relay-state/index';
 
@@ -55,11 +57,13 @@ export interface CodexAdapterOptions {
 // either the caller's override or `DEFAULT_CODEX_MODEL`, never the CLI default.
 // `--skip-git-repo-check` is safe here: the worktree is git-init'd by
 // `establishBaseline` before dispatch, and the flag keeps the run robust to that
-// repo's state. The prompt is the trailing positional argument.
+// repo's state. Granted MCP servers are routed in as `-c mcp_servers.*` config
+// overrides (Codex's grant path is config, not a single flag like Claude). The
+// prompt is the trailing positional argument.
 export function buildCodexArgs(
   spec: OutcomeSpec,
   context: ExecutorContext,
-  config: { model: string },
+  config: { model: string; mcpServers: readonly McpServerConfig[] },
 ): string[] {
   return [
     'exec',
@@ -69,6 +73,7 @@ export function buildCodexArgs(
     '--skip-git-repo-check',
     '--model',
     config.model,
+    ...codexMcpArgs(config.mcpServers),
     buildExecutorPrompt(spec, context),
   ];
 }
@@ -176,19 +181,15 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
     json: true,
     resume: true,
     sandbox: true,
-    // MCP grant wiring for Codex is Phase 5 (config-based, not a CLI flag); until
-    // then the adapter cannot honor a grant, so it reports the capability honestly.
-    mcp: false,
+    // Codex grants MCP through config (`-c mcp_servers.*`), routed by the spine's
+    // MCP host; the grant is honored, so the capability is reported truthfully.
+    mcp: true,
   });
 
   return {
     capabilities,
     async run(input: ExecutorInput): Promise<ExecutorResult> {
       const { spec, context, worktree, mcpServers } = input;
-      if (mcpServers.length > 0) {
-        // Fail loud rather than silently drop a grant the adapter cannot wire yet.
-        throw new Error('codex adapter does not yet wire MCP servers (Phase 5)');
-      }
       await mkdir(worktree, { recursive: true });
       // Baseline before dispatch so the captured diff is exactly what the model
       // produced this attempt (the orchestrator discards the worktree between
@@ -197,7 +198,7 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
 
       // Cost guardrail: with no explicit override, pin the cheapest model.
       const model = opts.model ?? DEFAULT_CODEX_MODEL;
-      const args = buildCodexArgs(spec, context, { model });
+      const args = buildCodexArgs(spec, context, { model, mcpServers });
 
       const start = Date.now();
       const { code, stdout } = await runCodex(bin, args, worktree);

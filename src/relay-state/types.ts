@@ -22,6 +22,62 @@ export interface McpServerConfig {
   args?: string[];
 }
 
+// A child's resource footprint (design §3.8, A3): the resources it is predicted to
+// touch, pinned by the decomposing orchestrator at decomposition. It schedules
+// sibling concurrency (A2) and grounds the `file-boundary` seam predicate against
+// the intent-journal footprint — it is a hint, not a sandbox, allowed to be wrong
+// and corrected by execution exactly like leaf-sizing. v0.1 pins the load-bearing
+// resource — the repo-relative write globs — and leaves the ports/services/session
+// resources for when concurrency lands (M10); persisting the footprint now is part
+// of what "decomposing a layer" produces (§3.3).
+export interface Footprint {
+  // Repo-relative globs the child is expected to write (A8 file-boundary).
+  writeGlobs: string[];
+}
+
+// The seam kinds (design §3.8, F3): each a typed contract with a code-checkable
+// predicate. v0.1 persists the authored seam; the integration gate that verifies
+// each kind deterministic-first is a later milestone (M10 concurrency).
+export type SeamKind = 'interface' | 'http' | 'file-boundary' | 'data-schema';
+
+// A seam contract between two children of one decomposed layer (design §3.8, A8,
+// F3): the typed discriminated-union artifact the parent authors into `.relay/`,
+// so a seam mismatch becomes a verifiable element of each child's outcome rather
+// than a silent discovery after whole subtrees have been spent. The producer/
+// consumer reference child node-ids within the layer; the seam graph these form is
+// the structural fact the failure rule (§3.9) traverses and the integration gate
+// (§3.8) checks.
+export interface SeamContract {
+  id: string;
+  kind: SeamKind;
+  // Child node-ids on each side of the seam (the producer publishes; the consumer
+  // depends on what it publishes).
+  producer: string;
+  consumer: string;
+  // The typed payload the kind's predicate checks. Free-form per kind in v0.1; the
+  // typed-union payloads firm up with the integration gate (M10).
+  payload: Record<string, unknown>;
+  // Natural-language intent for the critic (F3).
+  intent: string;
+}
+
+// The child-manifest of the one layer a branch decomposed (design §4, §3.8). The
+// orchestrator is its sole writer; it records the layer's structural facts beyond
+// the child node files — each child's resource footprint and the seam graph
+// between the children — and is committed in the SAME atomic transaction as the
+// children themselves (C8), so rehydration never sees a layer whose footprints or
+// seams disagree with its child nodes.
+export interface LayerManifest {
+  // The branch node whose decomposed children this layer describes.
+  parentId: string;
+  runId: string;
+  // Per-child footprint, keyed by child node-id.
+  footprints: Record<string, Footprint>;
+  // The seams between the children (A8); empty when the layer has no cross-child
+  // interface to pin.
+  seams: SeamContract[];
+}
+
 export type NodeKind = 'branch' | 'leaf';
 
 // Node lifecycle. M1 drives a leaf pending -> active -> done; `blocked` is the

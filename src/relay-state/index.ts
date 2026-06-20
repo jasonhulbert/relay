@@ -14,6 +14,10 @@ export type {
   BlockedRecord,
   NodeRecord,
   OutcomeContract,
+  Footprint,
+  SeamKind,
+  SeamContract,
+  LayerManifest,
   DecisionKind,
   DecisionRecord,
   RootManifest,
@@ -25,6 +29,7 @@ export {
   relativeManifestPath,
   relativeNodePath,
   relativeContractPath,
+  relativeLayerPath,
 } from './paths';
 export type { RelayPaths } from './paths';
 export { atomicWriteFile, fsyncDir } from './io';
@@ -38,6 +43,7 @@ export {
   writeContract,
   tryReadContract,
 } from './contract';
+export { serializeLayer, deserializeLayer, readLayer, writeLayer, tryReadLayer } from './layer';
 export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } from './journal';
 export type { IntentWrite } from './journal';
 export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';

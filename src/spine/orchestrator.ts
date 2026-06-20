@@ -22,11 +22,13 @@ import {
   readManifest,
   readNode,
   relativeContractPath,
+  relativeLayerPath,
   relativeNodePath,
   relayPaths,
   rollForwardPending,
   runCritic,
   serializeContract,
+  serializeLayer,
   serializeNode,
   toCriticView,
   tryReadContract,
@@ -38,10 +40,14 @@ import type {
   CriticVerdict,
   DecisionRecord,
   EvidenceRef,
+  Footprint,
   IntentWrite,
+  LayerManifest,
+  McpServerConfig,
   NodeRecord,
   NodeStatus,
   OutcomeContract,
+  SeamContract,
 } from '../relay-state/index';
 import { stubExecutor } from './executor';
 import type { Executor } from './executor';
@@ -49,8 +55,8 @@ import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
 import type { RailCaps, RailUsage } from './rails';
-import { stubDecompose } from './decompose';
-import type { Decompose } from './decompose';
+import { stubBrain } from './brain';
+import type { Brain, ChildPlan, Decomposition } from './brain';
 import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
 
@@ -117,9 +123,17 @@ export interface RunOptions {
   // generous stub caps where the attempt rail is the meaningful one; tight caps
   // and real token/wall-clock accounting arrive with real providers (M4).
   caps?: RailCaps;
-  // How a promoted leaf is re-decomposed into child outcomes (design §3.9).
-  // Defaults to the deterministic M3 stub; model-driven decomposition is M4.
-  decompose?: Decompose;
+  // The orchestrator brain (design §3.3, §3.4): the model judgment for decomposing
+  // a layer (children + footprints + seams) and classifying each child leaf-vs-
+  // branch. Drives both branch-activation decomposition (§3.10) and a promoted
+  // leaf's re-decomposition (§3.9). Defaults to the deterministic stub brain so the
+  // M1–M3 spine tests stay hermetic; a real run wires `agentBrain`.
+  brain?: Brain;
+  // The MCP servers the spine (as host) grants to every agent it spawns — the
+  // executor, the critic, and the brain's judgment call (§3.252, §9.4, C9). Defaults
+  // to none; the agents connect to whatever is granted as MCP clients and the code
+  // remains the sole writer of `.relay/`.
+  mcpServers?: readonly McpServerConfig[];
   // How a branch child is spawned (C6). Defaults to a real subprocess; a test may
   // inject a stand-in to isolate the parent's own behavior.
   spawnChild?: SpawnChild;
@@ -172,8 +186,10 @@ interface LeafContext {
   faultAt: RunOptions['faultAt'];
   // Budget caps for this leaf's escalation ladder (design §3.7).
   caps: RailCaps;
-  // How a promoted leaf is re-decomposed into child outcomes (design §3.9).
-  decompose: Decompose;
+  // The brain that re-decomposes a promoted leaf into child outcomes (design §3.9).
+  brain: Brain;
+  // The MCP servers granted to this leaf's executor and critic (§3.252, C9).
+  mcpServers: readonly McpServerConfig[];
   // Accumulates this process's `.relay/`-relative write footprint (A6).
   writes: Set<string>;
 }
@@ -244,6 +260,47 @@ function renderVerdict(node: NodeRecord): string {
 
 async function discardWorktree(workRoot: string, leafId: string): Promise<void> {
   await rm(join(workRoot, leafId), { recursive: true, force: true });
+}
+
+// Materialize a brain decomposition into the durable layer the orchestrator commits
+// (design §3.3, §3.8). The orchestrator owns id assignment — the brain works in
+// child indices — so this assigns each child `${parentId}.c${i}`, builds the child
+// node records (each carrying the inherited learnings), and builds the layer
+// manifest: each child's footprint by node-id, and the seam graph with producer/
+// consumer remapped from indices to the assigned node-ids. Pure; the caller commits
+// the result atomically.
+function buildLayer(
+  parentId: string,
+  runId: string,
+  decomposition: Decomposition,
+  childLearnings: readonly string[],
+): { children: NodeRecord[]; manifest: LayerManifest } {
+  const children: NodeRecord[] = decomposition.children.map((plan: ChildPlan, i) => ({
+    id: `${parentId}.c${i.toString()}`,
+    parentId,
+    kind: plan.kind,
+    status: 'pending',
+    spec: plan.spec,
+    children: [],
+    selfReport: null,
+    learnings: [...childLearnings],
+    verdict: null,
+    evidenceRefs: [],
+    blocked: null,
+  }));
+  const footprints: Record<string, Footprint> = {};
+  for (const [i, plan] of decomposition.children.entries()) {
+    footprints[children[i].id] = plan.footprint;
+  }
+  const seams: SeamContract[] = decomposition.seams.map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    producer: children[s.producer].id,
+    consumer: children[s.consumer].id,
+    payload: s.payload,
+    intent: s.intent,
+  }));
+  return { children, manifest: { parentId, runId, footprints, seams } };
 }
 
 // A node that is terminal but NOT done — blocked (ladder exhaustion, §3.7) or
@@ -373,7 +430,8 @@ async function dispatchLeaf(
     workRoot,
     faultAt,
     caps,
-    decompose,
+    brain,
+    mcpServers,
     writes,
   } = ctx;
   const leafId = leaf.id;
@@ -413,13 +471,15 @@ async function dispatchLeaf(
     const worktree = join(workRoot, leafId);
     await mkdir(worktree, { recursive: true });
     // Carry the node's accumulated learnings as context so a retried or
-    // re-decomposed unit does not relearn them (design §3.5). No MCP servers are
-    // granted yet — the code-owned MCP loop is Phase 4.
+    // re-decomposed unit does not relearn them (design §3.5). The granted MCP
+    // servers are routed to the executor by the spine (MCP host); the executor
+    // connects as a client and may drive them, but only the orchestrator writes
+    // `.relay/` (C2, §9.4).
     const result = await exec.run({
       spec: node.spec,
       context: { learnings: node.learnings },
       worktree,
-      mcpServers: [],
+      mcpServers,
     });
     fault('after-executor');
 
@@ -453,10 +513,10 @@ async function dispatchLeaf(
     // diff + evidence), never the node's self-report. Alongside the projection it is
     // granted the non-evidentiary context an independent critic needs to act — the
     // produced-change worktree it runs its declared verification kinds against, and
-    // the same mcp_servers the executor gets (§3.252, C9). The grant is empty until
-    // the Phase 5 MCP loop populates it, exactly like the executor above.
+    // the same mcp_servers the executor gets (§3.252, C9), routed by the spine (MCP
+    // host) exactly like the executor above.
     const view = toCriticView(node, result.diff);
-    const verdict = await runCritic(critic, view, { worktree, mcpServers: [] });
+    const verdict = await runCritic(critic, view, { worktree, mcpServers });
     return { node, signal: verdict.pass ? 'pass' : 'fail', verdict };
   };
 
@@ -484,26 +544,22 @@ async function dispatchLeaf(
   };
 
   // The `promote` rung: turn this leaf into a branch and re-decompose it into new
-  // child outcomes, carrying the failed attempt's lesson forward. The leaf→branch
-  // flip and every new child node land in ONE atomic intent-journal transaction,
-  // so rehydration sees the pre-promotion leaf or the post-promotion branch, never
-  // a torn middle (the promotion-atomicity guarantee, design §3.5).
+  // child outcomes, carrying the failed attempt's lesson forward. The brain renders
+  // the decomposition (children + footprints + seams, each child classified leaf-vs-
+  // branch); the code commits it. The leaf→branch flip, every new child node, AND
+  // the layer manifest (footprints + seam graph) land in ONE atomic intent-journal
+  // transaction, so rehydration sees the pre-promotion leaf or the post-promotion
+  // branch, never a torn middle (the promotion-atomicity guarantee, design §3.5).
   const promote = async (failed: AttemptResult): Promise<LeafOutcome> => {
     const reflection = promotionReflection(leafId, failed.signal, failed.verdict);
-    const children: NodeRecord[] = decompose(leaf.spec).map((spec, i) => ({
-      id: `${leafId}.c${i.toString()}`,
-      parentId: leafId,
-      kind: 'leaf',
-      status: 'pending',
-      spec,
-      children: [],
-      selfReport: null,
-      // Keep-lesson: the new children inherit why their parent leaf failed.
-      learnings: [reflection],
-      verdict: null,
-      evidenceRefs: [],
-      blocked: null,
-    }));
+    // The brain judgment (an agent) is granted the failed worktree to inspect and
+    // the same MCP servers as the executor; it returns data and writes nothing —
+    // the code below is the sole writer of `.relay/` (C2, §9.4).
+    const decomposition = await brain.decompose(
+      { spec: leaf.spec, context: { learnings: leaf.learnings } },
+      { worktree: join(workRoot, leafId), mcpServers },
+    );
+    const { children, manifest } = buildLayer(leafId, runId, decomposition, [reflection]);
     const branch: NodeRecord = {
       ...leaf,
       kind: 'branch',
@@ -518,11 +574,13 @@ async function dispatchLeaf(
     const txn: IntentWrite[] = [
       { path: relativeNodePath(branch.id), content: serializeNode(branch) },
       ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
+      { path: relativeLayerPath(branch.id), content: serializeLayer(manifest) },
     ];
     writes.add(relativeNodePath(branch.id));
     for (const c of children) {
       writes.add(relativeNodePath(c.id));
     }
+    writes.add(relativeLayerPath(branch.id));
     fault('before-promote');
     const intentId = await writeIntent(relayDir, region, txn);
     fault('promote-intent');
@@ -646,6 +704,47 @@ async function driveChild(
   return contract;
 }
 
+// Branch-activation decomposition (design §3.10, §3.3): when an orchestrator
+// activates on a branch that has no decomposed layer yet, it calls the brain (an
+// agent) for the one-layer decomposition, then COMMITS the children + footprints +
+// seams as one atomic transaction (C8) before dispatching any of them — the model
+// judges, code persists (Rule 5, C2). Returns the branch re-read with its children
+// populated. A branch that already has children (hand-seeded, or promoted with
+// eager children) is returned untouched: decomposition is lazy and happens once.
+async function decomposeBranch(
+  relayDir: string,
+  region: string,
+  root: NodeRecord,
+  runId: string,
+  brain: Brain,
+  grant: { workRoot: string; mcpServers: readonly McpServerConfig[] },
+  writes: Set<string>,
+): Promise<NodeRecord> {
+  if (root.children.length > 0) {
+    return root;
+  }
+  const worktree = join(grant.workRoot, root.id);
+  await mkdir(worktree, { recursive: true });
+  const decomposition = await brain.decompose(
+    { spec: root.spec, context: { learnings: root.learnings } },
+    { worktree, mcpServers: grant.mcpServers },
+  );
+  const { children, manifest } = buildLayer(root.id, runId, decomposition, root.learnings);
+  const decomposed: NodeRecord = { ...root, children: children.map((c) => c.id) };
+  const txn: IntentWrite[] = [
+    { path: relativeNodePath(decomposed.id), content: serializeNode(decomposed) },
+    ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
+    { path: relativeLayerPath(decomposed.id), content: serializeLayer(manifest) },
+  ];
+  writes.add(relativeNodePath(decomposed.id));
+  for (const c of children) {
+    writes.add(relativeNodePath(c.id));
+  }
+  writes.add(relativeLayerPath(decomposed.id));
+  await commit(relayDir, region, txn);
+  return decomposed;
+}
+
 export async function runOrchestrator(
   relayDir: string,
   rootId: string,
@@ -656,7 +755,8 @@ export async function runOrchestrator(
   const swapExecutor = opts.swapExecutor ?? executor;
   const critic = opts.critic ?? stubCritic;
   const caps = opts.caps ?? DEFAULT_CAPS;
-  const decompose = opts.decompose ?? stubDecompose;
+  const brain = opts.brain ?? stubBrain;
+  const mcpServers = opts.mcpServers ?? [];
   // The journal region is the bound node-id: one OS process owns one region (C6).
   const region = rootId;
   const workRoot = opts.workRoot ?? join(dirname(relayDir), 'worktrees');
@@ -699,6 +799,19 @@ export async function runOrchestrator(
       ownedWrites: [...writes].sort(),
     };
   }
+  // Branch-activation decomposition (§3.10): a branch with no layer yet is
+  // decomposed once — children + footprints + seams committed atomically — before
+  // any child is dispatched. A branch already carrying children is left untouched.
+  root = await decomposeBranch(
+    relayDir,
+    region,
+    root,
+    manifest.runId,
+    brain,
+    { workRoot, mcpServers },
+    writes,
+  );
+
   // The critic verdicts certifying this node's children — the structural fact that
   // rides up in this node's own contract (§3.6, certified turtles-all-the-way-up).
   const childVerdictRefs: EvidenceRef[] = [];
@@ -730,7 +843,8 @@ export async function runOrchestrator(
         workRoot,
         faultAt: opts.faultAt,
         caps,
-        decompose,
+        brain,
+        mcpServers,
         writes,
       });
       if (outcome.kind === 'done') {

@@ -2,7 +2,13 @@
 // property tests (node round-trip, projection chokepoint). Kept out of the
 // production bundle by being unreferenced from the spine entry point.
 import fc from 'fast-check';
-import type { DecisionRecord, NodeRecord, OutcomeContract, RootManifest } from './types';
+import type {
+  DecisionRecord,
+  LayerManifest,
+  NodeRecord,
+  OutcomeContract,
+  RootManifest,
+} from './types';
 
 // Path-safe ids (matches paths.ts `assertSafeId`, which also rejects the
 // traversal segments `.` and `..`).
@@ -123,4 +129,24 @@ export const arbOutcomeContract: fc.Arbitrary<OutcomeContract> = fc.record({
   criticCertified: fc.boolean(),
   verdictRefs: fc.array(arbEvidenceRef, { maxLength: 3 }),
   seamEvidence: fc.array(arbEvidenceRef, { maxLength: 3 }),
+});
+
+const arbFootprint = fc.record({
+  writeGlobs: fc.array(trickyText, { maxLength: 4 }),
+});
+
+const arbSeamContract = fc.record({
+  id: safeId,
+  kind: fc.constantFrom('interface', 'http', 'file-boundary', 'data-schema'),
+  producer: safeId,
+  consumer: safeId,
+  payload: fc.dictionary(fc.stringMatching(/^[A-Za-z0-9_]{1,12}$/), trickyText, { maxKeys: 3 }),
+  intent: trickyText,
+});
+
+export const arbLayerManifest: fc.Arbitrary<LayerManifest> = fc.record({
+  parentId: safeId,
+  runId: safeId,
+  footprints: fc.dictionary(safeId, arbFootprint, { maxKeys: 4 }),
+  seams: fc.array(arbSeamContract, { maxLength: 3 }),
 });

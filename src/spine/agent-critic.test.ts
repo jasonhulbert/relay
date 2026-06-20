@@ -197,19 +197,24 @@ describe('the critic spawns the cross-provider model when deterministic checks p
   });
 });
 
-// WHY: Codex grants MCP via config, not a CLI flag (Phase 5). Granting servers now
-// must fail loud, never silently drop the grant — the same stance as the executor.
-describe('codex critic fails loud on an MCP grant before Phase 5', () => {
-  test('rejects when granted servers it cannot yet wire', async () => {
+// WHY: Codex grants MCP via config, not a CLI flag (Phase 5). The critic — like the
+// executor — must route a granted server through `-c mcp_servers.*` so the agent can
+// connect to the spine-hosted server as a client, never silently drop the grant.
+describe('codex critic wires a granted MCP server through config (Phase 5)', () => {
+  test('emits `-c mcp_servers.*` overrides for the granted server', async () => {
     const node = nodeWithNarrative('true');
     const view = toCriticView(node, 'a diff');
+    let seenArgs: string[] = [];
     const critic = agentCritic({
       provider: 'codex',
-      invoke: () => Promise.resolve({ stdout: '', code: 0 }),
+      invoke: (call) => {
+        seenArgs = call.args;
+        return Promise.resolve({ stdout: codexStream('VERDICT: PASS'), code: 0 });
+      },
     });
-    await expect(
-      critic(view, ctx({ mcpServers: [{ name: 's', command: 'srv' }] })),
-    ).rejects.toThrow(/MCP/);
+    await critic(view, ctx({ mcpServers: [{ name: 'probe', command: 'srv' }] }));
+    expect(seenArgs).toContain('mcp_servers.probe.command="srv"');
+    expect(seenArgs).toContain('mcp_servers.probe.args=[]');
   });
 });
 

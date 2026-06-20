@@ -16,6 +16,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { captureDiff, establishBaseline } from './worktree-diff';
+import { claudeMcpArgs } from '../../mcp/index';
 import type {
   Executor,
   ExecutorCapabilities,
@@ -79,16 +80,6 @@ export function buildExecutorPrompt(spec: OutcomeSpec, context: ExecutorContext)
   return lines.join('\n');
 }
 
-// `--mcp-config` accepts a JSON document of server definitions. Threaded for
-// Phase 4; an empty list contributes no flag.
-function mcpConfigArg(servers: readonly McpServerConfig[]): string {
-  const mcpServers: Record<string, { command: string; args: string[] }> = {};
-  for (const s of servers) {
-    mcpServers[s.name] = { command: s.command, args: s.args ?? [] };
-  }
-  return JSON.stringify({ mcpServers });
-}
-
 // Build the full `claude -p` argv for one dispatch. Pulled out of `run` so the
 // cost-guardrail default (the `--model` flag is ALWAYS present) is testable
 // without spawning the CLI. `--model` is unconditional: the resolved model is
@@ -117,10 +108,10 @@ export function buildClaudeArgs(
     ...config.allowedTools,
     '--model',
     config.model,
+    // The spine (MCP host) routes the granted server fleet into the agent's config;
+    // an empty grant contributes no flags.
+    ...claudeMcpArgs(config.mcpServers),
   ];
-  if (config.mcpServers.length > 0) {
-    args.push('--mcp-config', mcpConfigArg(config.mcpServers), '--strict-mcp-config');
-  }
   return args;
 }
 

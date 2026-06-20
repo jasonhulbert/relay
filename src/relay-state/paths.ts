@@ -16,6 +16,7 @@ export function assertSafeId(id: string): void {
 export function relayPaths(relayDir: string) {
   const nodesDir = join(relayDir, 'nodes');
   const contractsDir = join(relayDir, 'contracts');
+  const layersDir = join(relayDir, 'layers');
   return {
     relayDir,
     manifest: join(relayDir, 'manifest.md'),
@@ -28,6 +29,12 @@ export function relayPaths(relayDir: string) {
     contractFile: (id: string): string => {
       assertSafeId(id);
       return join(contractsDir, `${id}.md`);
+    },
+    layersDir,
+    // The child-manifest of the layer a branch decomposed, keyed by the branch id.
+    layerFile: (parentId: string): string => {
+      assertSafeId(parentId);
+      return join(layersDir, `${parentId}.md`);
     },
     evidenceDir: (runId: string): string => {
       assertSafeId(runId);
@@ -55,4 +62,9 @@ export function relativeNodePath(id: string): string {
 export function relativeContractPath(id: string): string {
   assertSafeId(id);
   return `contracts/${id}.md`;
+}
+
+export function relativeLayerPath(parentId: string): string {
+  assertSafeId(parentId);
+  return `layers/${parentId}.md`;
 }

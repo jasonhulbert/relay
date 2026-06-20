@@ -20,6 +20,7 @@
 import { spawn } from 'node:child_process';
 import { DEFAULT_CLAUDE_MODEL, parseClaudeStream } from './adapters/claude';
 import { DEFAULT_CODEX_MODEL, parseCodexStream } from './adapters/codex';
+import { claudeMcpArgs, codexMcpArgs } from '../mcp/index';
 import { runDeterministicVerifications } from './verify';
 import type { VerificationResult } from './verify';
 import type { ExecutorUsage } from './executor';
@@ -60,16 +61,6 @@ export interface CriticInvocation {
 export interface CriticInvocationResult {
   stdout: string;
   code: number;
-}
-
-// `--mcp-config` accepts a JSON document of server definitions (Claude). Mirrors
-// the executor adapter; an empty grant contributes no flag.
-function claudeMcpConfigArg(servers: readonly McpServerConfig[]): string {
-  const mcpServers: Record<string, { command: string; args: string[] }> = {};
-  for (const s of servers) {
-    mcpServers[s.name] = { command: s.command, args: s.args ?? [] };
-  }
-  return JSON.stringify({ mcpServers });
 }
 
 // Render the critic prompt from the projection plus the deterministic grounding.
@@ -141,7 +132,7 @@ function buildCriticArgs(
   config: { model: string; mcpServers: readonly McpServerConfig[] },
 ): string[] {
   if (provider === 'claude') {
-    const args = [
+    return [
       '-p',
       prompt,
       '--output-format',
@@ -156,13 +147,13 @@ function buildCriticArgs(
       'Grep',
       '--model',
       config.model,
+      // The spine (MCP host) routes the granted server fleet into the critic's
+      // config, exactly as it does the executor's; empty grant → no flags.
+      ...claudeMcpArgs(config.mcpServers),
     ];
-    if (config.mcpServers.length > 0) {
-      args.push('--mcp-config', claudeMcpConfigArg(config.mcpServers), '--strict-mcp-config');
-    }
-    return args;
   }
-  // Codex: read-only sandbox; the prompt is the trailing positional argument.
+  // Codex: read-only sandbox; granted MCP servers ride as `-c mcp_servers.*` config
+  // overrides; the prompt is the trailing positional argument.
   return [
     'exec',
     '--json',
@@ -171,6 +162,7 @@ function buildCriticArgs(
     '--skip-git-repo-check',
     '--model',
     config.model,
+    ...codexMcpArgs(config.mcpServers),
     prompt,
   ];
 }
@@ -236,13 +228,6 @@ export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
   const invoke = opts.invoke ?? defaultInvoke;
 
   return async (view: CriticView, ctx: CriticContext): Promise<CriticVerdict> => {
-    // Codex grants MCP via config, not a CLI flag — the wiring is Phase 5. Until
-    // then, fail loud on a grant rather than silently dropping it (Rule 11), the
-    // same stance the Codex executor takes.
-    if (provider === 'codex' && ctx.mcpServers.length > 0) {
-      throw new Error('codex critic does not yet wire MCP servers (Phase 5)');
-    }
-
     // Cheapest-first (§6.3): the deterministic kinds are ground truth. A declared
     // check that fails settles done-ness without spending a model call.
     const results = await runDeterministicVerifications(view.spec.verifications, ctx.worktree);

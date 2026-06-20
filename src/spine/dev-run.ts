@@ -23,6 +23,8 @@ import { runOrchestrator } from './orchestrator';
 import type { OrchestratorResult, RunOptions } from './orchestrator';
 import { agentCritic } from './agent-critic';
 import type { AgentCriticOptions } from './agent-critic';
+import { agentBrain } from './brain';
+import type { AgentBrainOptions, Brain } from './brain';
 import type { CriticSpawn } from '../relay-state/index';
 import { seedFixture } from './seed';
 import type { SeedOptions } from './seed';
@@ -54,6 +56,13 @@ export interface DevRunOptions {
   // Per-role cost-guardrail knob for the critic. Omitted → the critic provider's
   // cheapest default.
   criticModel?: string;
+  // Which provider renders the orchestrator's own decompose/leaf-vs-branch judgment
+  // (design §3.3, §3.4). Defaults to the author (primary) provider — unlike the
+  // critic, the brain is not required to be cross-provider.
+  brainProvider?: Provider;
+  // Per-role cost-guardrail knob for the brain. Omitted → the brain provider's
+  // cheapest default.
+  brainModel?: string;
   // The executor to drive. Defaults to the real Claude adapter; tests inject a
   // deterministic stand-in so the harness is exercisable without the CLI.
   executor?: Executor;
@@ -61,6 +70,10 @@ export interface DevRunOptions {
   // on a REAL run; tests inject a deterministic stand-in (and a test that injects
   // its own `executor` keeps the orchestrator's hermetic default critic).
   critic?: CriticSpawn;
+  // The brain that decomposes a promoted/childless branch. Defaults to the real
+  // agent brain on a REAL run; tests inject a deterministic stand-in (and a test
+  // that injects its own `executor` keeps the orchestrator's hermetic stub brain).
+  brain?: Brain;
   // Injected clock for the index's timestamps (deterministic tests).
   now?: () => string;
   // Recap sink; defaults to stdout.
@@ -247,6 +260,20 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     };
     if (opts.criticModel !== undefined) criticOpts.model = opts.criticModel;
     runOpts.critic = agentCritic(criticOpts);
+  }
+  // The orchestrator's own decompose/leaf-vs-branch judgment (design §3.3, §3.4). An
+  // injected brain wins; otherwise the real agent brain is wired only on a real run
+  // (no injected executor), so a test injecting just an executor keeps the stub
+  // brain. Its per-call usage records into the same sink so the recap surfaces it.
+  if (opts.brain !== undefined) {
+    runOpts.brain = opts.brain;
+  } else if (opts.executor === undefined) {
+    const brainOpts: AgentBrainOptions = {
+      provider: opts.brainProvider ?? provider,
+      onUsage: (u) => usages.push(u),
+    };
+    if (opts.brainModel !== undefined) brainOpts.model = opts.brainModel;
+    runOpts.brain = agentBrain(brainOpts);
   }
 
   const result = await runOrchestrator(relayDir, 'root', runOpts);

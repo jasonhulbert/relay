@@ -49,10 +49,29 @@ export type {
 // command/test/artifact predicates the critic grounds its verdict on (Rule 5).
 export { runVerification, runDeterministicVerifications, isDeterministicKind } from './verify';
 export type { VerificationResult } from './verify';
-// Promotion re-decomposition (design §3.9): the deterministic stub a promoted
-// leaf's new branch children are seeded from; model-driven decomposition is M4.
-export { stubDecompose } from './decompose';
-export type { Decompose } from './decompose';
+// The orchestrator brain (M4 Phase 5, design §3.3, §3.4): the model judgment for
+// decomposing a layer (children + footprints + seams) and classifying each child
+// leaf-vs-branch. `stubBrain` is the deterministic default for the spine tests;
+// `agentBrain` is the real provider judgment connected to the granted MCP servers.
+export {
+  stubBrain,
+  agentBrain,
+  buildDecomposePrompt,
+  buildBrainArgs,
+  parseDecomposition,
+} from './brain';
+export type {
+  Brain,
+  BrainProvider,
+  BrainContext,
+  DecomposeRequest,
+  Decomposition,
+  ChildPlan,
+  SeamPlan,
+  AgentBrainOptions,
+  BrainInvocation,
+  BrainInvocationResult,
+} from './brain';
 // The escalation ladder + budget rails (design §3.7, §3.9): the bounded
 // verdict-handling machine a failing leaf walks before terminal `blocked`.
 export { EscalationLadder, LADDER_RUNGS } from './ladder';
