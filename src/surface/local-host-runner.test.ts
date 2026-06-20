@@ -116,12 +116,7 @@ describe('LocalHostRunner', () => {
     expect(builtWith!.outputDir).toBe('/run/scope');
     expect(builtWith!.browser).toBe('chrome');
     // Caffeinate wrapped the check; the surface was closed.
-    expect(events).toEqual([
-      'caffeinate:start',
-      'check:start',
-      'check:end',
-      'caffeinate:stop',
-    ]);
+    expect(events).toEqual(['caffeinate:start', 'check:start', 'check:end', 'caffeinate:stop']);
     expect(surfaceState.closed).toBe(true);
   });
 

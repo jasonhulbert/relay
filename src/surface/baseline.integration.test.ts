@@ -117,10 +117,16 @@ integration('baseline pipeline against the fixture (live browser)', () => {
     // Let the clock advance, then grade — every re-capture differs from the baseline,
     // so the diff persists above tolerance against a healthy app → a mismatch decision.
     await new Promise((r) => setTimeout(r, 250));
-    const grade = await verifyBaselineDiff(surface, { granularity: 'baseline-diff', path: [] }, ctx);
+    const grade = await verifyBaselineDiff(
+      surface,
+      { granularity: 'baseline-diff', path: [] },
+      ctx,
+    );
 
     expect(grade.pass).toBe(false); // never an auto-pass
-    expect(seen.some((m) => m.outcomeId === 'frame-baseline' && m.kind === 'regression')).toBe(true);
+    expect(seen.some((m) => m.outcomeId === 'frame-baseline' && m.kind === 'regression')).toBe(
+      true,
+    );
     expect((await readBaselineRef(relayDir, 'frame-baseline'))?.version).toBe(1); // not overwritten
   }, 180_000);
 });

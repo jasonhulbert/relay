@@ -82,7 +82,9 @@ export type ScreenshotDiffer = (baseline: Screenshot, candidate: Screenshot) => 
 // that keeps the pipeline runnable before the perceptual differ is wired at M9 — the
 // same "real algorithm injected later" discipline as the `IntentJudge`.
 export const exactBytesDiffer: ScreenshotDiffer = (baseline, candidate) =>
-  Promise.resolve(baseline.data === candidate.data && baseline.mimeType === candidate.mimeType ? 0 : 1);
+  Promise.resolve(
+    baseline.data === candidate.data && baseline.mimeType === candidate.mimeType ? 0 : 1,
+  );
 
 // Why a known-good baseline is being asked to change (F2). `re-version` is an
 // explicit replacement request (e.g. an intended redesign); `regression` is a
@@ -209,7 +211,9 @@ function renderRefBody(ref: BaselineRef): string {
     `- MIME: ${ref.mimeType}`,
   ];
   if (ref.history.length > 0) {
-    lines.push(`- Prior versions: ${ref.history.map((h) => `v${h.version.toString()}`).join(', ')}`);
+    lines.push(
+      `- Prior versions: ${ref.history.map((h) => `v${h.version.toString()}`).join(', ')}`,
+    );
   }
   return lines.join('\n');
 }

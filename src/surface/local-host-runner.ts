@@ -208,7 +208,11 @@ export class LocalHostRunner {
     if (tccNotice !== null) this.#log(tccNotice);
 
     const meter = new WaitMeter();
-    const surface = new MeteredSurface(this.#surfaceFactory(this.#surfaceOptions()), meter, this.#now);
+    const surface = new MeteredSurface(
+      this.#surfaceFactory(this.#surfaceOptions()),
+      meter,
+      this.#now,
+    );
 
     const startMs = this.#now();
     await this.#caffeinate.start();

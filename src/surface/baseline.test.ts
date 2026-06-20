@@ -81,7 +81,10 @@ function fakeSurface(cfg: { shots: Screenshot[]; alive?: boolean }): Surface {
 
 // A sink that records every surfaced mismatch, so a test can assert a decision was
 // surfaced (rather than an overwrite or a silent pass).
-function recordingSink(): { sink: (m: BaselineMismatch) => Promise<void>; seen: BaselineMismatch[] } {
+function recordingSink(): {
+  sink: (m: BaselineMismatch) => Promise<void>;
+  seen: BaselineMismatch[];
+} {
   const seen: BaselineMismatch[] = [];
   return {
     seen,
@@ -379,7 +382,9 @@ describe('replayAndGrade baseline-diff integration', () => {
 
   test('without a grader, the baseline rung fails loud (no silent skip)', async () => {
     const surface = fakeSurface({ shots: [shot('frame-A')] });
-    await expect(replayAndGrade(surface, v)).rejects.toThrow(/requires an injected BaselineGrader/i);
+    await expect(replayAndGrade(surface, v)).rejects.toThrow(
+      /requires an injected BaselineGrader/i,
+    );
   });
 });
 
