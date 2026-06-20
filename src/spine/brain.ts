@@ -70,6 +70,10 @@ export interface Decomposition {
 export interface BrainContext {
   worktree: string;
   mcpServers: readonly McpServerConfig[];
+  // Optional F5 usage sink: the orchestrator supplies it at the call site (where it
+  // knows the node being decomposed) so the brain's decompose-judgment usage is
+  // persisted node-attributed (design §8). Absent on the stub path / direct calls.
+  onUsage?: (usage: ExecutorUsage) => void;
 }
 
 export interface DecomposeRequest {
@@ -410,7 +414,10 @@ export function agentBrain(opts: AgentBrainOptions): Brain {
       const { stdout } = await invoke({ bin, args, cwd: ctx.worktree });
       const wallClockMs = Date.now() - start;
       const { review, usage } = parseProviderStream(provider, stdout, model, wallClockMs);
+      // Both write-only sinks: construction-time observer (direct calls) and the
+      // orchestrator's node-attributed F5 sink (real runs). See agent-critic.ts.
       opts.onUsage?.(usage);
+      ctx.onUsage?.(usage);
       // Code reads the answer the model produced (Rule 5); a malformed judgment
       // fails loud (Rule 11) rather than committing a half-typed layer.
       return parseDecomposition(review);

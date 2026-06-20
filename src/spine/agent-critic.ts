@@ -251,7 +251,11 @@ export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
     const { stdout } = await invoke({ bin, args, cwd: ctx.worktree });
     const wallClockMs = Date.now() - start;
     const { review, usage } = parseProviderStream(provider, stdout, model, wallClockMs);
+    // Two sinks, both write-only: `opts.onUsage` is the construction-time observer
+    // (direct unit calls), `ctx.onUsage` is the orchestrator's node-attributed sink
+    // for F5 persistence (design §8). On a real run only the latter is set.
     opts.onUsage?.(usage);
+    ctx.onUsage?.(usage);
 
     const parsed = parseCriticVerdict(review);
     if (parsed === null) {

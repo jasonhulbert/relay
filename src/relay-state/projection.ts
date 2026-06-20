@@ -18,6 +18,22 @@
 // If a critic could read the whole record, the integrity leak silently reopens.
 import type { CriticVerdict, EvidenceRef, McpServerConfig, NodeRecord, OutcomeSpec } from './types';
 
+// A per-call usage observation a critic emits for F5 attribution (design §8). It is
+// pure instrumentation — write-only telemetry the orchestrator persists keyed by the
+// graded node — and carries NOTHING into the critic, so it cannot reopen the C7 leak
+// (the projection is still spec + diff + evidence only). Kept structurally identical
+// to the executor's `ExecutorUsage` without importing the spine, so relay-state stays
+// the lower layer.
+export interface CriticCallUsage {
+  provider: string;
+  model: string | null;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  wallClockMs: number;
+  costUsd: number | null;
+}
+
 // Phantom brand. Module-private and never exported, so no other module can name
 // it to forge a `CriticView`; the value is never set at runtime (it is a
 // type-level marker only).
@@ -64,6 +80,11 @@ export interface CriticContext {
   // narrative the critic must never read).
   readonly worktree: string;
   readonly mcpServers: readonly McpServerConfig[];
+  // Optional F5 usage sink: the orchestrator supplies it at the call site (where it
+  // knows the graded node), and the critic emits its model call's usage into it for
+  // node-attributed persistence (design §8). Absent on the stub path and in direct
+  // unit calls.
+  readonly onUsage?: (usage: CriticCallUsage) => void;
 }
 
 // The independent critic itself (a separate agent, different provider by

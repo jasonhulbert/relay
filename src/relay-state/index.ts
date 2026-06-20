@@ -21,6 +21,9 @@ export type {
   DecisionKind,
   DecisionRecord,
   RootManifest,
+  CallRole,
+  CostSource,
+  CallUsage,
 } from './types';
 
 export {
@@ -30,6 +33,8 @@ export {
   relativeNodePath,
   relativeContractPath,
   relativeLayerPath,
+  relativeUsagePath,
+  relativeCostRollupPath,
 } from './paths';
 export type { RelayPaths } from './paths';
 export { atomicWriteFile, fsyncDir } from './io';
@@ -44,6 +49,7 @@ export {
   tryReadContract,
 } from './contract';
 export { serializeLayer, deserializeLayer, readLayer, writeLayer, tryReadLayer } from './layer';
+export { serializeUsage, deserializeUsage, writeUsage, readRunUsage } from './usage';
 export { commit, writeIntent, applyIntent, rollForwardPending, pendingIntents } from './journal';
 export type { IntentWrite } from './journal';
 export { serializeDecision, deserializeDecision, writeDecision, readInbox } from './inbox';

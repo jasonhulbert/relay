@@ -20,6 +20,8 @@ are authoritative where this doc is silent.
   nodes/<node-id>.md     # one file per node (root -> branches -> leaves)
   contracts/<node-id>.md # verified outcome contract a sub-orchestrator hands up (A7)
   evidence/<run-id>/     # run-scoped evidence store (refs only live in nodes)
+    <node-id>/usage/     # raw per-call cost records, attributed to the node (F5)
+    cost.md              # per-run cost rollup, composed from the usage records (F5)
   inbox/                 # human-owned decision inbox
   journal/<region>/      # per-region write-ahead intent journal (C8)
 ```
@@ -68,7 +70,14 @@ the child's internals.
 
 The run-scoped store for transcripts, screenshots, and raw per-call cost
 records. Nodes hold only **refs** into this store, keeping `.relay/` compact and
-the evidence prunable by the evidence compactor (D2). Visual baselines are the
+the evidence prunable by the evidence compactor (D2). Per-call usage records
+(F5, design §8) live at `evidence/<run-id>/<node-id>/usage/<role>-<seq>.md`,
+one per model call (executor / critic / brain), each carrying the call's tokens
+and resolved dollar cost — direct from the provider (Claude `total_cost_usd`) or
+derived from the local price table (Codex). The per-run rollup `cost.md` is a
+read-time projection composed from those records by the top-level run; it is the
+operator's cost-per-outcome view and is not a shared write target. Visual
+baselines are the
 exception: they live in a separate durable content-addressed store excluded from
 the compactor, with only the ref (hash, outcome-id, granularity, version,
 tolerance) recorded in `.relay/` so binaries never enter files-only state

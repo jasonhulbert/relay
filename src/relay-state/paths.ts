@@ -40,6 +40,25 @@ export function relayPaths(relayDir: string) {
       assertSafeId(runId);
       return join(relayDir, 'evidence', runId);
     },
+    // Per-call usage records live under the node they served, inside the run's
+    // evidence store (F5; raw per-call cost records, design §4).
+    usageDir: (runId: string, nodeId: string): string => {
+      assertSafeId(runId);
+      assertSafeId(nodeId);
+      return join(relayDir, 'evidence', runId, nodeId, 'usage');
+    },
+    usageFile: (runId: string, nodeId: string, role: string, seq: number): string => {
+      assertSafeId(runId);
+      assertSafeId(nodeId);
+      assertSafeId(role);
+      return join(relayDir, 'evidence', runId, nodeId, 'usage', `${role}-${seq.toString()}.md`);
+    },
+    // The per-run cost rollup: a read-time projection composed from the per-call
+    // records, written once by the top-level run (F5, design §8).
+    costRollup: (runId: string): string => {
+      assertSafeId(runId);
+      return join(relayDir, 'evidence', runId, 'cost.md');
+    },
     inboxDir: join(relayDir, 'inbox'),
     journalDir: (region: string): string => {
       assertSafeId(region);
@@ -67,4 +86,21 @@ export function relativeContractPath(id: string): string {
 export function relativeLayerPath(parentId: string): string {
   assertSafeId(parentId);
   return `layers/${parentId}.md`;
+}
+
+export function relativeUsagePath(
+  runId: string,
+  nodeId: string,
+  role: string,
+  seq: number,
+): string {
+  assertSafeId(runId);
+  assertSafeId(nodeId);
+  assertSafeId(role);
+  return `evidence/${runId}/${nodeId}/usage/${role}-${seq.toString()}.md`;
+}
+
+export function relativeCostRollupPath(runId: string): string {
+  assertSafeId(runId);
+  return `evidence/${runId}/cost.md`;
 }

@@ -193,6 +193,43 @@ export interface OutcomeContract {
   seamEvidence: EvidenceRef[];
 }
 
+// The role an agent played in a call whose usage we attribute (F5, design §8).
+// Every real model call in the loop is one of these three: the leaf executor, the
+// independent critic, or the orchestrator brain's decompose judgment.
+export type CallRole = 'executor' | 'critic' | 'brain';
+
+// How a call's dollar figure was obtained (F5, design §8): the provider reported it
+// directly (Claude `total_cost_usd`), it was derived from the local price table
+// (Codex token counts), or no figure could be produced (no price row for the model).
+export type CostSource = 'direct' | 'price-table' | 'unpriced';
+
+// One model call's usage, attributed to the node it served (F5, design §8). Tokens
+// are ground truth; `costUsd` is the resolved dollar figure (direct or price-table-
+// derived) with `costSource` recording which. A raw per-call record in the run's
+// evidence store, keyed by node-id + role + sequence; the per-run rollup is composed
+// from these (a read-time projection, never a shared write target — design §4).
+export interface CallUsage {
+  runId: string;
+  nodeId: string;
+  role: CallRole;
+  // Monotonic per (node, role): for executor/critic it is the escalation-ladder
+  // attempt number; for the brain it is 0 (one decompose call per node). Ties the
+  // record to the attempt that produced it and keeps re-dispatch idempotent.
+  seq: number;
+  provider: string;
+  model: string | null;
+  // Uncached input tokens.
+  inputTokens: number;
+  // Input tokens served through the prompt cache.
+  cachedInputTokens: number;
+  outputTokens: number;
+  wallClockMs: number;
+  // Resolved dollar cost: provider-reported (`direct`) or price-table-derived
+  // (`price-table`); `null` when neither is available (`unpriced`).
+  costUsd: number | null;
+  costSource: CostSource;
+}
+
 // A human decision queued in the decision inbox (I4, design §3.11). The inbox is
 // a human-OWNED region: the human writes decisions into it and the orchestrator
 // only reads and drains them at activation, applying each as an atomic transition

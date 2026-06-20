@@ -202,7 +202,9 @@ describe.skipIf(!process.env.RELAY_E2E)('devRun end-to-end (real CLI)', () => {
       expect((await gitLogLines(res.storeDir)).length).toBeGreaterThan(0);
 
       // Cheapest model by default (the cost guardrail), as reported by the stream.
-      expect(res.usages[0]?.model).toBe('claude-haiku-4-5');
+      // `usages` is node-attributed (not dispatch-ordered), so query by role.
+      const exec = res.usages.find((u) => u.role === 'executor');
+      expect(exec?.model).toBe('claude-haiku-4-5');
 
       // Following the recap's pointer reaches the real diff + self-report.
       const diff = await readFile(

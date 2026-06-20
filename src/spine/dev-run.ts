@@ -12,8 +12,8 @@
 // Phase 6 — this harness does not write usage records into `.relay/`.
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { relayPaths, readNode } from '../relay-state/index';
-import type { ExecutorUsage } from './executor';
+import { relayPaths, readNode, readRunUsage } from '../relay-state/index';
+import type { CallUsage } from '../relay-state/index';
 import type { Executor } from './executor';
 import { claudeExecutor } from './adapters/claude';
 import type { ClaudeAdapterOptions } from './adapters/claude';
@@ -90,27 +90,13 @@ export interface DevRunResult {
   result: OrchestratorResult;
   // The provider the independent critic ran (different from the author by default).
   criticProvider: Provider;
-  // Per-call usage in dispatch order (not yet node-attributed — Phase 6). Spans
-  // both executor and critic calls on a real run.
-  usages: ExecutorUsage[];
+  // Node-attributed per-call usage records (F5), read back from the persisted
+  // evidence store. Spans executor, critic, and brain calls; sorted by node/role/seq.
+  usages: CallUsage[];
   // The rendered recap (also written to `log`).
   recap: string;
   // Whether the end-of-run commit recorded anything.
   committed: boolean;
-}
-
-// Capture each dispatch's usage without changing the executor's behavior, so the
-// recap can report model/tokens/cost. (Orchestrator-level, node-attributed usage
-// is Phase 6.)
-function recordingExecutor(inner: Executor, sink: ExecutorUsage[]): Executor {
-  return {
-    capabilities: () => inner.capabilities(),
-    async run(input) {
-      const result = await inner.run(input);
-      sink.push(result.usage);
-      return result;
-    },
-  };
 }
 
 // Build a real provider executor at its cheapest default, with an optional
@@ -128,7 +114,7 @@ function buildProviderExecutor(provider: Provider, model?: string): Executor {
 }
 
 function formatUsd(cost: number | null): string {
-  return cost === null ? 'n/a (price-table, Phase 6)' : `$${cost.toFixed(6)}`;
+  return cost === null ? 'n/a (unpriced)' : `$${cost.toFixed(6)}`;
 }
 
 // Render the operator recap: where the store is, every node's status, the run's
@@ -141,7 +127,7 @@ async function renderRecap(
   key: string,
   runId: string,
   result: OrchestratorResult,
-  usages: readonly ExecutorUsage[],
+  usages: readonly CallUsage[],
 ): Promise<string> {
   const paths = relayPaths(storeDir);
   const lines: string[] = [
@@ -188,15 +174,28 @@ async function renderRecap(
     lines.push('  (none persisted this run)');
   }
 
-  lines.push('', 'per-call usage (dispatch order; node attribution lands in Phase 6):');
+  lines.push('', 'per-call usage (node-attributed; F5):');
   if (usages.length === 0) {
-    lines.push('  (no executor calls)');
+    lines.push('  (no model calls)');
   }
-  for (const [i, u] of usages.entries()) {
+  let runTotal = 0;
+  let uncosted = 0;
+  for (const u of usages) {
+    if (u.costUsd === null) uncosted += 1;
+    else runTotal += u.costUsd;
     lines.push(
-      `  [${i.toString()}] provider=${u.provider} model=${u.model ?? 'unknown'} ` +
+      `  ${u.nodeId} [${u.role} #${u.seq.toString()}] provider=${u.provider} ` +
+        `model=${u.model ?? 'unknown'} ` +
         `in=${u.inputTokens.toString()} cached=${u.cachedInputTokens.toString()} ` +
-        `out=${u.outputTokens.toString()} wall=${u.wallClockMs.toString()}ms cost=${formatUsd(u.costUsd)}`,
+        `out=${u.outputTokens.toString()} wall=${u.wallClockMs.toString()}ms ` +
+        `cost=${formatUsd(u.costUsd)} (${u.costSource})`,
+    );
+  }
+  if (usages.length > 0) {
+    lines.push(
+      `  run total: ${formatUsd(runTotal)}` +
+        (uncosted > 0 ? `  (+${uncosted.toString()} uncosted)` : ''),
+      `  rollup: ${paths.costRollup(runId)}`,
     );
   }
 
@@ -225,15 +224,13 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   if (opts.check !== undefined) seedOpts.check = opts.check;
   await seedFixture(relayDir, seedOpts);
 
-  const usages: ExecutorUsage[] = [];
   const provider: Provider = opts.provider ?? 'claude';
   // The provider the swap-provider rung re-dispatches under.
   const otherProvider: Provider = provider === 'claude' ? 'codex' : 'claude';
   // The independent critic is cross-provider by default: the not-the-author one.
   const criticProvider: Provider = opts.criticProvider ?? otherProvider;
 
-  const primaryInner = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
-  const executor = recordingExecutor(primaryInner, usages);
+  const executor = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
 
   const runOpts: RunOptions = {
     executor,
@@ -244,39 +241,39 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   // default (the per-role override raises only the primary). Skipped when a test
   // injects its own executor — it then owns the swap behavior too.
   if (opts.executor === undefined) {
-    runOpts.swapExecutor = recordingExecutor(buildProviderExecutor(otherProvider), usages);
+    runOpts.swapExecutor = buildProviderExecutor(otherProvider);
   }
   // The real cross-provider critic gates done-ness (design §3.6). An explicit
   // injected critic wins; otherwise the real agent critic is wired only on a real
   // run (no injected executor), so a test injecting just an executor keeps the
-  // orchestrator's hermetic default critic. The critic's per-call usage records
-  // into the same sink as the executor so the recap surfaces it.
+  // orchestrator's hermetic default critic. Per-call usage is now persisted by the
+  // orchestrator (F5), node-attributed, and read back below for the recap — the
+  // harness no longer captures it in-memory.
   if (opts.critic !== undefined) {
     runOpts.critic = opts.critic;
   } else if (opts.executor === undefined) {
-    const criticOpts: AgentCriticOptions = {
-      provider: criticProvider,
-      onUsage: (u) => usages.push(u),
-    };
+    const criticOpts: AgentCriticOptions = { provider: criticProvider };
     if (opts.criticModel !== undefined) criticOpts.model = opts.criticModel;
     runOpts.critic = agentCritic(criticOpts);
   }
   // The orchestrator's own decompose/leaf-vs-branch judgment (design §3.3, §3.4). An
   // injected brain wins; otherwise the real agent brain is wired only on a real run
   // (no injected executor), so a test injecting just an executor keeps the stub
-  // brain. Its per-call usage records into the same sink so the recap surfaces it.
+  // brain. Its usage is persisted by the orchestrator (F5) like the others.
   if (opts.brain !== undefined) {
     runOpts.brain = opts.brain;
   } else if (opts.executor === undefined) {
-    const brainOpts: AgentBrainOptions = {
-      provider: opts.brainProvider ?? provider,
-      onUsage: (u) => usages.push(u),
-    };
+    const brainOpts: AgentBrainOptions = { provider: opts.brainProvider ?? provider };
     if (opts.brainModel !== undefined) brainOpts.model = opts.brainModel;
     runOpts.brain = agentBrain(brainOpts);
   }
 
   const result = await runOrchestrator(relayDir, 'root', runOpts);
+
+  // F5: the per-call usage records the orchestrator persisted, node-attributed, read
+  // back from the store (the recap is a faithful view of what was persisted, not an
+  // in-memory side-channel).
+  const usages = await readRunUsage(relayDir, runId);
 
   const recap = await renderRecap(
     relayDir,

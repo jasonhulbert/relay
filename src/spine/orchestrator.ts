@@ -22,9 +22,12 @@ import {
   readManifest,
   readNode,
   relativeContractPath,
+  relativeCostRollupPath,
   relativeLayerPath,
   relativeNodePath,
+  relativeUsagePath,
   relayPaths,
+  readRunUsage,
   rollForwardPending,
   runCritic,
   serializeContract,
@@ -33,9 +36,12 @@ import {
   toCriticView,
   tryReadContract,
   writeIntent,
+  writeUsage,
 } from '../relay-state/index';
 import type {
   BlockedRecord,
+  CallRole,
+  CallUsage,
   CriticSpawn,
   CriticVerdict,
   DecisionRecord,
@@ -49,8 +55,10 @@ import type {
   OutcomeContract,
   SeamContract,
 } from '../relay-state/index';
+import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
+import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
-import type { Executor } from './executor';
+import type { Executor, ExecutorUsage } from './executor';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
@@ -141,6 +149,11 @@ export interface RunOptions {
   // RELAY_CHILD_ENTRY env var (which the spawner sets on each child, so deeper
   // levels inherit it). Required only when a branch child must actually spawn.
   childEntry?: string;
+  // The local price table for F5 cost derivation (design §8): used to turn a
+  // table-driven provider's token counts (Codex, `costUsd === null`) into dollars.
+  // Defaults to `DEFAULT_PRICE_TABLE`; tests inject a fixed table. A Claude call is
+  // priced direct from its own `total_cost_usd` and never consults the table.
+  priceTable?: PriceTable;
   // Faults this process applies to its OWN run (forwarded in from a parent spawn).
   injection?: ChildInjection;
   // Faults to forward to spawned branch children, by child node-id.
@@ -190,6 +203,8 @@ interface LeafContext {
   brain: Brain;
   // The MCP servers granted to this leaf's executor and critic (§3.252, C9).
   mcpServers: readonly McpServerConfig[];
+  // Local price table for F5 cost derivation (design §8).
+  priceTable: PriceTable;
   // Accumulates this process's `.relay/`-relative write footprint (A6).
   writes: Set<string>;
 }
@@ -248,6 +263,42 @@ function evidenceRef(
   summary: string,
 ): EvidenceRef {
   return { runId, path: rel, kind, summary };
+}
+
+// Persist one model call's usage as a raw per-call record in the evidence store,
+// attributed to the node it served (F5, design §8). Code is the sole writer (C2):
+// the orchestrator resolves the dollar figure deterministically (direct for Claude,
+// price-table-derived for Codex — Rule 5) and writes the record. The stub path
+// produces no real spend, so a `stub` call writes no telemetry — keeping the M1–M3
+// hermetic spine runs byte-identical (no usage files, no rollup).
+async function persistUsage(
+  relayDir: string,
+  runId: string,
+  nodeId: string,
+  role: CallRole,
+  seq: number,
+  raw: ExecutorUsage,
+  priceTable: PriceTable,
+  writes: Set<string>,
+): Promise<void> {
+  if (raw.provider === 'stub') return;
+  const { costUsd, source } = resolveCost(raw, priceTable);
+  const record: CallUsage = {
+    runId,
+    nodeId,
+    role,
+    seq,
+    provider: raw.provider,
+    model: raw.model,
+    inputTokens: raw.inputTokens,
+    cachedInputTokens: raw.cachedInputTokens,
+    outputTokens: raw.outputTokens,
+    wallClockMs: raw.wallClockMs,
+    costUsd,
+    costSource: source,
+  };
+  await writeUsage(relayDir, record);
+  writes.add(relativeUsagePath(runId, nodeId, role, seq));
 }
 
 function renderVerdict(node: NodeRecord): string {
@@ -432,6 +483,7 @@ async function dispatchLeaf(
     caps,
     brain,
     mcpServers,
+    priceTable,
     writes,
   } = ctx;
   const leafId = leaf.id;
@@ -453,7 +505,7 @@ async function dispatchLeaf(
   // then either the executor's too-big sizing signal or the critic's graded
   // verdict. Re-runnable: each call discards the prior attempt's worktree first,
   // so a rehydrated run reproduces an identical record.
-  const attempt = async (exec: Executor): Promise<AttemptResult> => {
+  const attempt = async (exec: Executor, seq: number): Promise<AttemptResult> => {
     fault('before-dispatch');
 
     // T1: fresh active state, atop a discarded prior attempt (idempotent
@@ -481,6 +533,10 @@ async function dispatchLeaf(
       worktree,
       mcpServers,
     });
+    // F5: persist this executor call's usage, attributed to the leaf + attempt
+    // (design §8). The dollar figure is resolved here (Claude direct / Codex
+    // price-table); the stub path writes nothing.
+    await persistUsage(relayDir, runId, leafId, 'executor', seq, result.usage, priceTable, writes);
     fault('after-executor');
 
     // T2: persist the self-report (orchestrator-visible) + evidence refs. The diff
@@ -516,7 +572,20 @@ async function dispatchLeaf(
     // the same mcp_servers the executor gets (§3.252, C9), routed by the spine (MCP
     // host) exactly like the executor above.
     const view = toCriticView(node, result.diff);
-    const verdict = await runCritic(critic, view, { worktree, mcpServers });
+    // F5: the critic emits its model call's usage into the orchestrator-supplied
+    // sink (design §8); collected here and persisted attributed to the same leaf +
+    // attempt. The sink carries nothing INTO the critic, so C7 is intact. The
+    // deterministic-only critic path (a declared check fails) spends no model call,
+    // so it emits nothing.
+    const criticUsages: ExecutorUsage[] = [];
+    const verdict = await runCritic(critic, view, {
+      worktree,
+      mcpServers,
+      onUsage: (u) => criticUsages.push(u),
+    });
+    for (const u of criticUsages) {
+      await persistUsage(relayDir, runId, leafId, 'critic', seq, u, priceTable, writes);
+    }
     return { node, signal: verdict.pass ? 'pass' : 'fail', verdict };
   };
 
@@ -555,10 +624,15 @@ async function dispatchLeaf(
     // The brain judgment (an agent) is granted the failed worktree to inspect and
     // the same MCP servers as the executor; it returns data and writes nothing —
     // the code below is the sole writer of `.relay/` (C2, §9.4).
+    const brainUsages: ExecutorUsage[] = [];
     const decomposition = await brain.decompose(
       { spec: leaf.spec, context: { learnings: leaf.learnings } },
-      { worktree: join(workRoot, leafId), mcpServers },
+      { worktree: join(workRoot, leafId), mcpServers, onUsage: (u) => brainUsages.push(u) },
     );
+    // F5: the re-decompose judgment's usage, attributed to the leaf it promoted.
+    for (const u of brainUsages) {
+      await persistUsage(relayDir, runId, leafId, 'brain', 0, u, priceTable, writes);
+    }
     const { children, manifest } = buildLayer(leafId, runId, decomposition, [reflection]);
     const branch: NodeRecord = {
       ...leaf,
@@ -632,7 +706,7 @@ async function dispatchLeaf(
   let activeExecutor = executor;
   for (;;) {
     usage.attempts += 1;
-    const result = await attempt(activeExecutor);
+    const result = await attempt(activeExecutor, usage.attempts);
     const step = ladder.step(result.signal, usage);
     if (step.kind === 'done') {
       if (!result.verdict) {
@@ -717,7 +791,7 @@ async function decomposeBranch(
   root: NodeRecord,
   runId: string,
   brain: Brain,
-  grant: { workRoot: string; mcpServers: readonly McpServerConfig[] },
+  grant: { workRoot: string; mcpServers: readonly McpServerConfig[]; priceTable: PriceTable },
   writes: Set<string>,
 ): Promise<NodeRecord> {
   if (root.children.length > 0) {
@@ -725,10 +799,15 @@ async function decomposeBranch(
   }
   const worktree = join(grant.workRoot, root.id);
   await mkdir(worktree, { recursive: true });
+  const brainUsages: ExecutorUsage[] = [];
   const decomposition = await brain.decompose(
     { spec: root.spec, context: { learnings: root.learnings } },
-    { worktree, mcpServers: grant.mcpServers },
+    { worktree, mcpServers: grant.mcpServers, onUsage: (u) => brainUsages.push(u) },
   );
+  // F5: the branch-activation decompose judgment's usage, attributed to the branch.
+  for (const u of brainUsages) {
+    await persistUsage(relayDir, runId, root.id, 'brain', 0, u, grant.priceTable, writes);
+  }
   const { children, manifest } = buildLayer(root.id, runId, decomposition, root.learnings);
   const decomposed: NodeRecord = { ...root, children: children.map((c) => c.id) };
   const txn: IntentWrite[] = [
@@ -757,6 +836,7 @@ export async function runOrchestrator(
   const caps = opts.caps ?? DEFAULT_CAPS;
   const brain = opts.brain ?? stubBrain;
   const mcpServers = opts.mcpServers ?? [];
+  const priceTable = opts.priceTable ?? DEFAULT_PRICE_TABLE;
   // The journal region is the bound node-id: one OS process owns one region (C6).
   const region = rootId;
   const workRoot = opts.workRoot ?? join(dirname(relayDir), 'worktrees');
@@ -808,7 +888,7 @@ export async function runOrchestrator(
     root,
     manifest.runId,
     brain,
-    { workRoot, mcpServers },
+    { workRoot, mcpServers, priceTable },
     writes,
   );
 
@@ -845,6 +925,7 @@ export async function runOrchestrator(
         caps,
         brain,
         mcpServers,
+        priceTable,
         writes,
       });
       if (outcome.kind === 'done') {
@@ -942,6 +1023,24 @@ export async function runOrchestrator(
     await applyIntent(relayDir, region, intentId);
     if (opts.selfFaultAt === 'after-branch-done') {
       throw new InjectedKill('after-branch-done');
+    }
+  }
+
+  // F5 per-run rollup (design §8). Written once, by the TOP-LEVEL run (a node with no
+  // parent) — a sub-orchestrator persists its own nodes' per-call records into the
+  // shared evidence store, and by the time the root process returns they are all on
+  // disk, so the rollup is composed from the complete set with a single writer (no
+  // shared-write-target contention). A read-time projection of the per-call records,
+  // not a separate source of truth (design §4). Skipped when the run spent no real
+  // model call (the hermetic stub path), so those runs stay byte-identical.
+  if (root.parentId === null) {
+    const records = await readRunUsage(relayDir, manifest.runId);
+    if (records.length > 0) {
+      await atomicWriteFile(
+        relayPaths(relayDir).costRollup(manifest.runId),
+        renderCostRollup(manifest.runId, records),
+      );
+      writes.add(relativeCostRollupPath(manifest.runId));
     }
   }
 
