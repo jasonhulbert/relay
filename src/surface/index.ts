@@ -24,3 +24,20 @@ export {
 export type { WebSurfaceOptions } from './web-surface';
 export { FIXTURE_HTML, startFixture } from './fixture';
 export type { StartedFixture } from './fixture';
+export { MeteredSurface, WaitMeter, waitFraction } from './wait-meter';
+export type { Clock } from './wait-meter';
+export {
+  LocalHostRunner,
+  caffeinateCommand,
+  spawnCaffeinate,
+  fileTccGate,
+  tccGrantNotice,
+  renderRunSummary,
+} from './local-host-runner';
+export type {
+  LocalHostRunnerOptions,
+  LocalHostRunResult,
+  VisualCheck,
+  CaffeinateController,
+  TccGate,
+} from './local-host-runner';

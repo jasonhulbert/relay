@@ -45,6 +45,17 @@ describe('playwrightMcpServerConfig', () => {
     expect(cfg.args).toContain('--viewport-size');
     expect(cfg.args).toContain('1280x720');
   });
+
+  // WHY (Phase 2): Playwright MCP writes its session output to the process cwd by
+  // default; a tier-A run threads `--output-dir` so those artifacts land in the run
+  // scope instead. If the flag dropped, run artifacts would scatter into cwd.
+  test('threads an output dir as --output-dir for run-scoped session artifacts', () => {
+    const cfg = playwrightMcpServerConfig({ outputDir: '/run/scope/out' });
+    expect(cfg.args).toContain('--output-dir');
+    expect(cfg.args).toContain('/run/scope/out');
+    // Omitted by default, so a non-tier-A surface keeps Playwright's default cwd.
+    expect(playwrightMcpServerConfig().args).not.toContain('--output-dir');
+  });
 });
 
 // WHY (Validation): `capabilities()` must report the WebSurface's semantic AND

@@ -43,6 +43,10 @@ export interface WebSurfaceOptions {
   browser?: string;
   // Initial viewport, "WIDTHxHEIGHT" (e.g. "1280x720"), for a deterministic frame.
   viewportSize?: string;
+  // Directory Playwright MCP writes its session output into (snapshots/screenshots,
+  // the `.playwright-mcp/` tree). Defaults to the server's cwd; a tier-A run sets it
+  // to the run's working dir so those artifacts land in the run scope (Phase 2).
+  outputDir?: string;
   // The `npx` binary; defaults to the one on PATH.
   npxBin?: string;
 }
@@ -58,6 +62,7 @@ export function playwrightMcpServerConfig(opts: WebSurfaceOptions = {}): McpServ
   if (opts.isolated ?? true) args.push('--isolated');
   if (opts.browser !== undefined) args.push('--browser', opts.browser);
   if (opts.viewportSize !== undefined) args.push('--viewport-size', opts.viewportSize);
+  if (opts.outputDir !== undefined) args.push('--output-dir', opts.outputDir);
   return { name: 'surface', command: opts.npxBin ?? 'npx', args };
 }
 
