@@ -19,8 +19,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { writeManifest, writeNode } from '../../relay-state/index';
-import type { EvidenceRef, NodeRecord, RootManifest } from '../../relay-state/index';
+import { writeManifest, writeNode, writeUsage } from '../../relay-state/index';
+import type { CallUsage, EvidenceRef, NodeRecord, RootManifest } from '../../relay-state/index';
 
 const RUN_ID = 'run-1';
 const CREATED_AT = '2026-06-19T00:00:00.000Z';
@@ -67,6 +67,33 @@ function baselineObjectPath(content: string): string {
   return `objects/${hash}.bin`;
 }
 
+// F5 per-call usage/cost telemetry that lives UNDER the evidence dir but is NOT a
+// capture (Phase 2 decision): one live node's executor usage record and the run-level
+// cost rollup. Phase 1 left these out; Phase 2 adds them to PIN the decision that the
+// compactor PRESERVES F5 telemetry (governed by F5's prune-after-rollup rule) rather
+// than mistaking it for an orphan. `usage/` records and `cost.md` are excluded from the
+// compactor's capture scan, so they must be byte-for-byte unchanged after a run.
+const USAGE_RECORD: CallUsage = {
+  runId: RUN_ID,
+  nodeId: 'leaf-a',
+  role: 'executor',
+  seq: 1,
+  provider: 'claude',
+  model: 'claude-haiku-4-5',
+  inputTokens: 1200,
+  cachedInputTokens: 800,
+  outputTokens: 240,
+  wallClockMs: 5000,
+  costUsd: 0.0012,
+  costSource: 'direct',
+};
+// Evidence-dir-relative path the usage writer lands the record at.
+const USAGE_REL = `${USAGE_RECORD.nodeId}/usage/${USAGE_RECORD.role}-${USAGE_RECORD.seq.toString()}.md`;
+// The run-level cost rollup (design §8), a read-time projection over per-call records.
+// A fixed stand-in body is enough: the compactor must leave it untouched, not parse it.
+const COST_ROLLUP_REL = 'cost.md';
+const COST_ROLLUP_BODY = `# cost rollup (${RUN_ID})\n\n- run total: $0.001200\n`;
+
 // Golden expectations: the single enumeration Phase 2 grades the compactor against and
 // the explicit answer to "which refs are live, which are orphaned, and which
 // baseline-store paths must be untouched." Live refs and orphans are disjoint by
@@ -82,6 +109,9 @@ export const GOLDEN = {
   retainedForCompression: LIVE.map((c) => c.path),
   // Baseline-store files (relative to the baseline store dir) that must be untouched.
   untouchedBaselinePaths: BASELINE_OBJECTS.map((o) => baselineObjectPath(o.content)),
+  // F5 telemetry under the evidence dir the compactor must PRESERVE byte-for-byte
+  // (Phase 2 decision): per-call usage records and the cost rollup, not captures.
+  preservedTelemetry: [COST_ROLLUP_REL, USAGE_REL],
 } as const;
 
 export interface CompactorFixture {
@@ -174,6 +204,12 @@ export async function buildCompactorFixture(baseDir: string): Promise<CompactorF
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, obj.content, 'utf8');
   }
+
+  // F5 telemetry the compactor must preserve: a per-call usage record (written through
+  // the real usage serializer, so it carries the on-disk shape the compactor's scan
+  // must skip) and the run-level cost rollup.
+  await writeUsage(relayDir, USAGE_RECORD);
+  await writeFile(join(evidenceDir, COST_ROLLUP_REL), COST_ROLLUP_BODY, 'utf8');
 
   return { relayDir, evidenceDir, baselineStoreDir, runId: RUN_ID };
 }
