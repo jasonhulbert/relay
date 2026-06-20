@@ -78,6 +78,20 @@ export type {
   BrainInvocation,
   BrainInvocationResult,
 } from './brain';
+// The sibling scheduler (M10 Phase 1, design §3.8, A1/A2): builds the dispatch
+// schedule from the concurrency law — disjoint footprints run parallel, a shared
+// resource serializes.
+export { buildSchedule, mayRunConcurrently } from './schedule';
+export type { Schedule } from './schedule';
+// Footprint primitives (M10 Phase 1, design §3.8, A2/A3): disjointness for the
+// scheduler, escape detection for the loud-violation catch, and the violation the
+// ladder absorbs.
+export {
+  footprintsDisjoint,
+  footprintEscapes,
+  globsIntersect,
+  FootprintViolation,
+} from './footprint';
 // The escalation ladder + budget rails (design §3.7, §3.9): the bounded
 // verdict-handling machine a failing leaf walks before terminal `blocked`.
 export { EscalationLadder, LADDER_RUNGS } from './ladder';

@@ -35,6 +35,7 @@ import {
   serializeNode,
   toCriticView,
   tryReadContract,
+  tryReadLayer,
   writeIntent,
   writeUsage,
 } from '../relay-state/index';
@@ -58,7 +59,7 @@ import type {
 import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
 import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
-import type { Executor, ExecutorUsage } from './executor';
+import type { Executor, ExecutorResult, ExecutorUsage } from './executor';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
@@ -67,6 +68,8 @@ import { stubBrain } from './brain';
 import type { Brain, ChildPlan, Decomposition } from './brain';
 import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
+import { buildSchedule } from './schedule';
+import { FootprintViolation, footprintEscapes } from './footprint';
 
 // Points at which a test may model a process kill. A thrown `InjectedKill` is
 // indistinguishable from a SIGKILL for the rehydration contract: `.relay/` is the
@@ -205,6 +208,11 @@ interface LeafContext {
   mcpServers: readonly McpServerConfig[];
   // Local price table for F5 cost derivation (design §8).
   priceTable: PriceTable;
+  // The leaf's declared footprint from the parent's layer manifest (A3, §3.8): the
+  // repo-relative globs it may write. An attempt that writes outside it is a loud
+  // violation the ladder absorbs. `null` when the layer pinned no footprint for it
+  // (a hand-seeded leaf with no manifest), in which case no check runs.
+  footprint: Footprint | null;
   // Accumulates this process's `.relay/`-relative write footprint (A6).
   writes: Set<string>;
 }
@@ -217,6 +225,19 @@ type LeafOutcome =
   | { kind: 'done'; node: NodeRecord }
   | { kind: 'promoted'; node: NodeRecord; children: NodeRecord[] }
   | { kind: 'blocked'; node: NodeRecord };
+
+// The compact result of driving one scheduled child, folded into the run's status
+// maps in deterministic child order after its stage completes (so concurrent
+// siblings do not race the aggregation). Carries only what the fold needs: the
+// leaf's terminal status, a branch child's (or promoted leaf's) status, an accepted
+// contract, whether a leaf was promoted, and the verdict refs that ride up.
+interface ChildResult {
+  leafStatus?: NodeStatus;
+  childStatus?: NodeStatus;
+  contract?: OutcomeContract;
+  promoted?: boolean;
+  verdictRefs: readonly EvidenceRef[];
+}
 
 // Generous stub caps: on M3 stubs the executor produces no real tokens or
 // wall-clock, so the attempt rail is the only meaningful one, and it is set high
@@ -459,6 +480,11 @@ interface AttemptResult {
   node: NodeRecord;
   signal: AttemptSignal;
   verdict: CriticVerdict | null;
+  // The standing reason a loud failure (a footprint violation, A3) produced this
+  // `fail`, when there is no critic verdict to cite. Folded into the `blocked`
+  // record so an exhaustion that began as a loud violation says so honestly,
+  // instead of the generic "executor judged too big" fallback.
+  failReason?: string;
 }
 
 // Drive one leaf: (re-)dispatch under the escalation ladder until it reaches
@@ -484,6 +510,7 @@ async function dispatchLeaf(
     brain,
     mcpServers,
     priceTable,
+    footprint,
     writes,
   } = ctx;
   const leafId = leaf.id;
@@ -499,6 +526,31 @@ async function dispatchLeaf(
     return commit(relayDir, region, [
       { path: relativeNodePath(leafId), content: serializeNode(record) },
     ]);
+  };
+
+  // Record a loud footprint violation (A3) as a failed attempt: persist the
+  // violation as the attempt's self-report (orchestrator-only evidence, so the
+  // reason survives even after the ladder absorbs it — never silently swallowed),
+  // commit the node, and hand the ladder a `fail` carrying the standing reason. The
+  // ladder then escalates (retry / swap / raise-tier / promote) exactly as for a
+  // critic FAIL — the footprint is corrected by execution, like leaf-sizing.
+  const recordLoudFailure = async (
+    active: NodeRecord,
+    violation: FootprintViolation,
+  ): Promise<AttemptResult> => {
+    const selfRel = `${leafId}/self-report.md`;
+    const report = violation.report();
+    await atomicWriteFile(join(evDir, selfRel), report);
+    writes.add(evRel(selfRel));
+    const selfRef = evidenceRef(
+      runId,
+      selfRel,
+      'self-report',
+      'loud footprint violation (orchestrator-only)',
+    );
+    const node: NodeRecord = { ...active, selfReport: report, evidenceRefs: [selfRef] };
+    await commitNode(node);
+    return { node, signal: 'fail', verdict: null, failReason: violation.message };
   };
 
   // One dispatch attempt: a clean active state, the executor in a fresh worktree,
@@ -527,17 +579,40 @@ async function dispatchLeaf(
     // servers are routed to the executor by the spine (MCP host); the executor
     // connects as a client and may drive them, but only the orchestrator writes
     // `.relay/` (C2, §9.4).
-    const result = await exec.run({
-      spec: node.spec,
-      context: { learnings: node.learnings },
-      worktree,
-      mcpServers,
-    });
+    let result: ExecutorResult;
+    try {
+      result = await exec.run({
+        spec: node.spec,
+        context: { learnings: node.learnings },
+        worktree,
+        mcpServers,
+      });
+    } catch (err) {
+      // A3 loud-violation catch (runtime clash): an executor may raise a
+      // `FootprintViolation` for a loud conflict it hit while running — a bound
+      // port, an unavailable tool. It is absorbed here as a failed attempt the
+      // ladder escalates; any other error is a real fault and propagates.
+      if (!(err instanceof FootprintViolation)) throw err;
+      return await recordLoudFailure(node, err);
+    }
     // F5: persist this executor call's usage, attributed to the leaf + attempt
     // (design §8). The dollar figure is resolved here (Claude direct / Codex
     // price-table); the stub path writes nothing.
     await persistUsage(relayDir, runId, leafId, 'executor', seq, result.usage, priceTable, writes);
     fault('after-executor');
+
+    // A3 loud-violation catch (write footprint): the footprint is a hint, not a
+    // sandbox, so an attempt whose ACTUAL writes (the executor's reported write
+    // footprint) escape the leaf's declared footprint is a loud violation —
+    // thrown and absorbed by the ladder as a failed attempt, never silently
+    // accepted. Usage is already attributed above. The stub path reports no
+    // writes, so no check runs and the hermetic spine stays byte-identical.
+    if (footprint && result.writes) {
+      const escapes = footprintEscapes(footprint, result.writes);
+      if (escapes.length > 0) {
+        return await recordLoudFailure(node, new FootprintViolation(leafId, escapes));
+      }
+    }
 
     // T2: persist the self-report (orchestrator-visible) + evidence refs. The diff
     // and self-report are written to the run-scoped evidence store; the node holds
@@ -679,7 +754,7 @@ async function dispatchLeaf(
     const why = exhaustionReason(reason);
     const criticReason = failed.verdict
       ? failed.verdict.rationale
-      : 'no passing critic verdict (executor judged the outcome too big)';
+      : (failed.failReason ?? 'no passing critic verdict (executor judged the outcome too big)');
     const record: BlockedRecord = {
       reason: why,
       rungsSpent: [...rungsSpent],
@@ -895,22 +970,24 @@ export async function runOrchestrator(
   // The critic verdicts certifying this node's children — the structural fact that
   // rides up in this node's own contract (§3.6, certified turtles-all-the-way-up).
   const childVerdictRefs: EvidenceRef[] = [];
-  for (const childId of root.children) {
+
+  // Drive one child to its outcome, returning a compact result the caller folds in.
+  // It mutates only the shared write-footprint set (an add-only Set, safe under the
+  // cooperative concurrency below); the status maps are folded sequentially after
+  // each stage so aggregation order is the deterministic child order, not race
+  // order. A leaf is (re-)dispatched in-process under the ladder; a branch child is
+  // a sub-orchestrator in its own process accepted via its ledger contract (A7).
+  const driveScheduledChild = async (childId: string): Promise<ChildResult> => {
     const child = await readNode(relayDir, childId);
     if (child.kind === 'leaf') {
       if (child.status === 'done') {
-        leafStatuses[childId] = 'done';
-        if (child.verdict) {
-          childVerdictRefs.push(...child.verdict.evidenceRefs);
-        }
-        continue;
+        return { leafStatus: 'done', verdictRefs: child.verdict?.evidenceRefs ?? [] };
       }
       if (isTerminalNotDone(child.status)) {
         // A terminal leaf is read in ONE pass and never (re-)dispatched: a blocked
         // leaf's record already says "do not re-run the ladder" (§3.7), and a
         // cancelled leaf was taken terminal by a drained human decision (§3.9).
-        leafStatuses[childId] = child.status;
-        continue;
+        return { leafStatus: child.status, verdictRefs: [] };
       }
       // Rehydration: a non-`done` leaf is (re-)dispatched under the ladder, which
       // discards any partial prior attempt before each attempt (§3.2, §3.9).
@@ -926,35 +1003,63 @@ export async function runOrchestrator(
         brain,
         mcpServers,
         priceTable,
+        footprint: layer?.footprints[childId] ?? null,
         writes,
       });
       if (outcome.kind === 'done') {
-        leafStatuses[childId] = 'done';
-        if (outcome.node.verdict) {
-          childVerdictRefs.push(...outcome.node.verdict.evidenceRefs);
-        }
-      } else if (outcome.kind === 'blocked') {
-        // Ladder exhausted: the leaf is terminally blocked. Not done, so the
-        // parent cannot be done — the propagation gate below surfaces it up.
-        leafStatuses[childId] = 'blocked';
-      } else {
-        // Promoted leaf→branch: now a pending sub-branch whose new children a
-        // later activation drives. Not done, so the parent cannot be done either.
-        promotedNodes.push(childId);
-        childStatuses[childId] = outcome.node.status;
+        return { leafStatus: 'done', verdictRefs: outcome.node.verdict?.evidenceRefs ?? [] };
       }
-    } else {
-      // Branch child → a sub-orchestrator in its own process (C6), accepted via
-      // its verified outcome contract read from the ledger (A7).
-      const contract = await driveChild(relayDir, child, opts);
-      if (contract) {
-        childStatuses[childId] = 'done';
-        childContracts[childId] = contract;
-        childVerdictRefs.push(...contract.verdictRefs);
-      } else {
-        childStatuses[childId] = (await readNode(relayDir, childId)).status;
+      if (outcome.kind === 'blocked') {
+        // Ladder exhausted: the leaf is terminally blocked. Not done, so the parent
+        // cannot be done — the propagation gate below surfaces it up.
+        return { leafStatus: 'blocked', verdictRefs: [] };
       }
+      // Promoted leaf→branch: now a pending sub-branch whose new children a later
+      // activation drives. Not done, so the parent cannot be done either.
+      return { promoted: true, childStatus: outcome.node.status, verdictRefs: [] };
     }
+    // Branch child → a sub-orchestrator in its own process (C6), accepted via its
+    // verified outcome contract read from the ledger (A7).
+    const contract = await driveChild(relayDir, child, opts);
+    if (contract) {
+      return { childStatus: 'done', contract, verdictRefs: contract.verdictRefs };
+    }
+    return { childStatus: (await readNode(relayDir, childId)).status, verdictRefs: [] };
+  };
+
+  // Build the dispatch schedule from the concurrency law (A2, §3.8): the layer
+  // manifest's footprints decide which siblings may run concurrently. Disjoint
+  // footprints collapse into one parallel stage; a shared resource serializes into
+  // separate stages. A hand-seeded branch has no manifest, so every child is its
+  // own stage — fully serial, the A1 safe ground state.
+  const layer = await tryReadLayer(relayDir, root.id);
+  const schedule = buildSchedule(root.children, layer);
+  const results = new Map<string, ChildResult>();
+  for (const stage of schedule.stages) {
+    // Within a stage the children run concurrently; stages run in sequence.
+    const stageResults = await Promise.all(stage.map((childId) => driveScheduledChild(childId)));
+    stage.forEach((childId, i) => results.set(childId, stageResults[i]));
+  }
+
+  // Fold the per-child results into the run's status maps in deterministic child
+  // order, so the contract's verdict refs and the reported statuses are independent
+  // of which sibling finished first.
+  for (const childId of root.children) {
+    const r = results.get(childId);
+    if (r === undefined) continue;
+    if (r.leafStatus !== undefined) {
+      leafStatuses[childId] = r.leafStatus;
+    }
+    if (r.promoted) {
+      promotedNodes.push(childId);
+    }
+    if (r.childStatus !== undefined) {
+      childStatuses[childId] = r.childStatus;
+    }
+    if (r.contract) {
+      childContracts[childId] = r.contract;
+    }
+    childVerdictRefs.push(...r.verdictRefs);
   }
 
   const childDone = (id: string): boolean =>

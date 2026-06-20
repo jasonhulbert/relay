@@ -73,6 +73,12 @@ export interface ExecutorResult {
   // critic and drives the ladder straight to promote (leaf→branch). Absent means
   // a normal attempt the critic then grades.
   sizeSignal?: 'too-big';
+  // The repo-relative paths this attempt actually wrote, for the footprint
+  // hint/loud-violation check (A3, design §3.8): the orchestrator compares them to
+  // the leaf's declared footprint and throws a `FootprintViolation` on a write that
+  // escapes it. Absent means the executor reports no write footprint, so no check
+  // runs — the hermetic stub path, which stays byte-identical.
+  writes?: string[];
 }
 
 // What an adapter supports, so the loop can choose rungs (resume, provider swap)
