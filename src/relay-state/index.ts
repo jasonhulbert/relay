@@ -20,6 +20,7 @@ export type {
   LayerManifest,
   DecisionKind,
   DecisionRecord,
+  Sketch,
   RootManifest,
   CallRole,
   CostSource,

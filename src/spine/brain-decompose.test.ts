@@ -56,6 +56,7 @@ async function seedChildlessBranch(relayDir: string, outcome: string): Promise<v
     runId: 'run-1',
     rootId: 'root',
     spec,
+    sketch: { notes: [] },
     createdAt: '2026-06-19T00:00:00.000Z',
   };
   await writeManifest(relayDir, manifest);

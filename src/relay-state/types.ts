@@ -253,12 +253,29 @@ export interface DecisionRecord {
   note: string | null;
 }
 
+// The non-binding high-level sketch the intake compiler captures (design §3.3,
+// §3.11, I2): free-form orientation bullets that point a run the right way at
+// commit time. It is deliberately NOT a `Decomposition` — it carries no child
+// specs, footprints, or seams — so it is structurally incapable of being a binding
+// plan. The orchestrator's brain owns decomposition and is free to diverge from
+// the sketch entirely (orientation, allowed to be wrong, never a contract). It
+// lives here, with the durable record schema, because the committed root carries
+// it in the manifest; the intake module re-exports it.
+export interface Sketch {
+  notes: string[];
+}
+
 // The root manifest (design §4). Describes the run and the root node; run-level
 // rollups (cost-per-outcome, §8) attach here in later milestones.
 export interface RootManifest {
   runId: string;
   rootId: string;
   spec: OutcomeSpec;
+  // The non-binding orientation sketch the intake compiler committed with the root
+  // (design §3.11, M6). Present on every root: a hand-seeded fixture carries an
+  // empty one; intake carries what the conversation distilled. Never a binding
+  // decomposition (its `Sketch` shape cannot encode one).
+  sketch: Sketch;
   // ISO-8601 creation timestamp.
   createdAt: string;
 }

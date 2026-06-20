@@ -4,6 +4,8 @@
 // `.relay/` root is Phase 2. Phase 1 produces the seed and terminates at approval.
 export { compileSeed } from './seed';
 export type { IntakeSeed, Sketch } from './seed';
+export { commitRoot } from './commit';
+export type { CommitRootOptions, RootCommitResult } from './commit';
 export {
   runIntake,
   parseInterviewerTurn,

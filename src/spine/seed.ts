@@ -48,6 +48,9 @@ export async function seedFixture(relayDir: string, opts: SeedOptions = {}): Pro
     runId,
     rootId,
     spec: commandSpec('the seeded run completes end-to-end', check),
+    // Hand-seeded fixture: no human intake, so the orientation sketch is empty (the
+    // real intake compiler, M6, commits a populated one).
+    sketch: { notes: [] },
     // Fixed so the fixture is byte-deterministic across runs (kill-and-rehydrate
     // compares the resulting `.relay/` records exactly).
     createdAt: '2026-06-18T00:00:00.000Z',
@@ -109,6 +112,7 @@ export async function seedHierarchy(
     runId,
     rootId,
     spec: commandSpec('the seeded hierarchical run completes end-to-end', check),
+    sketch: { notes: [] },
     createdAt: '2026-06-18T00:00:00.000Z',
   };
   await writeManifest(relayDir, manifest);

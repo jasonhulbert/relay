@@ -40,6 +40,7 @@ async function seedFixture(relayDir: string): Promise<void> {
     runId: 'run-1',
     rootId: 'root',
     spec: spec('ship the widget end-to-end'),
+    sketch: { notes: [] },
     createdAt: '2026-06-18T00:00:00.000Z',
   };
   await writeManifest(relayDir, manifest);
@@ -210,6 +211,7 @@ describe('webview HTTP server', () => {
         runId: 'run-1',
         rootId: 'root',
         spec: spec('root'),
+        sketch: { notes: [] },
         createdAt: '2026-06-18T00:00:00.000Z',
       });
       await writeNode(relayDir, node({ id: 'root', kind: 'branch', children: ['ghost'] }));

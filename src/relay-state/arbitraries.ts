@@ -112,6 +112,7 @@ export const arbRootManifest: fc.Arbitrary<RootManifest> = fc.record({
   runId: safeId,
   rootId: safeId,
   spec: arbSpec,
+  sketch: fc.record({ notes: fc.array(trickyText, { maxLength: 4 }) }),
   createdAt: trickyText,
 });
 

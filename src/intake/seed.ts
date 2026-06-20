@@ -12,17 +12,13 @@
 // The `spec` is an `OutcomeSpec`, so it maps 1:1 onto `RootManifest.spec` when Phase
 // 2 commits the root. The sketch is deliberately a separate, structurally minimal
 // type (see `Sketch`) so intake cannot smuggle a binding plan into the seed.
-import type { OutcomeSpec, Verification } from '../relay-state/index';
+import type { OutcomeSpec, Verification, Sketch } from '../relay-state/index';
 
-// The non-binding high-level sketch (design §3.3, I2): free-form orientation bullets
-// the interviewer captures so the run starts pointed the right way. It is
-// deliberately NOT a `Decomposition` — it carries no child specs, footprints, or
-// seams — so it is structurally incapable of being a binding plan. The orchestrator's
-// brain owns decomposition and is free to diverge from the sketch entirely (the
-// sketch is orientation, allowed to be wrong, never a contract).
-export interface Sketch {
-  notes: string[];
-}
+// The non-binding high-level sketch the interviewer captures (design §3.3, I2). Its
+// durable home is the relay-state record schema — the committed root carries it in
+// the manifest (Phase 2) — so the type is defined there and re-exported here; intake
+// remains its producer.
+export type { Sketch };
 
 // The full run seed: the outcome spec (with grounded verifications) and the
 // non-binding sketch. This is the conversation's ONLY output (I1/I2).
