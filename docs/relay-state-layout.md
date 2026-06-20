@@ -23,8 +23,13 @@ are authoritative where this doc is silent.
     <node-id>/usage/     # raw per-call cost records, attributed to the node (F5)
     cost.md              # per-run cost rollup, composed from the usage records (F5)
   inbox/                 # human-owned decision inbox
+  baselines/<outcome>.md # visual baseline refs — hash/granularity/version/tolerance (F2)
   journal/<region>/      # per-region write-ahead intent journal (C8)
 ```
+
+The baseline **binaries** are NOT here: they live in a durable, content-addressed
+store that is a **sibling of `.relay/`** (outside `evidence/`, so the compactor can
+never reach them), and `.relay/baselines/` holds only the Markdown ref (F2, M8).
 
 ## The load-bearing elements
 

@@ -214,10 +214,14 @@ describe('replayAndGrade — granularity (V4)', () => {
     ).rejects.toThrow(/requires an injected IntentJudge/);
   });
 
-  test('baseline-diff grading is deferred to the Phase 4 baseline pipeline', async () => {
+  test('baseline-diff: refuses to grade without an injected grader (no silent skip)', async () => {
+    // Phase 4 wired the baseline pipeline in as an injected `BaselineGrader` (mirroring
+    // the intent judge); the rung now grades when the grader is supplied and fails loud
+    // when it is not — never silently skipping the strictest rung. The grader's own
+    // behavior is covered hermetically in baseline.test.ts.
     const { surface } = fakeSurface();
     await expect(replayAndGrade(surface, { granularity: 'baseline-diff', path })).rejects.toThrow(
-      /Phase 4 baseline pipeline/,
+      /requires an injected BaselineGrader/,
     );
   });
 });

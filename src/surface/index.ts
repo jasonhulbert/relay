@@ -50,6 +50,30 @@ export type {
   IntentEvidence,
   VisualGrade,
   IntentJudge,
+  BaselineGrader,
   ReplayClassification,
   VisualVerdict,
 } from './visual-critic';
+export {
+  BaselineStore,
+  exactBytesDiffer,
+  DEFAULT_FLAKE_BUDGET,
+  readBaselineRef,
+  writeBaselineRef,
+  promoteBaseline,
+  requestReVersion,
+  approveReVersion,
+  diffAgainstBaseline,
+  verifyBaselineDiff,
+  makeBaselineGrader,
+} from './baseline';
+export type {
+  BaselineRef,
+  ScreenshotDiffer,
+  BaselineMismatchKind,
+  BaselineMismatch,
+  MismatchSink,
+  FlakeBudget,
+  BaselineContext,
+  BaselineDiffResult,
+} from './baseline';

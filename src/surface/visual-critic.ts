@@ -99,6 +99,18 @@ export interface VisualGrade {
 // critic. Structural and baseline-diff grading never reach it.
 export type IntentJudge = (evidence: IntentEvidence) => Promise<VisualGrade>;
 
+// The baseline-diff grader seam (V4 rung 3, the Phase 4 baseline pipeline). Like
+// `IntentJudge`, it is injected so this module stays free of the store/diff/decision
+// machinery: `src/surface/baseline.ts` implements it (capture → content-address →
+// promote-first or diff-vs-baseline → within-tolerance pass / persistent-mismatch
+// decision), and the deterministic tests inject a scripted grader. It receives the
+// Surface (so it can re-capture across the temporal flake-budget retries) and the
+// baseline-diff verification it grades. NO model is ever consulted on this rung.
+export type BaselineGrader = (
+  surface: Surface,
+  verification: Extract<VisualVerification, { granularity: 'baseline-diff' }>,
+) => Promise<VisualGrade>;
+
 // How a failed replay is classified (V5, design §7.4) — the visual-kind
 // specialization of the unified failure rule (§3.9). The loop, not a judgment call,
 // decides what an unreachable state means:
@@ -209,7 +221,7 @@ function gradeStructural(tree: string, expectSubtree: string[]): VisualGrade {
 export async function replayAndGrade(
   surface: Surface,
   verification: VisualVerification,
-  opts: { judge?: IntentJudge } = {},
+  opts: { judge?: IntentJudge; baseline?: BaselineGrader } = {},
 ): Promise<VisualVerdict> {
   try {
     await replayPath(surface, verification.path);
@@ -245,9 +257,17 @@ export async function replayAndGrade(
       const grade = await judge({ snapshot, screenshot, intent: verification.intent });
       return { outcome: 'graded', grade };
     }
-    case 'baseline-diff':
-      // Capture, store, and diff against a content-addressed baseline is the Phase 4
-      // (V6/F2) baseline pipeline's responsibility; this path does not yet grade it.
-      throw new Error('baseline-diff grading is owned by the Phase 4 baseline pipeline');
+    case 'baseline-diff': {
+      // Capture → content-address → promote-first or diff-vs-baseline is the Phase 4
+      // (V6/F2) baseline pipeline, injected as `baseline` exactly as `judge` injects
+      // the intent rung. The grader re-captures internally for the temporal flake
+      // budget, so it takes the Surface rather than a single pre-captured frame.
+      const grader = opts.baseline;
+      if (!grader) {
+        throw new Error('baseline-diff grading requires an injected BaselineGrader');
+      }
+      const grade = await grader(surface, verification);
+      return { outcome: 'graded', grade };
+    }
   }
 }

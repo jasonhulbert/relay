@@ -60,6 +60,15 @@ export function relayPaths(relayDir: string) {
       return join(relayDir, 'evidence', runId, 'cost.md');
     },
     inboxDir: join(relayDir, 'inbox'),
+    // The baseline-ref region (F2): files-only Markdown refs into the durable
+    // content-addressed baseline store. Only the ref (hash/outcome/granularity/
+    // version/tolerance) lives here — never the binary, which is a SIBLING store
+    // outside `.relay/`. Outside `evidence/`, so the compactor never reaches it.
+    baselinesDir: join(relayDir, 'baselines'),
+    baselineRefFile: (outcomeId: string): string => {
+      assertSafeId(outcomeId);
+      return join(relayDir, 'baselines', `${outcomeId}.md`);
+    },
     journalDir: (region: string): string => {
       assertSafeId(region);
       return join(relayDir, 'journal', region);
