@@ -364,14 +364,24 @@ function buildLayer(
   for (const [i, plan] of decomposition.children.entries()) {
     footprints[children[i].id] = plan.footprint;
   }
-  const seams: SeamContract[] = decomposition.seams.map((s) => ({
-    id: s.id,
-    kind: s.kind,
-    producer: children[s.producer].id,
-    consumer: children[s.consumer].id,
-    payload: s.payload,
-    intent: s.intent,
-  }));
+  const seams: SeamContract[] = decomposition.seams.map((s): SeamContract => {
+    // Remap producer/consumer indices to the assigned node-ids while preserving the
+    // discriminated union (the `kind` switch keeps each typed payload correlated).
+    const common = {
+      id: s.id,
+      producer: children[s.producer].id,
+      consumer: children[s.consumer].id,
+      intent: s.intent,
+    };
+    switch (s.kind) {
+      case 'file-boundary':
+        return { ...common, kind: s.kind, payload: s.payload };
+      case 'interface':
+        return { ...common, kind: s.kind, payload: s.payload };
+      default:
+        return { ...common, kind: s.kind, payload: s.payload };
+    }
+  });
   return { children, manifest: { parentId, runId, footprints, seams } };
 }
 

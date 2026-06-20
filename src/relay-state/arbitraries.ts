@@ -8,6 +8,7 @@ import type {
   NodeRecord,
   OutcomeContract,
   RootManifest,
+  SeamContract,
 } from './types';
 
 // Path-safe ids (matches paths.ts `assertSafeId`, which also rejects the
@@ -136,14 +137,37 @@ const arbFootprint = fc.record({
   writeGlobs: fc.array(trickyText, { maxLength: 4 }),
 });
 
-const arbSeamContract = fc.record({
-  id: safeId,
-  kind: fc.constantFrom('interface', 'http', 'file-boundary', 'data-schema'),
-  producer: safeId,
-  consumer: safeId,
-  payload: fc.dictionary(fc.stringMatching(/^[A-Za-z0-9_]{1,12}$/), trickyText, { maxKeys: 3 }),
-  intent: trickyText,
-});
+// One arbitrary per kind so the typed payloads stay correlated with `kind` (the
+// discriminated union); the round-trip property then exercises every variant.
+const arbSeamContract: fc.Arbitrary<SeamContract> = fc.oneof(
+  fc.record({
+    id: safeId,
+    kind: fc.constant('file-boundary' as const),
+    producer: safeId,
+    consumer: safeId,
+    payload: fc.record({
+      producerGlobs: fc.array(trickyText, { maxLength: 3 }),
+      consumerGlobs: fc.array(trickyText, { maxLength: 3 }),
+    }),
+    intent: trickyText,
+  }),
+  fc.record({
+    id: safeId,
+    kind: fc.constant('interface' as const),
+    producer: safeId,
+    consumer: safeId,
+    payload: fc.record({ symbol: trickyText }),
+    intent: trickyText,
+  }),
+  fc.record({
+    id: safeId,
+    kind: fc.constantFrom('http' as const, 'data-schema' as const),
+    producer: safeId,
+    consumer: safeId,
+    payload: fc.dictionary(fc.stringMatching(/^[A-Za-z0-9_]{1,12}$/), trickyText, { maxKeys: 3 }),
+    intent: trickyText,
+  }),
+);
 
 export const arbLayerManifest: fc.Arbitrary<LayerManifest> = fc.record({
   parentId: safeId,

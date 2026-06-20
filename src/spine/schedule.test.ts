@@ -1,12 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import { buildSchedule, mayRunConcurrently } from './schedule';
-import type { Footprint, LayerManifest } from '../relay-state/index';
+import type { Footprint, LayerManifest, SeamContract } from '../relay-state/index';
 
-// A layer manifest carrying just the footprints the scheduler reads. Seams are
-// irrelevant to this phase's decision (the parent pre-declared them at decomposition
-// per A8); footprints alone decide parallel-vs-serial here.
-function layerOf(footprints: Record<string, Footprint>): LayerManifest {
-  return { parentId: 'root', runId: 'run-1', footprints, seams: [] };
+// A layer manifest carrying the footprints and (optionally) seams the scheduler reads.
+function layerOf(footprints: Record<string, Footprint>, seams: SeamContract[] = []): LayerManifest {
+  return { parentId: 'root', runId: 'run-1', footprints, seams };
 }
 
 describe('buildSchedule — the concurrency law made operational (A2)', () => {
@@ -83,5 +81,54 @@ describe('mayRunConcurrently', () => {
     });
     expect(mayRunConcurrently(layer, 'a', 'b')).toBe(true);
     expect(mayRunConcurrently(layer, 'a', 'missing')).toBe(false);
+  });
+});
+
+// WHY (validation 3): A2 has two conditions, and footprint disjointness is only the
+// first. A seam the parent could not reduce to a code-checkable kind (http/data-schema
+// — no v0.1 predicate) cannot gate the pair's parallel merge, so it must force
+// serialization EVEN when their footprints are disjoint. A checkable seam between the
+// same disjoint pair leaves them parallel. This is the F3 forcing function in the
+// scheduler; without it, two siblings would merge across an unverifiable seam.
+describe('an uncheckable seam forces serialization (A2 condition 2 / F3)', () => {
+  const disjoint = {
+    a: { writeGlobs: ['src/a/**'] },
+    b: { writeGlobs: ['src/b/**'] },
+  };
+  // A seam over a checkable kind (interface) vs an uncheckable one (http), with
+  // arbitrary producer/consumer. Payloads are valid per kind; only `kind`/endpoints
+  // matter to the scheduler.
+  function interfaceSeam(producer: string, consumer: string): SeamContract {
+    return {
+      id: 'seam-0',
+      kind: 'interface',
+      producer,
+      consumer,
+      payload: { symbol: 'X' },
+      intent: '',
+    };
+  }
+  function httpSeam(producer: string, consumer: string): SeamContract {
+    return { id: 'seam-0', kind: 'http', producer, consumer, payload: {}, intent: '' };
+  }
+
+  test('a checkable seam between disjoint siblings stays parallel', () => {
+    const layer = layerOf(disjoint, [interfaceSeam('a', 'b')]);
+    expect(mayRunConcurrently(layer, 'a', 'b')).toBe(true);
+    expect(buildSchedule(['a', 'b'], layer)).toEqual({ stages: [['a', 'b']] });
+  });
+
+  test('an uncheckable seam serializes disjoint siblings (either seam direction)', () => {
+    const layer = layerOf(disjoint, [httpSeam('a', 'b')]);
+    expect(mayRunConcurrently(layer, 'a', 'b')).toBe(false);
+    expect(mayRunConcurrently(layer, 'b', 'a')).toBe(false);
+    expect(buildSchedule(['a', 'b'], layer)).toEqual({ stages: [['a'], ['b']] });
+  });
+
+  test('an uncheckable seam to a THIRD sibling does not serialize an unrelated pair', () => {
+    // c↔http↔a forces c after a, but b (disjoint, no uncheckable seam) still packs
+    // with a. So a,b run together and c serializes — the forcing function is per-pair.
+    const layer = layerOf({ ...disjoint, c: { writeGlobs: ['src/c/**'] } }, [httpSeam('a', 'c')]);
+    expect(buildSchedule(['a', 'b', 'c'], layer)).toEqual({ stages: [['a', 'b'], ['c']] });
   });
 });

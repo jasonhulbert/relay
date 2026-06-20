@@ -16,6 +16,8 @@ export type {
   OutcomeContract,
   Footprint,
   SeamKind,
+  FileBoundaryPayload,
+  InterfacePayload,
   SeamContract,
   LayerManifest,
   DecisionKind,

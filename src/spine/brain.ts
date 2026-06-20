@@ -22,11 +22,12 @@ import { DEFAULT_CODEX_MODEL, parseCodexStream } from './adapters/codex';
 import { claudeMcpArgs, codexMcpArgs } from '../mcp/index';
 import type { ExecutorUsage } from './executor';
 import type {
+  FileBoundaryPayload,
   Footprint,
+  InterfacePayload,
   McpServerConfig,
   NodeKind,
   OutcomeSpec,
-  SeamKind,
   Verification,
 } from '../relay-state/index';
 
@@ -44,17 +45,21 @@ export interface ChildPlan {
 
 // A seam the brain proposes between two children, referencing them by INDEX into
 // `children` (the brain does not know the final node-ids the orchestrator will
-// assign). The orchestrator maps the indices to node-ids when it persists the
-// durable `SeamContract` in the layer manifest.
-export interface SeamPlan {
+// assign). The orchestrator maps the indices to node-ids when it persists the durable
+// `SeamContract` in the layer manifest. Same discriminated-union shape as the durable
+// record (the `kind` discriminates the typed `payload`), with index producer/consumer.
+interface SeamPlanCommon {
   id: string;
-  kind: SeamKind;
   // Indices into `Decomposition.children`.
   producer: number;
   consumer: number;
-  payload: Record<string, unknown>;
   intent: string;
 }
+
+export type SeamPlan =
+  | (SeamPlanCommon & { kind: 'file-boundary'; payload: FileBoundaryPayload })
+  | (SeamPlanCommon & { kind: 'interface'; payload: InterfacePayload })
+  | (SeamPlanCommon & { kind: 'http' | 'data-schema'; payload: Record<string, unknown> });
 
 // The full one-layer decomposition the brain returns: the children (each classified
 // and footprinted) and the seams between them. The orchestrator commits it.
@@ -196,7 +201,11 @@ export function buildDecomposePrompt(req: DecomposeRequest): string {
     '  ]',
     '}',
     'where seam producer/consumer are 0-based indices into children. Use an empty',
-    'seams array if the children share no interface to pin.',
+    'seams array if the children share no interface to pin. Prefer a code-checkable',
+    'seam kind — its payload is required:',
+    '  - file-boundary: { "producerGlobs": [string], "consumerGlobs": [string] }',
+    '  - interface: { "symbol": string, "signature"?: string, "module"?: string }',
+    '(http and data-schema carry a free-form payload and force the pair to serialize.)',
   );
   return lines.join('\n');
 }
@@ -335,16 +344,50 @@ export function parseDecomposition(text: string): Decomposition {
     ) {
       throw new Error(`decomposition seam has invalid kind: ${JSON.stringify(kind)}`);
     }
-    return {
+    const common = {
       id: typeof s.id === 'string' ? s.id : `seam-${i.toString()}`,
-      kind,
       producer,
       consumer,
-      payload: asRecord(s.payload) ?? {},
       intent: typeof s.intent === 'string' ? s.intent : '',
     };
+    const payload = asRecord(s.payload) ?? {};
+    // The two code-checkable kinds (M10) carry a typed payload — fail loud (Rule 11)
+    // on a malformed one rather than commit a seam its predicate cannot read; the
+    // deferred kinds keep the free-form payload until their predicates land.
+    switch (kind) {
+      case 'file-boundary':
+        return { ...common, kind, payload: parseFileBoundaryPayload(payload) };
+      case 'interface':
+        return { ...common, kind, payload: parseInterfacePayload(payload) };
+      default:
+        return { ...common, kind, payload };
+    }
   });
   return { children, seams };
+}
+
+function parseGlobList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.every((g) => typeof g === 'string')) {
+    throw new Error(`decomposition file-boundary seam missing string[] \`${field}\``);
+  }
+  return value;
+}
+
+function parseFileBoundaryPayload(payload: Record<string, unknown>): FileBoundaryPayload {
+  return {
+    producerGlobs: parseGlobList(payload.producerGlobs, 'producerGlobs'),
+    consumerGlobs: parseGlobList(payload.consumerGlobs, 'consumerGlobs'),
+  };
+}
+
+function parseInterfacePayload(payload: Record<string, unknown>): InterfacePayload {
+  if (typeof payload.symbol !== 'string') {
+    throw new Error('decomposition interface seam missing string `symbol`');
+  }
+  const out: InterfacePayload = { symbol: payload.symbol };
+  if (typeof payload.signature === 'string') out.signature = payload.signature;
+  if (typeof payload.module === 'string') out.module = payload.module;
+  return out;
 }
 
 function inRange(i: number, len: number): boolean {

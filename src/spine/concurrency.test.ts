@@ -64,6 +64,35 @@ function leavesWithFootprints(footprints: Footprint[]): Brain {
   };
 }
 
+// A brain that decomposes into two disjoint-footprint leaves WITH an uncheckable
+// (http, no v0.1 predicate) seam between them — so the scheduler's footprint check
+// says "parallel" but the F3 forcing function must override it to serial.
+function twoLeavesWithUncheckableSeam(): Brain {
+  return {
+    decompose: () =>
+      Promise.resolve({
+        children: [0, 1].map((i) => ({
+          spec: {
+            outcome: `part ${(i + 1).toString()}`,
+            verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
+          },
+          kind: 'leaf' as const,
+          footprint: { writeGlobs: [`part-${(i + 1).toString()}/**`] },
+        })),
+        seams: [
+          {
+            id: 'seam-0',
+            kind: 'http' as const,
+            producer: 0,
+            consumer: 1,
+            payload: {},
+            intent: 'part 1 serves part 2 over http (no v0.1 predicate)',
+          },
+        ],
+      }),
+  };
+}
+
 // An executor that records the peak number of concurrently-running dispatches. It
 // holds each attempt "open" across several event-loop turns; siblings dispatched in
 // one parallel stage overlap that window (peak 2), while siblings split into serial
@@ -131,6 +160,31 @@ describe('the scheduler runs disjoint siblings in parallel, serializes a shared 
       });
 
       expect(peak()).toBe(2); // the two leaves overlapped — real concurrency
+      expect(res.leafStatuses['root.c0']).toBe('done');
+      expect(res.leafStatuses['root.c1']).toBe('done');
+      expect(res.rootStatus).toBe('done');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // WHY (validation 3): A2's second condition. Two siblings with DISJOINT footprints
+  // — which the footprint check alone would parallelize — must still serialize when
+  // the seam between them is a kind with no v0.1 predicate (F3 forcing function). The
+  // probe must observe NO overlap, proving the uncheckable seam, not the footprints,
+  // drove the decision. Without the forcing function this would read peak 2.
+  test('an uncheckable seam between disjoint siblings forces serialization', async () => {
+    const { base, relayDir, workRoot } = await freshRelay();
+    try {
+      await seedChildlessBranch(relayDir);
+      const { executor, peak } = concurrencyProbe();
+      const res = await runOrchestrator(relayDir, 'root', {
+        brain: twoLeavesWithUncheckableSeam(),
+        executor,
+        workRoot,
+      });
+
+      expect(peak()).toBe(1); // disjoint footprints, but the http seam serialized them
       expect(res.leafStatuses['root.c0']).toBe('done');
       expect(res.leafStatuses['root.c1']).toBe('done');
       expect(res.rootStatus).toBe('done');

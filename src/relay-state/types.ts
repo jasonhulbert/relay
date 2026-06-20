@@ -36,9 +36,34 @@ export interface Footprint {
 }
 
 // The seam kinds (design §3.8, F3): each a typed contract with a code-checkable
-// predicate. v0.1 persists the authored seam; the integration gate that verifies
-// each kind deterministic-first is a later milestone (M10 concurrency).
+// predicate. v0.1 ships the two code-checkable kinds — `file-boundary` and
+// `interface` (M10); `http` and `data-schema` are deferred (§13) and have no v0.1
+// predicate, so the scheduler treats them as uncheckable and serializes around them.
 export type SeamKind = 'interface' | 'http' | 'file-boundary' | 'data-schema';
+
+// The `file-boundary` seam payload (F3, M10): the repo-relative write globs each
+// side of the seam claims. The predicate (`spine/seam.ts`) passes iff the two glob
+// sets are disjoint — the same disjointness (`footprintsDisjoint`) that licenses the
+// two children's concurrency (A2) is what this seam pins as their contract.
+export interface FileBoundaryPayload {
+  producerGlobs: string[];
+  consumerGlobs: string[];
+}
+
+// The `interface` seam payload (F3, M10): the producer publishes a named symbol/type
+// the consumer depends on. The predicate does a syntactic AST lookup over the
+// producer's source: it passes iff the symbol is exported, and — when `signature` is
+// present — iff that symbol's declared signature matches it (normalized comparison).
+export interface InterfacePayload {
+  // The exported symbol/type the consumer depends on the producer publishing.
+  symbol: string;
+  // The signature the producer's symbol must match (normalized). Absent ⇒ the
+  // predicate checks only that the symbol is exported (a named-type seam).
+  signature?: string;
+  // Repo-relative module the symbol is published in; the integration gate reads it
+  // to locate the producer source for the AST lookup.
+  module?: string;
+}
 
 // A seam contract between two children of one decomposed layer (design §3.8, A8,
 // F3): the typed discriminated-union artifact the parent authors into `.relay/`,
@@ -46,20 +71,23 @@ export type SeamKind = 'interface' | 'http' | 'file-boundary' | 'data-schema';
 // than a silent discovery after whole subtrees have been spent. The producer/
 // consumer reference child node-ids within the layer; the seam graph these form is
 // the structural fact the failure rule (§3.9) traverses and the integration gate
-// (§3.8) checks.
-export interface SeamContract {
+// (§3.8) checks. The `kind` discriminates the `payload`: the two code-checkable
+// kinds carry a typed payload their predicate reads; the deferred kinds keep a
+// free-form payload until their predicates land.
+interface SeamContractCommon {
   id: string;
-  kind: SeamKind;
   // Child node-ids on each side of the seam (the producer publishes; the consumer
   // depends on what it publishes).
   producer: string;
   consumer: string;
-  // The typed payload the kind's predicate checks. Free-form per kind in v0.1; the
-  // typed-union payloads firm up with the integration gate (M10).
-  payload: Record<string, unknown>;
   // Natural-language intent for the critic (F3).
   intent: string;
 }
+
+export type SeamContract =
+  | (SeamContractCommon & { kind: 'file-boundary'; payload: FileBoundaryPayload })
+  | (SeamContractCommon & { kind: 'interface'; payload: InterfacePayload })
+  | (SeamContractCommon & { kind: 'http' | 'data-schema'; payload: Record<string, unknown> });
 
 // The child-manifest of the one layer a branch decomposed (design §4, §3.8). The
 // orchestrator is its sole writer; it records the layer's structural facts beyond
