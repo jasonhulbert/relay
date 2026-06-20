@@ -71,6 +71,7 @@ import type { SpawnChild } from './child-runner';
 import { buildSchedule } from './schedule';
 import { FootprintViolation, footprintEscapes } from './footprint';
 import { runIntegrationGate } from './integration-gate';
+import { partitionBySeam } from './failure-rule';
 
 // Points at which a test may model a process kill. A thrown `InjectedKill` is
 // indistinguishable from a SIGKILL for the rehydration contract: `.relay/` is the
@@ -178,10 +179,16 @@ export interface OrchestratorResult {
   // pending sub-branch its new children get driven on a later activation, so it is
   // reported here and counted not-done.
   promotedNodes: string[];
-  // Nodes cancelled by a drained human decision this run (design §3.9, §3.11). A
-  // cancelled node is terminal and not-done, so it halts and surfaces like a
-  // blocked one; reported here for observability.
+  // Nodes that went terminal-`cancelled` this run (design §3.9, §3.11): a drained
+  // human decision, OR a seam-DEPENDENT sibling the unified failure rule cancelled
+  // because the node it depended on failed. A cancelled node is terminal and
+  // not-done, so it halts and surfaces like a blocked one; reported for observability.
   cancelledNodes: string[];
+  // Seam-INDEPENDENT siblings the unified failure rule drained to completion and
+  // QUARANTINED this run (design §3.9, B3): their work is banked and reusable but
+  // flagged un-integrated. Reported for observability; the credit they spent bought
+  // real progress worth resuming.
+  quarantinedNodes: string[];
   // Intent ids rolled forward at the start of this run (empty on a clean start).
   rolledForward: string[];
   // The node-id this process is bound to — its journal region (C6).
@@ -442,6 +449,24 @@ function cancellationReflection(nodeId: string, d: DecisionRecord): string {
   return `${why}. Worktree discarded; learnings persisted.`;
 }
 
+// The keep-lesson reflection persisted when the unified failure rule cancels a
+// SEAM-DEPENDENT sibling (§3.9 step 2, B4). It depended — through the seam graph —
+// on a node that failed, so its work is stale: cancelled, worktree discarded,
+// learnings kept first (the §3.5 persist-then-discard pattern).
+function dependentCancellationReflection(nodeId: string, deadIds: readonly string[]): string {
+  const dead = deadIds.map((d) => `\`${d}\``).join(', ');
+  return `node \`${nodeId}\` was cancelled by the unified failure rule: seam-dependent on failed node(s) ${dead} (§3.9). Worktree discarded; learnings persisted.`;
+}
+
+// The keep-lesson reflection persisted when the unified failure rule QUARANTINES a
+// seam-INDEPENDENT sibling (§3.9 step 3, B3). It has no seam to the failed node, so
+// its completed work stays valid across the human's fix — banked un-integrated for
+// resume, worktree retained (the §8 credit already spent buys reusable progress).
+function quarantineReflection(nodeId: string, deadIds: readonly string[]): string {
+  const dead = deadIds.map((d) => `\`${d}\``).join(', ');
+  return `node \`${nodeId}\` was drained to quarantine by the unified failure rule: seam-independent of failed node(s) ${dead} (§3.9). Work banked, un-integrated, retained for resume.`;
+}
+
 // The self-sufficient record a parent takes when it halts-and-surfaces above a
 // terminal-not-done child (§3.7). A blocked child contributes its standing critic
 // reason; a cancelled child contributes its cancellation reflection. Either way the
@@ -522,6 +547,91 @@ async function drainDecisionInbox(
     }
   }
   return { root: current, cancelled };
+}
+
+// The unified failure rule, root-coordinated (design §3.9, B3/B4, M10 Phase 4).
+// Given the layer's dead node(s) — a leaf the ladder exhausted to `blocked`, or a
+// node cancelled by a drained human decision — trace the recorded SEAM GRAPH and
+// rule on every other child of the layer by the seam graph alone (B4, not a
+// judgment): a seam-DEPENDENT sibling is cancelled (its worktree discarded,
+// learnings persisted first — its work was building toward a seam the dead node
+// will never fulfil), a seam-INDEPENDENT sibling that ran to completion is
+// QUARANTINED (worktree retained — its work is valid across the human's fix and the
+// credit is worth banking). "Dispatch nothing new" is the caller's job (it stops
+// driving once the run is doomed); a seam-independent child that never ran is left
+// pending — there is nothing to bank. Each transition is one atomic journal commit
+// (C8). Mutates the status maps in place and returns what it touched, so the run's
+// terminal report and the surfaced record see the cascade.
+async function applyUnifiedFailureRule(
+  relayDir: string,
+  region: string,
+  layer: LayerManifest | null,
+  deadIds: readonly string[],
+  childIds: readonly string[],
+  statuses: { leafStatuses: Record<string, NodeStatus>; childStatuses: Record<string, NodeStatus> },
+  workRoot: string,
+  writes: Set<string>,
+): Promise<{ cancelled: string[]; quarantined: string[] }> {
+  const others = childIds.filter((id) => !deadIds.includes(id));
+  const { cancel, drain } = partitionBySeam(deadIds, others, layer?.seams ?? []);
+  const cancelled: string[] = [];
+  const quarantined: string[] = [];
+
+  // Record a node's new terminal status onto whichever map carries it (leaf vs
+  // branch child), so the run's status maps reflect the cascade like the fold does.
+  const setStatus = (node: NodeRecord, status: NodeStatus): void => {
+    if (node.kind === 'leaf') {
+      statuses.leafStatuses[node.id] = status;
+    } else {
+      statuses.childStatuses[node.id] = status;
+    }
+  };
+
+  // Seam-dependents: cancel (persist-then-discard). A node already terminal-failed
+  // (its own blocked/cancelled) is left as-is — it is its own failure, not a cascade.
+  for (const id of cancel) {
+    const node = await readNode(relayDir, id);
+    if (node.status === 'blocked' || node.status === 'cancelled') {
+      continue;
+    }
+    const cancelledNode: NodeRecord = {
+      ...node,
+      status: 'cancelled',
+      learnings: [...node.learnings, dependentCancellationReflection(id, deadIds)],
+    };
+    writes.add(relativeNodePath(id));
+    await commit(relayDir, region, [
+      { path: relativeNodePath(id), content: serializeNode(cancelledNode) },
+    ]);
+    // Learnings are now durable; only then reset the worktree (§3.5/§3.9).
+    await discardWorktree(workRoot, id);
+    setStatus(cancelledNode, 'cancelled');
+    cancelled.push(id);
+  }
+
+  // Seam-independents: quarantine the ones that ran to completion (banked,
+  // un-integrated, worktree retained). A child that never ran (pending, because the
+  // caller dispatched nothing new) has no completed work to bank — left pending.
+  for (const id of drain) {
+    const node = await readNode(relayDir, id);
+    if (node.status !== 'done') {
+      continue;
+    }
+    const quarantinedNode: NodeRecord = {
+      ...node,
+      status: 'quarantine',
+      learnings: [...node.learnings, quarantineReflection(id, deadIds)],
+    };
+    writes.add(relativeNodePath(id));
+    await commit(relayDir, region, [
+      { path: relativeNodePath(id), content: serializeNode(quarantinedNode) },
+    ]);
+    // No discard: the worktree is the banked, reusable progress (§3.9 drain).
+    setStatus(quarantinedNode, 'quarantine');
+    quarantined.push(id);
+  }
+
+  return { cancelled, quarantined };
 }
 
 // One dispatch attempt's result: the persisted active node, the ladder signal it
@@ -998,6 +1108,9 @@ export async function runOrchestrator(
   const childStatuses: Record<string, NodeStatus> = {};
   const childContracts: Record<string, OutcomeContract> = {};
   const promotedNodes: string[] = [];
+  // Seam-independent siblings the unified failure rule drains to quarantine this run
+  // (§3.9); populated by the rule below and reported for observability.
+  const quarantinedNodes: string[] = [];
 
   // Rehydration step 2: drain the decision inbox before driving any work (§3.10).
   // A pending human decision is applied as an atomic transition in this region; in
@@ -1016,6 +1129,35 @@ export async function runOrchestrator(
       childContracts,
       promotedNodes,
       cancelledNodes,
+      quarantinedNodes,
+      rolledForward,
+      region,
+      ownedWrites: [...writes].sort(),
+    };
+  }
+  // Rehydration of an already-terminal run: a `blocked` root is the settled outcome
+  // of a prior activation that already ran the unified failure rule and surfaced
+  // (§3.7/§3.9). "Dispatch no new work anywhere" (§3.9 step 1) extends across
+  // rehydration: drive nothing, change nothing, just report the durable child
+  // statuses. (A fresh run never starts blocked — only a re-run over a settled tree
+  // reaches here, after the drain above has applied any newly-queued decisions.)
+  if (root.status === 'blocked') {
+    for (const id of root.children) {
+      const child = await readNode(relayDir, id);
+      if (child.kind === 'leaf') {
+        leafStatuses[id] = child.status;
+      } else {
+        childStatuses[id] = child.status;
+      }
+    }
+    return {
+      rootStatus: 'blocked',
+      leafStatuses,
+      childStatuses,
+      childContracts,
+      promotedNodes,
+      cancelledNodes,
+      quarantinedNodes,
       rolledForward,
       region,
       ownedWrites: [...writes].sort(),
@@ -1054,10 +1196,11 @@ export async function runOrchestrator(
         // below; a fully-rehydrated done layer is not re-gated.
         return { leafStatus: 'done', verdictRefs: child.verdict?.evidenceRefs ?? [] };
       }
-      if (isTerminalNotDone(child.status)) {
+      if (isTerminalNotDone(child.status) || child.status === 'quarantine') {
         // A terminal leaf is read in ONE pass and never (re-)dispatched: a blocked
-        // leaf's record already says "do not re-run the ladder" (§3.7), and a
-        // cancelled leaf was taken terminal by a drained human decision (§3.9).
+        // leaf's record already says "do not re-run the ladder" (§3.7); a cancelled
+        // leaf was taken terminal by a drained human decision or the failure rule
+        // (§3.9); a quarantined leaf is banked drained work, also terminal (§3.9).
         return { leafStatus: child.status, verdictRefs: [] };
       }
       // Rehydration: a non-`done` leaf is (re-)dispatched under the ladder, which
@@ -1103,6 +1246,20 @@ export async function runOrchestrator(
     return { childStatus: (await readNode(relayDir, childId)).status, verdictRefs: [] };
   };
 
+  // Report a child's CURRENT durable status without dispatching it — the "dispatch
+  // nothing new" path (§3.9 step 1). Once the run is doomed (a sibling failed, or a
+  // human decision drained above cancelled one), the remaining children are read,
+  // not driven: a not-yet-started child stays as it is, and the unified failure rule
+  // below rules on it by the seam graph. (`driveScheduledChild` would instead START
+  // a pending child, which a doomed run must not do.)
+  const readChildResult = async (childId: string): Promise<ChildResult> => {
+    const child = await readNode(relayDir, childId);
+    if (child.kind === 'leaf') {
+      return { leafStatus: child.status, verdictRefs: child.verdict?.evidenceRefs ?? [] };
+    }
+    return { childStatus: child.status, verdictRefs: [] };
+  };
+
   // Build the dispatch schedule from the concurrency law (A2, §3.8): the layer
   // manifest's footprints decide which siblings may run concurrently. Disjoint
   // footprints collapse into one parallel stage; a shared resource serializes into
@@ -1111,10 +1268,25 @@ export async function runOrchestrator(
   const layer = await tryReadLayer(relayDir, root.id);
   const schedule = buildSchedule(root.children, layer);
   const results = new Map<string, ChildResult>();
+  // §3.9 step 1 — dispatch no new work once the run is doomed. A human cancellation
+  // drained above preempts: if it took a child terminal, the run is doomed before any
+  // dispatch, so NOTHING new is started (the cancelled region + every later stage are
+  // read, not driven). A child going terminal mid-schedule likewise stops every
+  // remaining stage. The unified failure rule below then rules on the not-driven
+  // children by the seam graph (cancel dependents / quarantine drained independents).
+  let doomed = cancelledNodes.some((id) => root.children.includes(id));
+  const statusFromResult = (r: ChildResult | undefined): NodeStatus | undefined =>
+    r?.leafStatus ?? r?.childStatus;
   for (const stage of schedule.stages) {
-    // Within a stage the children run concurrently; stages run in sequence.
-    const stageResults = await Promise.all(stage.map((childId) => driveScheduledChild(childId)));
+    // Within a stage the children run concurrently; stages run in sequence. A doomed
+    // run reads each remaining child's status instead of dispatching it.
+    const stageResults = await Promise.all(
+      stage.map((childId) => (doomed ? readChildResult(childId) : driveScheduledChild(childId))),
+    );
     stage.forEach((childId, i) => results.set(childId, stageResults[i]));
+    if (!doomed && stage.some((id) => isTerminalNotDone(statusFromResult(results.get(id))))) {
+      doomed = true;
+    }
   }
 
   // Fold the per-child results into the run's status maps in deterministic child
@@ -1158,24 +1330,42 @@ export async function runOrchestrator(
     throw new InjectedKill('after-child-contract');
   }
 
-  // Halt-and-surface (design §3.7, §3.9): a branch with ANY terminal-not-done
-  // descendant — blocked (ladder exhaustion) or cancelled (human decision) — can
-  // never be `done`. It takes a `blocked` status carrying a self-sufficient record
-  // that names the descendant and inherits its standing reason, so the failure (or
-  // cancellation) propagates up the parent chain to root with no route-around.
-  // Checked before the done gate; the two are mutually exclusive (a terminal child
-  // is never `done`). Idempotent on rehydration: a branch already terminal is left
-  // untouched.
-  const terminalChildId = root.children.find(
+  // The unified failure rule + halt-and-surface (design §3.7, §3.9, B3/B4). A branch
+  // with ANY terminal-not-done child — `blocked` (ladder exhaustion / a failed gate
+  // below) or `cancelled` (a drained human decision) — can never be `done`. The dead
+  // nodes drive the rule: trace the recorded seam graph and rule on every other child
+  // by the seam graph alone (B4) — cancel seam-dependents (work invalidated by the
+  // unfulfilled seam), quarantine seam-independents that drained to completion (work
+  // still valid, banked) — then root takes a self-sufficient `blocked` record naming
+  // a dead node, so the failure propagates up the parent chain with no route-around.
+  // Idempotent on rehydration: an already-`blocked` root returned early above.
+  const deadIds = root.children.filter(
     (id) => isTerminalNotDone(leafStatuses[id]) || isTerminalNotDone(childStatuses[id]),
   );
-  // root is already non-cancelled here: a cancelled root returned early above.
-  if (root.status !== 'blocked' && terminalChildId !== undefined) {
-    const childNode = await readNode(relayDir, terminalChildId);
+  if (deadIds.length > 0) {
+    const cascade = await applyUnifiedFailureRule(
+      relayDir,
+      region,
+      layer,
+      deadIds,
+      root.children,
+      { leafStatuses, childStatuses },
+      workRoot,
+      writes,
+    );
+    cancelledNodes.push(...cascade.cancelled);
+    quarantinedNodes.push(...cascade.quarantined);
+    // Surface the ROOT CAUSE: prefer a `blocked` dead node (a genuine ladder
+    // exhaustion) over a `cancelled` one, in deterministic child order, so the record
+    // names the failure rather than a downstream cancellation.
+    const surfaceId =
+      deadIds.find((id) => leafStatuses[id] === 'blocked' || childStatuses[id] === 'blocked') ??
+      deadIds[0];
+    const childNode = await readNode(relayDir, surfaceId);
     root = {
       ...root,
       status: 'blocked',
-      blocked: surfacedRecord(rootId, terminalChildId, childNode),
+      blocked: surfacedRecord(rootId, surfaceId, childNode),
     };
     writes.add(relativeNodePath(rootId));
     await commit(relayDir, region, [
@@ -1315,6 +1505,7 @@ export async function runOrchestrator(
     childContracts,
     promotedNodes,
     cancelledNodes,
+    quarantinedNodes,
     rolledForward,
     region,
     ownedWrites: [...writes].sort(),

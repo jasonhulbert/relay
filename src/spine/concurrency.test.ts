@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { runOrchestrator } from './orchestrator';
 import { STUB_USAGE, stubCapabilities } from './executor';
+import { TIER_A_SESSION } from './footprint';
 import type { Executor } from './executor';
 import type { Brain } from './brain';
 import { atomicWriteFile, readNode, writeManifest, writeNode } from '../relay-state/index';
@@ -215,6 +216,38 @@ describe('the scheduler runs disjoint siblings in parallel, serializes a shared 
       });
 
       expect(peak()).toBe(1); // never overlapped — they serialized
+      expect(res.leafStatuses['root.c0']).toBe('done');
+      expect(res.leafStatuses['root.c1']).toBe('done');
+      expect(res.rootStatus).toBe('done');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // WHY (validation 3): the tier-A session is a shared resource (design §7.3) — there
+  // is one logged-in headed session, so two visual leaves that both drive it cannot
+  // run concurrently even though they write disjoint repo paths. The contention is a
+  // NAMED resource in the footprint, not a write-glob collision, so this proves the
+  // scheduler serializes on resource contention, not just on overlapping writes: the
+  // probe must observe NO overlap while both leaves still complete. Without resource-
+  // aware disjointness this would read peak 2 and two leaves would fight over the session.
+  test('two visual leaves contending on the tier-A session serialize', async () => {
+    const { base, relayDir, workRoot } = await freshRelay();
+    try {
+      await seedChildlessBranch(relayDir);
+      const { executor, peak } = concurrencyProbe();
+      const res = await runOrchestrator(relayDir, 'root', {
+        // Disjoint write globs, but both hold the shared tier-A session → not disjoint
+        // → serialize.
+        brain: leavesWithFootprints([
+          { writeGlobs: ['v1/**'], resources: [TIER_A_SESSION] },
+          { writeGlobs: ['v2/**'], resources: [TIER_A_SESSION] },
+        ]),
+        executor,
+        workRoot,
+      });
+
+      expect(peak()).toBe(1); // the shared session serialized them despite disjoint writes
       expect(res.leafStatuses['root.c0']).toBe('done');
       expect(res.leafStatuses['root.c1']).toBe('done');
       expect(res.rootStatus).toBe('done');

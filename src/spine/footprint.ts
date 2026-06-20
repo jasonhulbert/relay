@@ -96,14 +96,28 @@ export function globsIntersect(g1: string, g2: string): boolean {
   return rec(0, 0);
 }
 
+// The shared tier-A session resource (design §7.3): the single logged-in headed
+// session a visual leaf drives. A leaf that contends on it names it in its
+// footprint's `resources`, so two such leaves are not disjoint and the scheduler
+// serializes them (A2) — the visual-kind specialization of "shared resource ⇒
+// serial" (§3.8, M10 Phase 4).
+export const TIER_A_SESSION = 'tier-a-session';
+
 // Are two footprints disjoint — can no concrete repo path be written by both
-// children (A2 condition 1)? A footprint that writes nothing (no globs) is
-// disjoint from everything. Otherwise disjoint iff no glob pair can intersect.
+// children AND do they contend on no common named resource (A2 condition 1)? A
+// footprint that writes nothing (no globs) and names no resource is disjoint from
+// everything. Otherwise disjoint iff no write-glob pair can intersect AND the two
+// resource sets share no member — a shared resource (e.g. the tier-A session) is
+// exactly what A2 forbids running concurrently, even with non-colliding writes.
 export function footprintsDisjoint(a: Footprint, b: Footprint): boolean {
   for (const ga of a.writeGlobs) {
     for (const gb of b.writeGlobs) {
       if (globsIntersect(ga, gb)) return false;
     }
+  }
+  const aResources = new Set(a.resources ?? []);
+  for (const rb of b.resources ?? []) {
+    if (aResources.has(rb)) return false;
   }
   return true;
 }

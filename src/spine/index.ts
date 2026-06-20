@@ -91,7 +91,12 @@ export {
   footprintEscapes,
   globsIntersect,
   FootprintViolation,
+  TIER_A_SESSION,
 } from './footprint';
+// The unified failure rule's structural core (M10 Phase 4, design §3.9, B3/B4): the
+// seam-graph partition that decides cancel (seam-dependent) vs drain (seam-independent).
+export { partitionBySeam } from './failure-rule';
+export type { SeamPartition } from './failure-rule';
 // The escalation ladder + budget rails (design §3.7, §3.9): the bounded
 // verdict-handling machine a failing leaf walks before terminal `blocked`.
 export { EscalationLadder, LADDER_RUNGS } from './ladder';

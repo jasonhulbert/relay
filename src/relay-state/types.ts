@@ -33,6 +33,13 @@ export interface McpServerConfig {
 export interface Footprint {
   // Repo-relative globs the child is expected to write (A8 file-boundary).
   writeGlobs: string[];
+  // Named non-file resources the child contends on — ports, services, and the
+  // shared tier-A session a visual leaf drives (design §7.3, M10 Phase 4). Two
+  // footprints that name a common resource are NOT disjoint, so the scheduler
+  // serializes them even when their write globs never collide (A2): two visual
+  // leaves both holding the tier-A session cannot run concurrently. Absent ⇒ the
+  // child contends on no named resource (the pre-concurrency default).
+  resources?: readonly string[];
 }
 
 // The seam kinds (design §3.8, F3): each a typed contract with a code-checkable
@@ -110,9 +117,12 @@ export type NodeKind = 'branch' | 'leaf';
 
 // Node lifecycle. M1 drives a leaf pending -> active -> done; `blocked` is the
 // terminal exhaustion state (design §3.7) and `cancelled` is the terminal state a
-// human decision drives from the decision inbox (design §3.9, §3.11). Later
-// milestones add quarantine.
-export type NodeStatus = 'pending' | 'active' | 'done' | 'blocked' | 'cancelled';
+// human decision (or the unified failure rule cancelling a seam-dependent) drives
+// (design §3.9, §3.11). `quarantine` is the terminal state of seam-INDEPENDENT
+// in-flight work the unified failure rule drained to completion when a sibling
+// failed (design §3.9, §4, M10 Phase 4): its work is banked and reusable, but
+// flagged un-integrated — it never witnessed the merged whole, so it is not `done`.
+export type NodeStatus = 'pending' | 'active' | 'done' | 'blocked' | 'cancelled' | 'quarantine';
 
 // Verification kinds, cheapest-first (design §6.3). M1 exercises `command`.
 export type VerificationKind =

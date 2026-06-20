@@ -57,6 +57,26 @@ describe('footprintsDisjoint — the A2 condition-1 predicate', () => {
     // the floor case the scheduler must treat as parallelizable, not as a conflict.
     expect(footprintsDisjoint({ writeGlobs: [] }, { writeGlobs: ['anything/**'] })).toBe(true);
   });
+
+  test('a shared named resource is NOT disjoint even when the writes never collide', () => {
+    // The tier-A session is a shared resource (§7.3): two leaves that both hold it
+    // contend even with disjoint write globs, so the scheduler must serialize them.
+    expect(
+      footprintsDisjoint(
+        { writeGlobs: ['v1/**'], resources: ['tier-a-session'] },
+        { writeGlobs: ['v2/**'], resources: ['tier-a-session'] },
+      ),
+    ).toBe(false);
+  });
+
+  test('disjoint when writes AND named resources are both disjoint', () => {
+    expect(
+      footprintsDisjoint(
+        { writeGlobs: ['v1/**'], resources: ['port:3000'] },
+        { writeGlobs: ['v2/**'], resources: ['port:3001'] },
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('footprintEscapes — the A3 loud-violation detector', () => {
