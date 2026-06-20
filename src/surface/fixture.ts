@@ -1,0 +1,61 @@
+// The trivial fixture page the visual subsystem is built and tested against before
+// the real panel (M9) exercises it (plan assumption). It is deliberately tiny but
+// covers the surface's whole contract: a stable heading and a labelled button for
+// the a11y snapshot (semantic read), a click that mutates visible text (so an
+// interaction has an observable, queryable effect), and enough structure to take a
+// screenshot of. No build step, no framework — a single self-contained HTML string
+// served over loopback, the same shape the WebSurface drives a real app over.
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+
+// The fixture markup. The heading and button text are the semantic anchors the
+// snapshot assertions key on; clicking the button sets `#status` to a known string,
+// which `queryState` reads back to prove an interaction took effect.
+export const FIXTURE_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Relay Surface Fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Relay Surface Fixture</h1>
+      <p id="status" data-testid="status">idle</p>
+      <button id="go" type="button">Run check</button>
+    </main>
+    <script>
+      document.getElementById('go').addEventListener('click', () => {
+        document.getElementById('status').textContent = 'ran';
+      });
+    </script>
+  </body>
+</html>
+`;
+
+export interface StartedFixture {
+  server: Server;
+  // The loopback base URL the fixture is served on.
+  url: string;
+}
+
+// Serve the fixture over loopback on an OS-picked port. The WebSurface navigates a
+// real browser to a URL (not a `file://` path, which has a11y/security quirks), so
+// the fixture is a real, if minimal, HTTP origin — the same way the app is reached.
+// The caller owns `close()`.
+export function startFixture(opts: { host?: string; port?: number } = {}): Promise<StartedFixture> {
+  const host = opts.host ?? '127.0.0.1';
+  const port = opts.port ?? 0;
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(FIXTURE_HTML);
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      const addr = server.address() as AddressInfo;
+      resolve({ server, url: `http://${host}:${addr.port.toString()}` });
+    });
+  });
+}
