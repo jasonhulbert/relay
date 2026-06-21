@@ -236,6 +236,9 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     executor,
     // Worktrees are executor sandboxes, kept OUTSIDE the git-tracked store.
     workRoot: store.workRoot,
+    // The operator's resolved absolute project path: the executor sandbox is seeded
+    // from it on a real run, and the verified result lands back into it (Phase 2+).
+    projectPath: store.projectPath,
   };
   // The swap-provider rung dispatches under the OTHER provider at its cheapest
   // default (the per-role override raises only the primary). Skipped when a test

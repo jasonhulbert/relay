@@ -217,12 +217,13 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
   return {
     capabilities,
     async run(input: ExecutorInput): Promise<ExecutorResult> {
-      const { spec, context, worktree, mcpServers } = input;
+      const { spec, context, worktree, mcpServers, baseRef } = input;
       await mkdir(worktree, { recursive: true });
       // Baseline before dispatch so the captured diff is exactly what the model
       // produced this attempt (the orchestrator discards the worktree between
-      // attempts, so each run re-baselines a clean tree).
-      await establishBaseline(worktree);
+      // attempts, so each run re-baselines a clean tree). A pre-seeded checkout
+      // (`baseRef` set) is already at the base, so this is a no-op there.
+      await establishBaseline(worktree, { preseeded: baseRef !== undefined });
 
       // Cost guardrail: with no explicit override, pin the cheapest model.
       const model = opts.model ?? DEFAULT_CLAUDE_MODEL;
@@ -234,8 +235,10 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
 
       const parsed = parseClaudeStream(stdout);
       // Capture the produced change AFTER the run, from the worktree — never from
-      // the model's narrative (which the critic must not see anyway, C7).
-      const diff = await captureDiff(worktree);
+      // the model's narrative (which the critic must not see anyway, C7). On a
+      // checkout, diff against the per-run base (HEAD may have moved if the model
+      // committed); otherwise against the baseline commit.
+      const diff = await captureDiff(worktree, baseRef);
 
       const usage: ExecutorUsage = {
         provider: 'claude',

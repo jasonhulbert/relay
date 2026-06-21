@@ -59,7 +59,9 @@ import type {
 import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
 import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
-import type { Executor, ExecutorResult, ExecutorUsage } from './executor';
+import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
+import { resolveSeedPlan, seedWorktree } from './adapters/worktree-diff';
+import type { SeedPlan } from './adapters/worktree-diff';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
@@ -130,6 +132,11 @@ export interface RunOptions {
   // Worktree root; defaults to a `worktrees/` sibling of `.relay/`. Worktrees are
   // executor sandboxes, never part of the `.relay/` record.
   workRoot?: string;
+  // The operator's resolved absolute project path. When present (a real run), the
+  // executor sandbox is seeded from it and the verified result lands back as a
+  // `relay/<runId>` branch; absent keeps the hermetic empty-worktree stub path.
+  // Plumbed through this phase but not yet acted on (the seam is Phase 2).
+  projectPath?: string;
   // Test-only fault injection, scoped to one leaf so it fires deterministically.
   faultAt?: { leafId: string; point: FaultPoint };
   // Budget caps bounding each leaf's escalation ladder (design §3.7). Defaults to
@@ -207,6 +214,12 @@ interface LeafContext {
   swapExecutor: Executor;
   critic: CriticSpawn;
   workRoot: string;
+  // The operator's resolved absolute project path on a real run; `undefined` on the
+  // hermetic stub path. Threaded into the executor's `ExecutorInput`.
+  projectPath: RunOptions['projectPath'];
+  // How this run seeds each leaf worktree (resolved once at run start): an empty
+  // dir, or a detached checkout of the operator project at the per-run base.
+  seedPlan: SeedPlan;
   faultAt: RunOptions['faultAt'];
   // Budget caps for this leaf's escalation ladder (design §3.7).
   caps: RailCaps;
@@ -671,6 +684,8 @@ async function dispatchLeaf(
     swapExecutor,
     critic,
     workRoot,
+    projectPath,
+    seedPlan,
     faultAt,
     caps,
     brain,
@@ -739,20 +754,31 @@ async function dispatchLeaf(
     await commitNode(node);
 
     const worktree = join(workRoot, leafId);
-    await mkdir(worktree, { recursive: true });
+    // Seed the sandbox: an empty dir (hermetic / non-clean workspace) or a detached
+    // checkout of the operator project at the per-run base (the executor then edits
+    // against the real code). discardWorktree above removed any prior attempt's dir.
+    await seedWorktree(worktree, seedPlan);
     // Carry the node's accumulated learnings as context so a retried or
     // re-decomposed unit does not relearn them (design §3.5). The granted MCP
     // servers are routed to the executor by the spine (MCP host); the executor
     // connects as a client and may drive them, but only the orchestrator writes
     // `.relay/` (C2, §9.4).
     let result: ExecutorResult;
+    // Build the input conditionally so the hermetic stub path's `ExecutorInput`
+    // stays byte-identical: only a real run carries `projectPath`
+    // (exactOptionalPropertyTypes — never pass an explicit `undefined`).
+    const input: ExecutorInput = {
+      spec: node.spec,
+      context: { learnings: node.learnings },
+      worktree,
+      mcpServers,
+    };
+    if (projectPath !== undefined) input.projectPath = projectPath;
+    // On a checkout seed the worktree IS the base; tell the adapter so it skips
+    // `establishBaseline` and captures the diff against the per-run base.
+    if (seedPlan.mode === 'checkout') input.baseRef = seedPlan.base;
     try {
-      result = await exec.run({
-        spec: node.spec,
-        context: { learnings: node.learnings },
-        worktree,
-        mcpServers,
-      });
+      result = await exec.run(input);
     } catch (err) {
       // A3 loud-violation catch (runtime clash): an executor may raise a
       // `FootprintViolation` for a loud conflict it hit while running — a bound
@@ -1092,6 +1118,15 @@ export async function runOrchestrator(
   // The journal region is the bound node-id: one OS process owns one region (C6).
   const region = rootId;
   const workRoot = opts.workRoot ?? join(dirname(relayDir), 'worktrees');
+  // The operator's project path on a real run; `undefined` on the hermetic stub
+  // path (no workspace to seed from). Threaded to each leaf's executor below.
+  const projectPath = opts.projectPath;
+  // Decide once, at run start, how to seed every leaf worktree: a real checkout of
+  // a clean operator repo off a fixed base, or the empty `git init` default. Fixing
+  // it here makes every leaf in this activation fork from the SAME base
+  // (disjoint-merge friendly) and keeps the hermetic path a no-op (projectPath
+  // absent ⇒ no git call).
+  const seedPlan = await resolveSeedPlan(projectPath);
   const writes = new Set<string>();
 
   // Rehydration step 1: before anything else, roll forward an intent left by a
@@ -1212,6 +1247,8 @@ export async function runOrchestrator(
         swapExecutor,
         critic,
         workRoot,
+        projectPath,
+        seedPlan,
         faultAt: opts.faultAt,
         caps,
         brain,

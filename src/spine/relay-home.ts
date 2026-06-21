@@ -99,6 +99,11 @@ export interface ProjectStore {
   // Executor sandbox root, OUTSIDE the store so worktrees never enter the git
   // record. Project-scoped so two projects' same-named leaves do not collide.
   workRoot: string;
+  // The operator's resolved absolute project path — the source the executor
+  // sandbox is seeded from and the repo a verified result is landed back into as a
+  // `relay/<runId>` branch. Already the hash input for `key`; surfaced here so the
+  // run never has to re-derive it.
+  projectPath: string;
   // True only on the run that first created (and git-init'd) this store.
   created: boolean;
 }
@@ -148,7 +153,7 @@ export async function ensureProjectStore(
   };
   await writeProjectIndex(home, index);
 
-  return { key, storeDir, workRoot, created };
+  return { key, storeDir, workRoot, projectPath: abs, created };
 }
 
 // Commit the current `.relay/` state so the store is `git log`-able (design §4).

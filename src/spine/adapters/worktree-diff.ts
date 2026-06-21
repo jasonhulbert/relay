@@ -5,7 +5,18 @@
 // adapter (Phase 2) both establish a baseline before dispatch and capture the
 // diff after, so the critic grades the same kind of evidence regardless of who
 // authored it.
+//
+// As of the workspace-substrate work the sandbox is no longer always an empty
+// greenfield dir. When the run executes against a clean operator git repo, each
+// leaf worktree is a real checkout of the project off a fixed per-run base ref, so
+// the executor sees the actual code. `resolveSeedPlan`/`seedWorktree` own that
+// branch; `establishBaseline` becomes a no-op on a pre-seeded checkout (its HEAD
+// already IS the base); `captureDiff` diffs against the per-run base. The empty
+// `git init` path stays the default for the hermetic stub runs and for non-clean
+// (non-git / dirty) workspaces (the snapshot fallback is a later phase).
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 interface GitResult {
   code: number;
@@ -35,13 +46,80 @@ async function gitOrThrow(args: string[], cwd: string): Promise<string> {
   return res.stdout;
 }
 
+// How a leaf's sandbox worktree is seeded for one run. `empty` is the hermetic /
+// non-clean-workspace default (an empty `git init` dir, the original behavior).
+// `checkout` is a real worktree of the operator project, detached at a fixed
+// per-run `base`, so the executor edits against the actual code.
+export type SeedPlan =
+  | { mode: 'empty' }
+  | { mode: 'checkout'; projectPath: string; base: string };
+
+// All leaf worktrees in a run share the operator's single `.git` (worktree
+// registration is a per-repo mutable resource). `git worktree add`/`prune` are
+// code-owned, not model-driven, so we serialize them process-wide rather than
+// lock the operator repo — an explicit, bounded deviation from no-shared-target,
+// scoped to metadata git itself already guards.
+let worktreeGitChain: Promise<unknown> = Promise.resolve();
+function withWorktreeGitLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = worktreeGitChain.then(fn, fn);
+  worktreeGitChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+// Decide, once at run start, how to seed this run's leaf worktrees. Gated on a
+// clean operator git repo: a non-git, dirty, or commit-less (unborn HEAD)
+// workspace falls back to `empty` (the snapshot fallback for those cases is a
+// later phase), and an absent `projectPath` (the hermetic path) short-circuits
+// with no git call at all so the stub runs stay byte-identical.
+export async function resolveSeedPlan(projectPath: string | undefined): Promise<SeedPlan> {
+  if (projectPath === undefined) return { mode: 'empty' };
+  const inside = await git(['rev-parse', '--is-inside-work-tree'], projectPath);
+  if (inside.code !== 0 || inside.stdout.trim() !== 'true') return { mode: 'empty' };
+  // A dirty tree would make "fork from HEAD" lose the operator's uncommitted work;
+  // surface that as the snapshot/non-checkout path instead (handled next phase).
+  const status = await git(['status', '--porcelain'], projectPath);
+  if (status.code !== 0 || status.stdout.trim() !== '') return { mode: 'empty' };
+  const head = await git(['rev-parse', 'HEAD'], projectPath);
+  if (head.code !== 0) return { mode: 'empty' };
+  return { mode: 'checkout', projectPath, base: head.stdout.trim() };
+}
+
+// Create the leaf's sandbox worktree per the run's seed plan. `empty` is a plain
+// `mkdir` (the original behavior). `checkout` adds a detached worktree of the
+// operator project at the per-run base, so the executor sees the project's files;
+// `prune` first clears any stale registration a prior attempt's plain `rm` left
+// (the orchestrator discards a worktree by removing the dir, not unregistering it).
+export async function seedWorktree(worktree: string, plan: SeedPlan): Promise<void> {
+  if (plan.mode === 'empty') {
+    await mkdir(worktree, { recursive: true });
+    return;
+  }
+  await withWorktreeGitLock(async () => {
+    await mkdir(dirname(worktree), { recursive: true });
+    await git(['worktree', 'prune'], plan.projectPath);
+    await gitOrThrow(['worktree', 'add', '--detach', worktree, plan.base], plan.projectPath);
+  });
+}
+
 // Establish a clean baseline so the post-run diff captures exactly the executor's
 // produced change and nothing else. The worktree is the executor's sandbox and may
 // not be a git repo yet (the orchestrator just `mkdir`'d it), so init idempotently
 // and commit the current state as the baseline. The committer identity is a
 // throwaway, set per-invocation so the run never depends on the machine's global
 // git config (and never touches it).
-export async function establishBaseline(worktree: string): Promise<void> {
+//
+// A pre-seeded checkout (`opts.preseeded`) already has its HEAD at the per-run
+// base, and it shares the operator `.git`: re-initing would clobber that and a
+// baseline commit would fold the executor's change INTO the base, leaving
+// `captureDiff` empty. So skip entirely — the checkout IS the baseline.
+export async function establishBaseline(
+  worktree: string,
+  opts: { preseeded?: boolean } = {},
+): Promise<void> {
+  if (opts.preseeded) return;
   await gitOrThrow(['init', '-q'], worktree);
   await gitOrThrow(['add', '-A'], worktree);
   await gitOrThrow(
@@ -63,9 +141,15 @@ export async function establishBaseline(worktree: string): Promise<void> {
 
 // Capture the executor's produced change as a unified diff against the baseline:
 // stage everything (so new files show as additions) and diff the index against the
-// baseline commit. Returns an empty string when the executor changed nothing —
-// which the ladder reads as a non-gradeable attempt, not an error.
-export async function captureDiff(worktree: string): Promise<string> {
+// baseline. `base` is the per-run base ref on a pre-seeded checkout (HEAD may have
+// moved if the executor committed, so diff against the captured base, not HEAD);
+// it defaults to `HEAD` for the empty-init path (the baseline commit IS HEAD).
+// Returns an empty string when the executor changed nothing — which the ladder
+// reads as a non-gradeable attempt, not an error.
+export async function captureDiff(worktree: string, base?: string): Promise<string> {
   await gitOrThrow(['add', '-A'], worktree);
-  return gitOrThrow(['-c', 'core.quotepath=false', 'diff', '--cached', 'HEAD'], worktree);
+  return gitOrThrow(
+    ['-c', 'core.quotepath=false', 'diff', '--cached', base ?? 'HEAD'],
+    worktree,
+  );
 }

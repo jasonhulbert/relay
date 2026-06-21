@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { devRun } from './dev-run';
@@ -120,6 +120,141 @@ describe('devRun (hermetic executor)', () => {
         log: () => {},
       });
       expect(again.storeDir).toBe(res.storeDir);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+
+  // WHY: the executor sandbox must be seeded from (and the verified result landed
+  // back into) the operator's real project, so the orchestrator and its executor
+  // have to know which project that is. devRun is the only place that resolves the
+  // store, so it must forward the resolved projectPath through RunOptions all the
+  // way to the executor's ExecutorInput — observed here by capturing the input. A
+  // regression that dropped the field would silently fall back to the empty-worktree
+  // path on a real run.
+  test('forwards the resolved projectPath through RunOptions into ExecutorInput', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'relay-home-'));
+    const project = await mkdtemp(join(tmpdir(), 'relay-proj-'));
+    try {
+      let capturedProjectPath: string | undefined;
+      const capturingExecutor: Executor = {
+        capabilities: () => ({
+          provider: 'fake',
+          json: true,
+          resume: false,
+          sandbox: true,
+          mcp: false,
+        }),
+        async run(input: ExecutorInput): Promise<ExecutorResult> {
+          capturedProjectPath = input.projectPath;
+          await mkdir(input.worktree, { recursive: true });
+          await writeFile(join(input.worktree, 'CHANGE.txt'), 'fake change\n');
+          return {
+            diff: FAKE_DIFF,
+            selfReport: 'fake self-report',
+            usage: {
+              provider: 'fake',
+              model: 'fake-cheap',
+              inputTokens: 1,
+              cachedInputTokens: 0,
+              outputTokens: 1,
+              wallClockMs: 1,
+              costUsd: 0,
+            },
+            exitStatus: 0,
+          };
+        },
+      };
+
+      await devRun({
+        projectPath: project,
+        outcome: 'create CHANGE.txt',
+        home,
+        executor: capturingExecutor,
+        now: () => '2026-03-03T00:00:00.000Z',
+        log: () => {},
+      });
+
+      expect(capturedProjectPath).toBe(resolve(project));
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+
+  // WHY: the whole point of the substrate is that a real run executes against the
+  // operator's actual project, not an empty greenfield dir. So when projectPath is a
+  // clean git repo, the orchestrator must seed each leaf worktree as a checkout of
+  // it and tell the executor the base it forked from (baseRef). Observed here by
+  // capturing the input and reading the seeded worktree. A regression that left the
+  // worktree empty would silently turn a real run back into greenfield.
+  test('seeds the leaf worktree as a project checkout for a clean git workspace', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'relay-home-'));
+    const project = await mkdtemp(join(tmpdir(), 'relay-proj-git-'));
+    try {
+      // Make the operator project a clean git repo with a committed tracked file.
+      await execFileP('git', ['-C', project, 'init', '-q'], {});
+      await execFileP('git', ['-C', project, 'config', 'user.email', 'test@relay.local'], {});
+      await execFileP('git', ['-C', project, 'config', 'user.name', 'Relay Test'], {});
+      await writeFile(join(project, 'app.ts'), 'export const x = 1;\n');
+      await execFileP('git', ['-C', project, 'add', '-A'], {});
+      await execFileP('git', ['-C', project, 'commit', '-q', '--no-gpg-sign', '-m', 'seed'], {});
+      const head = (await execFileP('git', ['-C', project, 'rev-parse', 'HEAD'], {})).stdout.trim();
+
+      let capturedBaseRef: string | undefined;
+      let sawProjectFile = false;
+      const checkoutAwareExecutor: Executor = {
+        capabilities: () => ({
+          provider: 'fake',
+          json: true,
+          resume: false,
+          sandbox: true,
+          mcp: false,
+        }),
+        async run(input: ExecutorInput): Promise<ExecutorResult> {
+          capturedBaseRef = input.baseRef;
+          // The executor was handed a real checkout: the project's tracked file is
+          // present in its sandbox.
+          sawProjectFile = await readFile(join(input.worktree, 'app.ts'), 'utf8')
+            .then((c) => c === 'export const x = 1;\n')
+            .catch(() => false);
+          await writeFile(join(input.worktree, 'app.ts'), 'export const x = 2;\n');
+          return {
+            diff: 'M app.ts',
+            selfReport: 'edited app.ts',
+            usage: {
+              provider: 'fake',
+              model: 'fake-cheap',
+              inputTokens: 1,
+              cachedInputTokens: 0,
+              outputTokens: 1,
+              wallClockMs: 1,
+              costUsd: 0,
+            },
+            exitStatus: 0,
+          };
+        },
+      };
+
+      const res = await devRun({
+        projectPath: project,
+        outcome: 'bump x to 2',
+        home,
+        executor: checkoutAwareExecutor,
+        now: () => '2026-03-03T00:00:00.000Z',
+        log: () => {},
+      });
+
+      // The orchestrator forked the worktree from the operator's HEAD and told the
+      // executor which base, and the executor saw the real project file.
+      expect(capturedBaseRef).toBe(head);
+      expect(sawProjectFile).toBe(true);
+      expect(res.result.rootStatus).toBe('done');
+
+      // The operator's own working tree was untouched (the edit landed in the
+      // sandbox worktree, not the project repo).
+      expect(await readFile(join(project, 'app.ts'), 'utf8')).toBe('export const x = 1;\n');
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(project, { recursive: true, force: true });

@@ -33,6 +33,16 @@ export interface ExecutorInput {
   context: ExecutorContext;
   // The sandbox worktree the executor may write; `.relay/` is off-limits.
   worktree: string;
+  // The operator's resolved absolute project path the sandbox was seeded from, when
+  // the run executes against a real workspace. Absent on the hermetic stub path (an
+  // empty `git init` worktree), so injected-stub callers are unaffected.
+  projectPath?: string;
+  // The per-run base ref the worktree was checked out at, when it was seeded as a
+  // real checkout of a clean operator repo. Present ⇒ the adapter skips
+  // `establishBaseline` (HEAD already IS the base) and captures the diff against
+  // this ref. Absent ⇒ the empty `git init` baseline path (hermetic / non-clean
+  // workspace), so injected-stub callers are unaffected.
+  baseRef?: string;
   // Granted MCP servers (empty until the Phase 4 MCP loop populates them).
   mcpServers: readonly McpServerConfig[];
 }
