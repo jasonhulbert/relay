@@ -60,7 +60,7 @@ import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
 import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
 import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
-import { resolveSeedPlan, seedWorktree } from './adapters/worktree-diff';
+import { composeMergeTree, resolveSeedPlan, seedWorktree } from './adapters/worktree-diff';
 import type { SeedPlan } from './adapters/worktree-diff';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
@@ -372,17 +372,38 @@ async function discardWorktree(workRoot: string, leafId: string): Promise<void> 
 
 // Merge a completed concurrent layer's child worktrees into one tree the integration
 // gate verifies (A4, §3.8). Each child wrote a disjoint repo footprint — that
-// disjointness is what licensed their concurrency (A2) — so copying every child
-// worktree into one directory composes the layer with no file collision. Rebuilt from
-// scratch each call so a rehydrated re-gate is deterministic; a missing child worktree
-// (a writes-free or rehydrated child) is skipped. The merged tree is a throwaway gate
-// sandbox under `worktrees/`, never part of the `.relay/` record.
+// disjointness is what licensed their concurrency (A2). HOW they compose depends on
+// how the run seeded its leaves:
+//
+//   empty (hermetic / non-seeded): each child wrote its disjoint footprint into an
+//   otherwise-empty worktree, so copying every child worktree into one directory
+//   composes the layer with no file collision (the original behavior).
+//
+//   checkout / snapshot (project-seeded): each child worktree holds the WHOLE project,
+//   so copying them over each other would stack full trees and let the last copy
+//   clobber an earlier sibling's edit to a shared base file. Instead compose each
+//   child's DIFF onto one fresh rebuild of the run's base (`composeMergeTree`) — the
+//   footprint-disjoint patches apply cleanly. The patches are each leaf's persisted
+//   evidence diff, so the merged tree is reconstructable on a rehydrated re-gate.
+//
+// Rebuilt from scratch each call so a rehydrated re-gate is deterministic; a missing
+// child worktree/patch (a writes-free or rehydrated child) is skipped. The merged tree
+// is a throwaway gate sandbox under `worktrees/`, never part of the `.relay/` record.
 async function mergeLayerWorktrees(
   workRoot: string,
   childIds: readonly string[],
   mergedDir: string,
+  seedPlan: SeedPlan,
+  evDir: string,
 ): Promise<void> {
   await rm(mergedDir, { recursive: true, force: true });
+  if (seedPlan.mode !== 'empty') {
+    // Project-seeded: compose each child's disjoint diff onto one fresh base, never
+    // whole trees over each other. The patch is each leaf's persisted evidence diff.
+    const patchFiles = childIds.map((id) => join(evDir, id, 'diff.patch'));
+    await composeMergeTree(mergedDir, seedPlan, patchFiles);
+    return;
+  }
   await mkdir(mergedDir, { recursive: true });
   for (const id of childIds) {
     try {
@@ -1426,7 +1447,8 @@ export async function runOrchestrator(
     root.children.every(childDone)
   ) {
     const mergedDir = join(workRoot, `${root.id}__merged`);
-    await mergeLayerWorktrees(workRoot, root.children, mergedDir);
+    const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+    await mergeLayerWorktrees(workRoot, root.children, mergedDir, seedPlan, evDir);
     // The gate's own critic call is a metered model call attributed to this branch
     // node (F5, design §8) — collected via the sink and persisted like the leaf path;
     // the deterministic-only critic spends none, so the hermetic stub run is unchanged.

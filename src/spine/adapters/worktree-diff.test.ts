@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { beforeAll, describe, expect, test } from 'vitest';
-import { captureDiff, establishBaseline, resolveSeedPlan, seedWorktree } from './worktree-diff';
+import {
+  captureDiff,
+  composeMergeTree,
+  establishBaseline,
+  resolveSeedPlan,
+  seedWorktree,
+} from './worktree-diff';
 
 const execFileP = promisify(execFile);
 
@@ -267,6 +273,127 @@ describe('snapshot seed path (non-git workspace)', () => {
     } finally {
       await rm(workRoot, { recursive: true, force: true });
       await rm(proj, { recursive: true, force: true });
+    }
+  });
+});
+
+// WHY: the integration gate verifies the WHOLE merged layer (A4) — but a project-
+// seeded leaf worktree holds the entire project, not just its own change. Composing
+// the layer by copying those worktrees over each other (the empty-path merge) would
+// let the last copy overwrite an earlier sibling's edited file with its own base copy,
+// silently DROPPING a verified change before the gate ever sees it. composeMergeTree
+// must instead rebuild the base once and apply each disjoint diff, so the merged tree
+// carries EVERY sibling's change. The clobber is the falsifiable failure here: leaf A
+// edits a file leaf B leaves at base, so a stack-the-trees merge would lose A's edit.
+describe('composeMergeTree (project-seeded concurrent-layer merge)', () => {
+  test('checkout: composes disjoint leaf diffs onto the base without clobbering a sibling', async () => {
+    const { repo, head } = await makeCleanRepo();
+    const workRoot = await mkdtemp(join(tmpdir(), 'relay-merge-wr-'));
+    const patches = await mkdtemp(join(tmpdir(), 'relay-merge-patch-'));
+    try {
+      const plan = await resolveSeedPlan(repo);
+      if (plan.mode !== 'checkout') throw new Error('expected checkout');
+
+      // Leaf A edits a tracked file leaf B never touches; leaf B adds a new file. The
+      // footprints are disjoint, which is exactly what licensed running them at once.
+      const wtA = join(workRoot, 'leaf-a');
+      const wtB = join(workRoot, 'leaf-b');
+      await seedWorktree(wtA, plan);
+      await seedWorktree(wtB, plan);
+      await writeFile(join(wtA, 'existing.txt'), 'changed by A\n');
+      await writeFile(join(wtB, 'fromB.txt'), 'added by B\n');
+
+      // Persist each leaf's captured diff exactly as the orchestrator does
+      // (evidence/<run>/<leafId>/diff.patch), then compose from those files.
+      const patchA = join(patches, 'a.patch');
+      const patchB = join(patches, 'b.patch');
+      await writeFile(patchA, await captureDiff(wtA, plan.base));
+      await writeFile(patchB, await captureDiff(wtB, plan.base));
+
+      const merged = join(workRoot, 'merged');
+      await composeMergeTree(merged, plan, [patchA, patchB]);
+
+      // The merged tree carries BOTH changes: A's edit survived (not clobbered back to
+      // base by B's worktree), and B's addition is present.
+      expect(await readFile(join(merged, 'existing.txt'), 'utf8')).toBe('changed by A\n');
+      expect(await readFile(join(merged, 'fromB.txt'), 'utf8')).toBe('added by B\n');
+      // The file neither leaf touched stays at its base content.
+      expect(await readFile(join(merged, 'untouched.txt'), 'utf8')).toBe('leave me alone\n');
+      // The merged tree forked from the captured base (the same base every leaf used).
+      expect(await git(repo, 'worktree', 'list', '--porcelain')).toContain(`HEAD ${head}`);
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
+      await rm(patches, { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('snapshot: re-seeds the project and applies each disjoint leaf diff', async () => {
+    const proj = await mkdtemp(join(tmpdir(), 'relay-merge-snap-'));
+    const workRoot = await mkdtemp(join(tmpdir(), 'relay-merge-snapwr-'));
+    const patches = await mkdtemp(join(tmpdir(), 'relay-merge-snappatch-'));
+    try {
+      await writeFile(join(proj, 'existing.txt'), 'original content\n');
+      await writeFile(join(proj, 'untouched.txt'), 'leave me alone\n');
+      const plan = await resolveSeedPlan(proj);
+      if (plan.mode !== 'snapshot') throw new Error('expected snapshot');
+
+      // A snapshot leaf is the empty path over a pre-populated tree: seed, baseline,
+      // edit, then capture the change against that baseline (no base ref).
+      const wtA = join(workRoot, 'leaf-a');
+      const wtB = join(workRoot, 'leaf-b');
+      await seedWorktree(wtA, plan);
+      await seedWorktree(wtB, plan);
+      await establishBaseline(wtA);
+      await establishBaseline(wtB);
+      await writeFile(join(wtA, 'existing.txt'), 'changed by A\n');
+      await writeFile(join(wtB, 'fromB.txt'), 'added by B\n');
+
+      const patchA = join(patches, 'a.patch');
+      const patchB = join(patches, 'b.patch');
+      await writeFile(patchA, await captureDiff(wtA));
+      await writeFile(patchB, await captureDiff(wtB));
+
+      const merged = join(workRoot, 'merged');
+      await composeMergeTree(merged, plan, [patchA, patchB]);
+
+      // Both disjoint changes compose onto a fresh snapshot of the project.
+      expect(await readFile(join(merged, 'existing.txt'), 'utf8')).toBe('changed by A\n');
+      expect(await readFile(join(merged, 'fromB.txt'), 'utf8')).toBe('added by B\n');
+      expect(await readFile(join(merged, 'untouched.txt'), 'utf8')).toBe('leave me alone\n');
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
+      await rm(patches, { recursive: true, force: true });
+      await rm(proj, { recursive: true, force: true });
+    }
+  });
+
+  test('a child that produced no change (missing/empty patch) is skipped, not failed', async () => {
+    const { repo } = await makeCleanRepo();
+    const workRoot = await mkdtemp(join(tmpdir(), 'relay-merge-wr-'));
+    const patches = await mkdtemp(join(tmpdir(), 'relay-merge-patch-'));
+    try {
+      const plan = await resolveSeedPlan(repo);
+      if (plan.mode !== 'checkout') throw new Error('expected checkout');
+      const wtA = join(workRoot, 'leaf-a');
+      await seedWorktree(wtA, plan);
+      await writeFile(join(wtA, 'existing.txt'), 'changed by A\n');
+
+      const patchA = join(patches, 'a.patch');
+      const patchEmpty = join(patches, 'empty.patch');
+      const patchMissing = join(patches, 'missing.patch');
+      await writeFile(patchA, await captureDiff(wtA, plan.base));
+      await writeFile(patchEmpty, ''); // a leaf that changed nothing
+
+      const merged = join(workRoot, 'merged');
+      // The empty and the absent patch must both be skipped without throwing.
+      await composeMergeTree(merged, plan, [patchA, patchEmpty, patchMissing]);
+
+      expect(await readFile(join(merged, 'existing.txt'), 'utf8')).toBe('changed by A\n');
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
+      await rm(patches, { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
     }
   });
 });

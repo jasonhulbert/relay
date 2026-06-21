@@ -22,7 +22,7 @@
 // adapter needs no special case (it sees no `baseRef`). The empty `git init` path
 // stays the default for the hermetic stub runs (no `projectPath`).
 import { spawn } from 'node:child_process';
-import { access, cp, mkdir } from 'node:fs/promises';
+import { access, cp, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 
 interface GitResult {
@@ -236,12 +236,45 @@ export async function establishBaseline(
 // baseline. `base` is the per-run base ref on a pre-seeded checkout (HEAD may have
 // moved if the executor committed, so diff against the captured base, not HEAD);
 // it defaults to `HEAD` for the empty-init path (the baseline commit IS HEAD).
-// Returns an empty string when the executor changed nothing — which the ladder
-// reads as a non-gradeable attempt, not an error.
+// Returns an empty string when the executor changed nothing — NOT an auto-failed
+// attempt: the critic gates an empty diff against the spec like any other (the
+// outcome may already be satisfied), so this is gradeable evidence, never an error.
 export async function captureDiff(worktree: string, base?: string): Promise<string> {
   await gitOrThrow(['add', '-A'], worktree);
   return gitOrThrow(
     ['-c', 'core.quotepath=false', 'diff', '--cached', base ?? 'HEAD'],
     worktree,
   );
+}
+
+// Compose a concurrent layer's per-child diffs onto ONE fresh base tree — the
+// integration gate's merged worktree (§3.8, A4) for a PROJECT-SEEDED run. On the
+// checkout/snapshot paths each leaf worktree holds the WHOLE project, so the empty
+// path's "copy every child worktree into one dir" would stack full trees and let the
+// last copy clobber an earlier sibling's edit to a shared base file. Instead rebuild
+// the run's base ONCE and `git apply` each footprint-disjoint child patch onto it:
+//   - checkout: re-add a detached worktree at the per-run base (the same base every
+//     leaf forked from), so applying the disjoint diffs reproduces the merged whole.
+//   - snapshot: re-copy the project and `establishBaseline` so `git apply` has a repo
+//     with a clean tree, mirroring how a snapshot leaf is built.
+// `patchFiles` are the persisted `evidence/<run>/<leafId>/diff.patch` paths, so a
+// rehydrated re-gate rebuilds an identical tree from disk. A missing or empty patch is
+// skipped (a child that produced no change contributes nothing); a present patch that
+// fails to apply is a HARD error (Rule 11) — a clash the disjoint-footprint law was
+// meant to prevent must surface loudly, never be silently swallowed.
+export async function composeMergeTree(
+  mergedDir: string,
+  plan: Extract<SeedPlan, { mode: 'checkout' | 'snapshot' }>,
+  patchFiles: readonly string[],
+): Promise<void> {
+  await seedWorktree(mergedDir, plan);
+  if (plan.mode === 'snapshot') {
+    await establishBaseline(mergedDir);
+  }
+  for (const file of patchFiles) {
+    if (!(await pathExists(file))) continue;
+    const patch = await readFile(file, 'utf8');
+    if (patch.trim() === '') continue;
+    await gitOrThrow(['apply', '--whitespace=nowarn', file], mergedDir);
+  }
 }
