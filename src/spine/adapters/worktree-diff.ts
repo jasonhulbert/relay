@@ -22,7 +22,7 @@
 // adapter needs no special case (it sees no `baseRef`). The empty `git init` path
 // stays the default for the hermetic stub runs (no `projectPath`).
 import { spawn } from 'node:child_process';
-import { access, cp, mkdir, readFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 
 interface GitResult {
@@ -277,4 +277,98 @@ export async function composeMergeTree(
     if (patch.trim() === '') continue;
     await gitOrThrow(['apply', '--whitespace=nowarn', file], mergedDir);
   }
+}
+
+// The outcome of landing a run's verified `result.patch` back into the operator
+// repo (workspace-substrate §6). `branch` is the success path: a reviewable
+// `relay/<runId>` branch off the per-run base now exists, working tree untouched.
+// `patch-only` is the fail-loud path — there was no clean operator base to fork from
+// (a dirty or non-git workspace) or the patch did not apply (`conflict`), so NO
+// branch was created; the caller surfaces the `notice` + `patchPath` and exits
+// non-zero. `none` means there was nothing to land (the hermetic/empty path).
+export type ApplyBackOutcome =
+  | { kind: 'none' }
+  | { kind: 'branch'; branch: string; base: string; patchPath: string }
+  | {
+      kind: 'patch-only';
+      reason: 'dirty' | 'non-git' | 'conflict';
+      notice: string;
+      patchPath: string;
+    };
+
+// Land the verified `result.patch` as a reviewable `relay/<runId>` branch in the
+// operator repo WITHOUT touching its working tree or HEAD (workspace-substrate §6).
+// Only the `checkout` path can produce a branch: it has a committed operator base the
+// branch forks from, and `result.patch` is already a diff against exactly that base.
+// The `snapshot` paths (dirty / non-git) have no such base, so the result stays a
+// patch and the caller fails loud (the plan's "patch, not a branch off HEAD" case).
+//
+// The branch is built in a THROWAWAY detached worktree off `base` (under the run's
+// scratch area, never the operator tree): apply the patch, commit it as one commit,
+// point `relay/<runId>` at that commit, then remove the worktree — so only
+// `.git/worktrees/` metadata and the new branch ref ever change. The commit identity
+// is a throwaway set per-invocation, so the run never reads or writes the machine's
+// git config (mirroring `establishBaseline`). A patch that fails to apply onto its own
+// base is reported as a `conflict` (fail loud, non-zero exit) rather than thrown, so
+// the recap can still surface the persisted `result.patch` and manual apply steps.
+export async function applyBackBranch(
+  plan: SeedPlan,
+  runId: string,
+  patchPath: string,
+  scratchDir: string,
+): Promise<ApplyBackOutcome> {
+  if (plan.mode === 'empty') return { kind: 'none' };
+  if (plan.mode === 'snapshot') {
+    return { kind: 'patch-only', reason: plan.reason, notice: plan.notice, patchPath };
+  }
+  const branch = `relay/${runId}`;
+  return withWorktreeGitLock(async () => {
+    await rm(scratchDir, { recursive: true, force: true });
+    await mkdir(dirname(scratchDir), { recursive: true });
+    await git(['worktree', 'prune'], plan.projectPath);
+    await gitOrThrow(['worktree', 'add', '--detach', scratchDir, plan.base], plan.projectPath);
+    try {
+      const patch = await readFile(patchPath, 'utf8');
+      if (patch.trim() !== '') {
+        const applied = await git(['apply', '--whitespace=nowarn', patchPath], scratchDir);
+        if (applied.code !== 0) {
+          return {
+            kind: 'patch-only',
+            reason: 'conflict',
+            notice: `result.patch did not apply onto base ${plan.base}: ${applied.stderr.trim()}`,
+            patchPath,
+          };
+        }
+      }
+      await gitOrThrow(['add', '-A'], scratchDir);
+      // `--allow-empty`: an outcome already satisfied yields an empty `result.patch`;
+      // the branch still records "this run produced no change" off the same base.
+      await gitOrThrow(
+        [
+          '-c',
+          'user.name=relay',
+          '-c',
+          'user.email=relay@local',
+          'commit',
+          '-q',
+          '--allow-empty',
+          '--no-gpg-sign',
+          '-m',
+          `relay run ${runId}`,
+        ],
+        scratchDir,
+      );
+      const head = (await gitOrThrow(['rev-parse', 'HEAD'], scratchDir)).trim();
+      // `-f`: re-running the same `runId` re-points the branch idempotently rather
+      // than hard-failing on an existing ref.
+      await gitOrThrow(['branch', '-f', branch, head], plan.projectPath);
+      return { kind: 'branch', branch, base: plan.base, patchPath };
+    } finally {
+      // Remove our throwaway worktree so registrations do not accumulate in the
+      // operator `.git/worktrees/`. Best-effort: a failure here must not mask the
+      // outcome already computed above.
+      await git(['worktree', 'remove', '--force', scratchDir], plan.projectPath);
+      await git(['worktree', 'prune'], plan.projectPath);
+    }
+  });
 }

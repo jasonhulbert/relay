@@ -117,6 +117,34 @@ function formatUsd(cost: number | null): string {
   return cost === null ? 'n/a (unpriced)' : `$${cost.toFixed(6)}`;
 }
 
+// Render the apply-back section of the recap (workspace-substrate §6). On the
+// success path it names the reviewable `relay/<runId>` branch and the exact commands
+// to review and merge it (the operator's working tree was never touched). On the
+// fail-loud path (dirty / non-git workspace, or a patch that did not apply) it prints
+// the reason, the persisted `result.patch` path, and the manual `git apply` step — so
+// the verified work is never lost, just surfaced for the human instead of auto-landed.
+// `none` (the hermetic/empty path, or a non-done run) adds nothing.
+function applyBackLines(projectPath: string, applyBack: OrchestratorResult['applyBack']): string[] {
+  if (applyBack.kind === 'none') return [];
+  if (applyBack.kind === 'branch') {
+    return [
+      '',
+      'apply-back (workspace-substrate §6):',
+      `  branch: ${applyBack.branch}   (operator repo; working tree untouched)`,
+      `  review: git -C ${projectPath} diff ${applyBack.base}..${applyBack.branch}`,
+      `  merge:  git -C ${projectPath} merge ${applyBack.branch}`,
+      `  patch:  ${applyBack.patchPath}`,
+    ];
+  }
+  return [
+    '',
+    `apply-back: NOT APPLIED (${applyBack.reason}) — verified result delivered as a patch:`,
+    `  reason: ${applyBack.notice}`,
+    `  patch:  ${applyBack.patchPath}`,
+    `  apply manually (review first): git -C ${projectPath} apply ${applyBack.patchPath}`,
+  ];
+}
+
 // Render the operator recap: where the store is, every node's status, the run's
 // evidence files, the per-call usage/cost, and any blocked record. Built by
 // reading the store back so it reflects what was actually persisted, not the
@@ -173,6 +201,8 @@ async function renderRecap(
   } catch {
     lines.push('  (none persisted this run)');
   }
+
+  lines.push(...applyBackLines(projectPath, result.applyBack));
 
   lines.push('', 'per-call usage (node-attributed; F5):');
   if (usages.length === 0) {

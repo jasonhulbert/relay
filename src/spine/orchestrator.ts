@@ -61,12 +61,13 @@ import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
 import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
 import {
+  applyBackBranch,
   captureDiff,
   composeMergeTree,
   resolveSeedPlan,
   seedWorktree,
 } from './adapters/worktree-diff';
-import type { SeedPlan } from './adapters/worktree-diff';
+import type { ApplyBackOutcome, SeedPlan } from './adapters/worktree-diff';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
@@ -208,7 +209,15 @@ export interface OrchestratorResult {
   // The `.relay/`-relative paths this process wrote: its ownership footprint (A6).
   // Disjoint from any concurrent sibling or parent process's footprint.
   ownedWrites: string[];
+  // How the verified `result.patch` was landed back into the operator repo
+  // (workspace-substrate §6): a reviewable `relay/<runId>` branch on the clean
+  // checkout path, a fail-loud patch-only outcome on dirty/non-git/conflict, or
+  // `none` when there was nothing to land (the hermetic/empty path, or a non-done
+  // run). The CLI uses this to render the recap and decide the exit code.
+  applyBack: ApplyBackOutcome;
 }
+
+export type { ApplyBackOutcome } from './adapters/worktree-diff';
 
 interface LeafContext {
   region: string;
@@ -1194,6 +1203,7 @@ export async function runOrchestrator(
       rolledForward,
       region,
       ownedWrites: [...writes].sort(),
+      applyBack: { kind: 'none' },
     };
   }
   // Rehydration of an already-terminal run: a `blocked` root is the settled outcome
@@ -1222,6 +1232,7 @@ export async function runOrchestrator(
       rolledForward,
       region,
       ownedWrites: [...writes].sort(),
+      applyBack: { kind: 'none' },
     };
   }
   // Branch-activation decomposition (§3.10): a branch with no layer yet is
@@ -1553,6 +1564,10 @@ export async function runOrchestrator(
   // Scoped to a leaf-only `done` tree: a multi-process run with branch children would
   // need its sub-orchestrators' patches composed (out of this dev-run-validated scope),
   // and such a run is never project-seeded today, so the `mode` gate already excludes it.
+  // How the verified result was landed back into the operator repo (Phase 6).
+  // Defaults to `none`: a non-done run, the hermetic/empty path, or a run with no
+  // done leaves never lands anything, so the gated block below is the only writer.
+  let applyBack: ApplyBackOutcome = { kind: 'none' };
   if (
     root.status === 'done' &&
     root.parentId === null &&
@@ -1594,6 +1609,19 @@ export async function runOrchestrator(
     }
     await atomicWriteFile(join(evDir, 'result.patch'), resultPatch);
     writes.add(`evidence/${manifest.runId}/result.patch`);
+
+    // Apply-back (Phase 6, §6): land the canonical `result.patch` as a reviewable
+    // `relay/<runId>` branch in the operator repo. Gated identically to the patch
+    // write — so it runs ONLY on a committed-done, project-seeded top-level run, off
+    // the COMMITTED critic verdict (root `done`), never the executor self-report.
+    // The branch targets the operator `.git`, not `.relay/`, so it is NOT an
+    // `ownedWrites` entry. The throwaway build worktree lives under `workRoot`.
+    applyBack = await applyBackBranch(
+      seedPlan,
+      manifest.runId,
+      join(evDir, 'result.patch'),
+      join(workRoot, `${root.id}__applyback`),
+    );
   }
 
   // F5 per-run rollup (design §8). Written once, by the TOP-LEVEL run (a node with no
@@ -1625,5 +1653,6 @@ export async function runOrchestrator(
     rolledForward,
     region,
     ownedWrites: [...writes].sort(),
+    applyBack,
   };
 }

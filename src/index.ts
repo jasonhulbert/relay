@@ -89,7 +89,21 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   const out = await devRun(devOpts);
   // The harness already printed the recap; signal a non-`done` run as misuse so a
   // scripted caller (or the operator's shell) sees the failure (Rule 11).
-  return out.result.rootStatus === 'done' ? 0 : 1;
+  if (out.result.rootStatus !== 'done') return 1;
+  // Apply-back fail-loud (workspace-substrate §6): a dirty / non-git workspace or a
+  // patch that did not apply produced NO branch — the verified result was delivered
+  // as `result.patch` instead. The recap already names it; echo a loud one-liner to
+  // stderr and exit non-zero so an operator (or scripted caller) cannot mistake the
+  // patch-only outcome for an applied branch. Never an inbox write.
+  if (out.result.applyBack.kind === 'patch-only') {
+    process.stderr.write(
+      `dev-run: result NOT applied as a branch (${out.result.applyBack.reason}); ` +
+        `${out.result.applyBack.notice}\n` +
+        `         verified patch: ${out.result.applyBack.patchPath}\n`,
+    );
+    return 1;
+  }
+  return 0;
 }
 
 async function exists(path: string): Promise<boolean> {
