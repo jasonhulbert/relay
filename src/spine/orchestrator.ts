@@ -13,7 +13,7 @@
 // child's return value or stdout. Leaf children keep the M1 in-process path.
 // Executor + critic stay stubbed; the failure ladder (§3.9) is M3.
 import { dirname, join } from 'node:path';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm } from 'node:fs/promises';
 import {
   applyIntent,
   atomicWriteFile,
@@ -60,7 +60,12 @@ import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
 import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
 import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
-import { composeMergeTree, resolveSeedPlan, seedWorktree } from './adapters/worktree-diff';
+import {
+  captureDiff,
+  composeMergeTree,
+  resolveSeedPlan,
+  seedWorktree,
+} from './adapters/worktree-diff';
 import type { SeedPlan } from './adapters/worktree-diff';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
@@ -1537,6 +1542,58 @@ export async function runOrchestrator(
     if (opts.selfFaultAt === 'after-branch-done') {
       throw new InjectedKill('after-branch-done');
     }
+  }
+
+  // The canonical verified result for apply-back (workspace-substrate §5, C8).
+  // Persist `evidence/<run>/result.patch`: the run's verified change as one clean
+  // patch the apply-back step (Phase 6) lands as a `relay/<runId>` branch, and the
+  // re-derivable record of exactly what was applied. Written once by the TOP-LEVEL
+  // run and ONLY on a project-seeded run (`mode !== 'empty'`), so the hermetic stub
+  // path persists no spurious patch — the same gate posture as the F5 rollup below.
+  // Scoped to a leaf-only `done` tree: a multi-process run with branch children would
+  // need its sub-orchestrators' patches composed (out of this dev-run-validated scope),
+  // and such a run is never project-seeded today, so the `mode` gate already excludes it.
+  if (
+    root.status === 'done' &&
+    root.parentId === null &&
+    seedPlan.mode !== 'empty' &&
+    root.children.length > 0 &&
+    root.children.every((id) => leafStatuses[id] === 'done')
+  ) {
+    const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+    // On a snapshot run the base is the per-leaf snapshot baseline (no operator ref),
+    // so `captureDiff` takes no base; on a checkout run it diffs against the shared base.
+    const captureBase = seedPlan.mode === 'checkout' ? seedPlan.base : undefined;
+    const doneLeafIds = root.children.filter((id) => leafStatuses[id] === 'done');
+    let resultPatch: string;
+    if (doneLeafIds.length === 1) {
+      // Single-leaf run: the run's change IS that leaf's already-persisted diff,
+      // captured against the per-run base / snapshot baseline — apply-back-ready with
+      // no rebaselining. Reuse it verbatim (byte-identical to the critic's evidence),
+      // never re-derive it.
+      resultPatch = await readFile(join(evDir, doneLeafIds[0], 'diff.patch'), 'utf8');
+    } else if (ranConcurrently) {
+      // Concurrent multi-leaf: the integration gate already composed the layer's
+      // footprint-disjoint diffs onto one fresh base (`mergedDir`). Capture THAT tree
+      // against its base — not a concat of the per-leaf evidence diffs, which is the
+      // critic's evidence text, never a clean apply-back patch.
+      resultPatch = await captureDiff(join(workRoot, `${root.id}__merged`), captureBase);
+    } else {
+      // Serial multi-leaf: no gate ran (it is concurrency-only), so no `mergedDir`
+      // exists. Compose the per-leaf diffs onto one fresh rebuild of the run's base
+      // ourselves — the same disjoint-patch composition the gate uses — rather than
+      // silently dropping every leaf but the first (Rule 11).
+      const resultDir = join(workRoot, `${root.id}__result`);
+      await rm(resultDir, { recursive: true, force: true });
+      await composeMergeTree(
+        resultDir,
+        seedPlan,
+        doneLeafIds.map((id) => join(evDir, id, 'diff.patch')),
+      );
+      resultPatch = await captureDiff(resultDir, captureBase);
+    }
+    await atomicWriteFile(join(evDir, 'result.patch'), resultPatch);
+    writes.add(`evidence/${manifest.runId}/result.patch`);
   }
 
   // F5 per-run rollup (design §8). Written once, by the TOP-LEVEL run (a node with no
