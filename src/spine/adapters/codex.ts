@@ -69,6 +69,14 @@ export function buildCodexArgs(
   return [
     'exec',
     '--json',
+    // Worktree-scoped write posture (workspace-substrate §7). `workspace-write` is an
+    // OS-level sandbox confining ALL writes — file edits AND subprocesses — to the cwd
+    // (the leaf worktree), so an outcome naming an absolute path outside it cannot
+    // write there. Now that the Claude adapter dropped `bypassPermissions` for
+    // `acceptEdits`, both providers are dir-scoped and the old absolute-path escape
+    // works on NEITHER. Asymmetry to keep honest: Codex confines subprocesses too,
+    // while Claude's `acceptEdits` scopes only the file-edit tools (its `Bash` is the
+    // residual gap until the OS-sandbox milestone) — see `claude.ts` buildClaudeArgs.
     '--sandbox',
     'workspace-write',
     '--skip-git-repo-check',
