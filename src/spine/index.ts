@@ -126,3 +126,7 @@ export type {
 // The dev run harness (M4 Phase 2): the first operator-visible REAL run.
 export { devRun } from './dev-run';
 export type { DevRunOptions, DevRunResult, Provider } from './dev-run';
+// Shared real-run scaffolding (M6): the per-role provider executor builder and the
+// operator recap renderer, reused verbatim by the `relay run` command so it
+// constructs providers and renders its recap identically to `dev-run`.
+export { buildProviderExecutor, renderRecap } from './run-support';

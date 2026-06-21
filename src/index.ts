@@ -5,10 +5,13 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { devRun, projectKey, relayHome } from './spine/index';
 import type { DevRunOptions, Provider } from './spine/index';
-// The intake compiler (Plan 2): `relay run` composes these into intake -> commit a
-// childless root -> decompose -> apply-back. Phase 1 only confirms they are reachable
-// from the CLI and parses the flags; the composition itself lands in Phase 2/3.
-import { runIntake, compileSeed, commitRoot } from './intake/index';
+// The intake collaborators (Plan 2): the real conversational interviewer and the
+// stdin human-answer source the interactive `relay run` grills through. `relayRun`
+// composes intake -> commit a childless root -> decompose -> apply-back.
+import { agentInterviewer, stdinAsk } from './intake/index';
+import type { IntakeProvider } from './intake/index';
+import { relayRun } from './run';
+import type { RelayRunOptions } from './run';
 import { startWebView } from './webview/index';
 
 const USAGE = `relay v${__RELAY_VERSION__}
@@ -167,28 +170,54 @@ async function runCommand(args: readonly string[]): Promise<number> {
     return 2;
   }
 
-  // The full parsed config Phase 2/3 will thread into intake -> commitRoot ->
-  // runOrchestrator -> apply-back. `--outcome`'s presence selects the non-interactive
-  // path. Model flags are free-form overrides validated by the adapter at run time.
-  const runConfig = {
-    projectPath: flag(args, '--project') ?? process.cwd(),
-    outcome: flag(args, '--outcome'),
-    provider: provider as Provider | undefined,
-    executorModel: flag(args, '--model'),
-    criticProvider: criticProvider as Provider | undefined,
-    criticModel: flag(args, '--critic-model'),
-    brainProvider: brainProvider as Provider | undefined,
-    brainModel: flag(args, '--brain-model'),
-  };
+  const projectPath = flag(args, '--project') ?? process.cwd();
+  const outcome = flag(args, '--outcome');
 
-  // Deliverable 3: confirm the intake compiler is reachable from the CLI. The real
-  // composition is wired in Phase 2 (interactive) and Phase 3 (--outcome); until then
-  // fail loud rather than pretend a run happened (Rule 11).
-  void { runConfig, runIntake, compileSeed, commitRoot };
-  process.stderr.write(
-    'run: not yet implemented — interactive run lands in Phase 2, --outcome in Phase 3\n',
-  );
-  return 1;
+  // The non-interactive `--outcome` path (a grounded one-shot seed) lands in Phase 3;
+  // until then fail loud rather than silently grilling stdin instead (Rule 11).
+  if (outcome !== undefined) {
+    process.stderr.write('run: --outcome (non-interactive) lands in Phase 3\n');
+    return 1;
+  }
+
+  // Interactive run: grill the human through the real conversational interviewer +
+  // stdin, commit a childless root, decompose, execute, and apply back. The
+  // interviewer runs on the primary provider (the author) at its cheapest default,
+  // from the project dir (intake runs before any worktree exists). Per-role provider
+  // and model overrides thread straight through to `relayRun`'s orchestrator wiring.
+  const interviewerProvider: IntakeProvider = provider === 'codex' ? 'codex' : 'claude';
+  const runOpts: RelayRunOptions = {
+    projectPath,
+    interviewer: agentInterviewer({ provider: interviewerProvider, cwd: projectPath }),
+    ask: stdinAsk(),
+  };
+  if (provider !== undefined) runOpts.provider = provider as Provider;
+  const executorModel = flag(args, '--model');
+  if (executorModel !== undefined) runOpts.executorModel = executorModel;
+  if (criticProvider !== undefined) runOpts.criticProvider = criticProvider as Provider;
+  const criticModel = flag(args, '--critic-model');
+  if (criticModel !== undefined) runOpts.criticModel = criticModel;
+  if (brainProvider !== undefined) runOpts.brainProvider = brainProvider as Provider;
+  const brainModel = flag(args, '--brain-model');
+  if (brainModel !== undefined) runOpts.brainModel = brainModel;
+
+  const out = await relayRun(runOpts);
+  // The recap is already printed. Signal a non-`done` run as misuse so a scripted
+  // caller (or the operator's shell) sees the failure (Rule 11) — mirrors dev-run.
+  if (out.result.rootStatus !== 'done') return 1;
+  // Apply-back fail-loud (workspace-substrate §6): a dirty / non-git workspace or a
+  // patch that did not apply produced NO branch — the verified result was delivered
+  // as `result.patch` instead. The recap already names it; echo a loud one-liner so
+  // an operator cannot mistake the patch-only outcome for an applied branch.
+  if (out.result.applyBack.kind === 'patch-only') {
+    process.stderr.write(
+      `run: result NOT applied as a branch (${out.result.applyBack.reason}); ` +
+        `${out.result.applyBack.notice}\n` +
+        `     verified patch: ${out.result.applyBack.patchPath}\n`,
+    );
+    return 1;
+  }
+  return 0;
 }
 
 async function exists(path: string): Promise<boolean> {
