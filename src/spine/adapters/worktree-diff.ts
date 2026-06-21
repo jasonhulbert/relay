@@ -11,12 +11,19 @@
 // leaf worktree is a real checkout of the project off a fixed per-run base ref, so
 // the executor sees the actual code. `resolveSeedPlan`/`seedWorktree` own that
 // branch; `establishBaseline` becomes a no-op on a pre-seeded checkout (its HEAD
-// already IS the base); `captureDiff` diffs against the per-run base. The empty
-// `git init` path stays the default for the hermetic stub runs and for non-clean
-// (non-git / dirty) workspaces (the snapshot fallback is a later phase).
+// already IS the base); `captureDiff` diffs against the per-run base.
+//
+// A workspace that is NOT a clean git repo (non-git, or a dirty tree with
+// uncommitted work that forking from HEAD would drop) takes the `snapshot` path:
+// the operator's tracked files are copied into the worktree, then the empty-path
+// machinery runs over the populated dir — `establishBaseline` inits+commits the
+// snapshot as the baseline, and `captureDiff` reports the executor's change against
+// it. So a snapshot leaf is just an empty leaf with a pre-populated tree; the
+// adapter needs no special case (it sees no `baseRef`). The empty `git init` path
+// stays the default for the hermetic stub runs (no `projectPath`).
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { access, cp, mkdir } from 'node:fs/promises';
+import { dirname, join, relative, sep } from 'node:path';
 
 interface GitResult {
   code: number;
@@ -46,13 +53,33 @@ async function gitOrThrow(args: string[], cwd: string): Promise<string> {
   return res.stdout;
 }
 
-// How a leaf's sandbox worktree is seeded for one run. `empty` is the hermetic /
-// non-clean-workspace default (an empty `git init` dir, the original behavior).
-// `checkout` is a real worktree of the operator project, detached at a fixed
-// per-run `base`, so the executor edits against the actual code.
+// How a leaf's sandbox worktree is seeded for one run. `empty` is the hermetic
+// default (an empty `git init` dir, the original behavior). `checkout` is a real
+// worktree of the operator project, detached at a fixed per-run `base`, so the
+// executor edits against the actual code. `snapshot` copies the operator's tracked
+// files into the worktree when there is no clean base to fork from (a non-git dir,
+// or a dirty tree whose uncommitted work a checkout would drop); the executor still
+// sees the project, but the result lands as a patch rather than a branch off HEAD.
 export type SeedPlan =
   | { mode: 'empty' }
-  | { mode: 'checkout'; projectPath: string; base: string };
+  | { mode: 'checkout'; projectPath: string; base: string }
+  | { mode: 'snapshot'; projectPath: string; reason: 'dirty' | 'non-git'; notice: string };
+
+// Human-facing notice the recap surfaces (a later phase) when a run falls back to
+// the snapshot path: there is no clean operator base, so the verified result is
+// delivered as a patch (`result.patch`), not an in-place `relay/<runId>` branch off
+// HEAD. Keyed by the same discriminant `resolveSeedPlan` records on the plan.
+export const SNAPSHOT_NOTICE: Record<'dirty' | 'non-git', string> = {
+  dirty:
+    'workspace has uncommitted changes; the verified result is delivered as a patch (result.patch), not a branch off HEAD',
+  'non-git':
+    'workspace is not a git repository; the verified result is delivered as a patch (result.patch), not a branch off HEAD',
+};
+
+// Standard excludes for the non-git snapshot walk: VCS metadata, Relay's own state,
+// and dependency caches, matched at any depth. The dirty (git) path needs no such
+// list — `git ls-files` already yields only tracked files, honoring `.gitignore`.
+const SNAPSHOT_EXCLUDE = new Set(['.git', '.relay', 'node_modules']);
 
 // All leaf worktrees in a run share the operator's single `.git` (worktree
 // registration is a per-repo mutable resource). `git worktree add`/`prune` are
@@ -69,20 +96,28 @@ function withWorktreeGitLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-// Decide, once at run start, how to seed this run's leaf worktrees. Gated on a
-// clean operator git repo: a non-git, dirty, or commit-less (unborn HEAD)
-// workspace falls back to `empty` (the snapshot fallback for those cases is a
-// later phase), and an absent `projectPath` (the hermetic path) short-circuits
-// with no git call at all so the stub runs stay byte-identical.
+// Decide, once at run start, how to seed this run's leaf worktrees. An absent
+// `projectPath` (the hermetic path) short-circuits with no git call at all so the
+// stub runs stay byte-identical. With a project: a clean git repo forks each leaf
+// from HEAD (`checkout`); a non-git dir or a dirty tree (uncommitted work a
+// checkout would drop) takes the file `snapshot` path; only a commit-less but
+// otherwise clean repo (unborn HEAD, nothing to copy) still falls back to `empty`.
 export async function resolveSeedPlan(projectPath: string | undefined): Promise<SeedPlan> {
   if (projectPath === undefined) return { mode: 'empty' };
   const inside = await git(['rev-parse', '--is-inside-work-tree'], projectPath);
-  if (inside.code !== 0 || inside.stdout.trim() !== 'true') return { mode: 'empty' };
+  if (inside.code !== 0 || inside.stdout.trim() !== 'true') {
+    // Not a git repo at all: snapshot its files so Relay still runs "in any workspace".
+    return { mode: 'snapshot', projectPath, reason: 'non-git', notice: SNAPSHOT_NOTICE['non-git'] };
+  }
   // A dirty tree would make "fork from HEAD" lose the operator's uncommitted work;
-  // surface that as the snapshot/non-checkout path instead (handled next phase).
+  // snapshot the working tree instead so the executor sees that uncommitted state.
   const status = await git(['status', '--porcelain'], projectPath);
-  if (status.code !== 0 || status.stdout.trim() !== '') return { mode: 'empty' };
+  if (status.code !== 0 || status.stdout.trim() !== '') {
+    return { mode: 'snapshot', projectPath, reason: 'dirty', notice: SNAPSHOT_NOTICE.dirty };
+  }
   const head = await git(['rev-parse', 'HEAD'], projectPath);
+  // Clean repo with no commit yet (unborn HEAD): no base to fork from and a clean
+  // tree means nothing to snapshot, so the empty path is exactly right.
   if (head.code !== 0) return { mode: 'empty' };
   return { mode: 'checkout', projectPath, base: head.stdout.trim() };
 }
@@ -92,9 +127,14 @@ export async function resolveSeedPlan(projectPath: string | undefined): Promise<
 // operator project at the per-run base, so the executor sees the project's files;
 // `prune` first clears any stale registration a prior attempt's plain `rm` left
 // (the orchestrator discards a worktree by removing the dir, not unregistering it).
+// `snapshot` copies the operator's tracked files into a plain dir (see below).
 export async function seedWorktree(worktree: string, plan: SeedPlan): Promise<void> {
   if (plan.mode === 'empty') {
     await mkdir(worktree, { recursive: true });
+    return;
+  }
+  if (plan.mode === 'snapshot') {
+    await seedSnapshot(worktree, plan);
     return;
   }
   await withWorktreeGitLock(async () => {
@@ -102,6 +142,58 @@ export async function seedWorktree(worktree: string, plan: SeedPlan): Promise<vo
     await git(['worktree', 'prune'], plan.projectPath);
     await gitOrThrow(['worktree', 'add', '--detach', worktree, plan.base], plan.projectPath);
   });
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Seed a leaf by COPYING the operator's files into a plain dir (not a git worktree
+// off the shared `.git`, so it needs no worktree lock). The empty-path machinery
+// then runs over the populated tree: `establishBaseline` inits+commits the snapshot
+// as the baseline and `captureDiff` reports the executor's change against it.
+//
+// Dirty git repo: copy the WORKING-TREE state of every tracked file (`git ls-files`
+// lists the index; we read each path off disk so the executor sees the operator's
+// uncommitted edits — the very work a checkout off HEAD would have dropped). A
+// tracked file deleted in the working tree is intentionally skipped, so the
+// snapshot mirrors the working tree, not the index.
+//
+// Non-git dir: there is no index to consult, so copy the tree, skipping the
+// standard excludes at any depth. Honoring `.gitignore` beyond those names is not
+// feasible without a repo; the excludes cover the common heavy/irrelevant dirs.
+async function seedSnapshot(
+  worktree: string,
+  plan: Extract<SeedPlan, { mode: 'snapshot' }>,
+): Promise<void> {
+  await mkdir(worktree, { recursive: true });
+  if (plan.reason === 'non-git') {
+    await cp(plan.projectPath, worktree, {
+      recursive: true,
+      filter: (src) => {
+        const rel = relative(plan.projectPath, src);
+        if (rel === '') return true;
+        return !rel.split(sep).some((seg) => SNAPSHOT_EXCLUDE.has(seg));
+      },
+    });
+    return;
+  }
+  const listed = await gitOrThrow(['ls-files', '-z'], plan.projectPath);
+  const files = listed.split('\0').filter((f) => f !== '');
+  for (const rel of files) {
+    const src = join(plan.projectPath, rel);
+    // Skip a tracked-but-deleted file (dirty working tree) rather than failing —
+    // mirroring the working tree is intentional here, not a swallowed error.
+    if (!(await pathExists(src))) continue;
+    const dest = join(worktree, rel);
+    await mkdir(dirname(dest), { recursive: true });
+    await cp(src, dest);
+  }
 }
 
 // Establish a clean baseline so the post-run diff captures exactly the executor's

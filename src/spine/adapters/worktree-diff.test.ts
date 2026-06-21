@@ -125,23 +125,43 @@ describe('checkout seed path (clean git workspace)', () => {
   });
 });
 
-// WHY: the checkout path is GATED — it must engage ONLY for a clean git repo. A
-// non-git, dirty, or commit-less workspace has no safe base to fork from (forcing a
-// checkout would drop the operator's uncommitted work or fail), so it falls back to
-// the empty path, and an absent projectPath (the hermetic stub runs) must not even
-// touch git. A gate that mis-fired here would corrupt the hermetic baseline tests.
+// WHY: the seed mode is the load-bearing gate. The checkout path must engage ONLY
+// for a clean git repo (forcing it elsewhere would drop the operator's uncommitted
+// work or fail); a non-git dir or a dirty tree must take the snapshot path so Relay
+// still runs "in any workspace"; a commit-less but clean repo has nothing to seed
+// (empty); and an absent projectPath (the hermetic stub runs) must not even touch
+// git. A gate that mis-fired here would corrupt the hermetic baseline tests or seed
+// the executor against the wrong tree.
 describe('resolveSeedPlan gating', () => {
-  test('falls back to empty for absent / non-git / dirty / commit-less workspaces', async () => {
+  test('empty for absent projectPath and for a commit-less clean repo', async () => {
     expect(await resolveSeedPlan(undefined)).toEqual({ mode: 'empty' });
 
-    const nonGit = await mkdtemp(join(tmpdir(), 'relay-seed-nongit-'));
-    const dirty = await mkdtemp(join(tmpdir(), 'relay-seed-dirty-'));
     const unborn = await mkdtemp(join(tmpdir(), 'relay-seed-unborn-'));
     try {
-      // A directory that is not a git repo.
-      expect(await resolveSeedPlan(nonGit)).toEqual({ mode: 'empty' });
+      // A git repo with no commit yet and no files: no base to fork from and nothing
+      // to snapshot, so the empty path is exactly right.
+      await git(unborn, 'init', '-q');
+      expect(await resolveSeedPlan(unborn)).toEqual({ mode: 'empty' });
+    } finally {
+      await rm(unborn, { recursive: true, force: true });
+    }
+  });
 
-      // A git repo with uncommitted changes (an untracked file makes it dirty).
+  test('snapshot for a non-git dir and for a dirty git tree, with the notice recorded', async () => {
+    const nonGit = await mkdtemp(join(tmpdir(), 'relay-seed-nongit-'));
+    const dirty = await mkdtemp(join(tmpdir(), 'relay-seed-dirty-'));
+    try {
+      // A directory that is not a git repo → snapshot, tagged non-git.
+      await writeFile(join(nonGit, 'file.txt'), 'x\n');
+      expect(await resolveSeedPlan(nonGit)).toEqual({
+        mode: 'snapshot',
+        projectPath: nonGit,
+        reason: 'non-git',
+        notice: expect.stringContaining('not a git repository'),
+      });
+
+      // A git repo with uncommitted changes (an untracked file makes it dirty) →
+      // snapshot, tagged dirty, with a notice that names the patch fallback.
       await git(dirty, 'init', '-q');
       await git(dirty, 'config', 'user.email', 'test@relay.local');
       await git(dirty, 'config', 'user.name', 'Relay Test');
@@ -149,15 +169,15 @@ describe('resolveSeedPlan gating', () => {
       await git(dirty, 'add', '-A');
       await git(dirty, 'commit', '-q', '--no-gpg-sign', '-m', 'init');
       await writeFile(join(dirty, 'unstaged.txt'), 'dirty\n');
-      expect(await resolveSeedPlan(dirty)).toEqual({ mode: 'empty' });
-
-      // A git repo with no commit yet (unborn HEAD → no base to fork from).
-      await git(unborn, 'init', '-q');
-      expect(await resolveSeedPlan(unborn)).toEqual({ mode: 'empty' });
+      expect(await resolveSeedPlan(dirty)).toEqual({
+        mode: 'snapshot',
+        projectPath: dirty,
+        reason: 'dirty',
+        notice: expect.stringContaining('result.patch'),
+      });
     } finally {
       await rm(nonGit, { recursive: true, force: true });
       await rm(dirty, { recursive: true, force: true });
-      await rm(unborn, { recursive: true, force: true });
     }
   });
 });
@@ -187,6 +207,111 @@ describe('empty seed path (default)', () => {
       expect(diff).not.toContain('baseline.txt');
     } finally {
       await rm(workRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// WHY: the snapshot path is what lets Relay run "in any workspace" — a non-git dir
+// or a dirty tree the checkout path can't safely fork from. The executor must see
+// the project's files (so it edits real code), the standard caches must NOT be
+// dragged in, and after the empty-path baseline runs over the populated tree the
+// critic must still grade ONLY the executor's change, not the whole seeded project.
+// A snapshot that copied junk, missed the project, or diffed the whole tree would
+// each be a silent correctness failure.
+describe('snapshot seed path (non-git workspace)', () => {
+  test('copies the project (minus standard excludes) and captures ONLY the change', async () => {
+    const proj = await mkdtemp(join(tmpdir(), 'relay-snap-nongit-'));
+    const workRoot = await mkdtemp(join(tmpdir(), 'relay-snap-wr-'));
+    try {
+      await writeFile(join(proj, 'existing.txt'), 'original content\n');
+      await writeFile(join(proj, 'untouched.txt'), 'leave me alone\n');
+      // Heavy/irrelevant dirs that must be excluded from the snapshot.
+      await execFileP('mkdir', ['-p', join(proj, 'node_modules', 'pkg'), join(proj, '.git')]);
+      await writeFile(join(proj, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1\n');
+      await writeFile(join(proj, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+
+      const plan = await resolveSeedPlan(proj);
+      expect(plan).toEqual({
+        mode: 'snapshot',
+        projectPath: proj,
+        reason: 'non-git',
+        notice: expect.any(String),
+      });
+
+      const wt = join(workRoot, 'leaf-1');
+      await seedWorktree(wt, plan);
+
+      // The executor sees the project's files...
+      expect(await readFile(join(wt, 'existing.txt'), 'utf8')).toBe('original content\n');
+      expect(await readFile(join(wt, 'untouched.txt'), 'utf8')).toBe('leave me alone\n');
+      // ...but not the standard excludes.
+      expect(await exists(join(wt, 'node_modules'))).toBe(false);
+      expect(await exists(join(wt, '.git'))).toBe(false);
+
+      // Snapshot is not a pre-seeded checkout: the empty-path baseline runs over it.
+      await establishBaseline(wt);
+
+      // The executor edits one file and adds another, leaving the third untouched.
+      await writeFile(join(wt, 'existing.txt'), 'changed content\n');
+      await writeFile(join(wt, 'new.txt'), 'brand new\n');
+
+      const diff = await captureDiff(wt);
+
+      expect(diff).toContain('-original content');
+      expect(diff).toContain('+changed content');
+      expect(diff).toContain('new.txt');
+      expect(diff).toContain('+brand new');
+      // ONLY the change: the untouched file is absent and exactly two files changed.
+      expect(diff).not.toContain('untouched.txt');
+      expect((diff.match(/^diff --git/gm) ?? []).length).toBe(2);
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
+      await rm(proj, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('snapshot seed path (dirty git workspace)', () => {
+  test('snapshots the WORKING-TREE state of tracked files and captures the change', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'relay-snap-dirty-'));
+    const workRoot = await mkdtemp(join(tmpdir(), 'relay-snap-wr-'));
+    try {
+      await git(repo, 'init', '-q');
+      await git(repo, 'config', 'user.email', 'test@relay.local');
+      await git(repo, 'config', 'user.name', 'Relay Test');
+      await writeFile(join(repo, 'tracked.txt'), 'committed content\n');
+      await git(repo, 'add', '-A');
+      await git(repo, 'commit', '-q', '--no-gpg-sign', '-m', 'init');
+      // Uncommitted edit to a tracked file (what makes this the snapshot, not the
+      // checkout, path — a checkout off HEAD would silently drop this work).
+      await writeFile(join(repo, 'tracked.txt'), 'uncommitted edit\n');
+      // An untracked file: not part of the tracked-file snapshot.
+      await writeFile(join(repo, 'untracked.txt'), 'not tracked\n');
+
+      const plan = await resolveSeedPlan(repo);
+      if (plan.mode !== 'snapshot') throw new Error('expected snapshot');
+      expect(plan.reason).toBe('dirty');
+
+      const wt = join(workRoot, 'leaf-1');
+      await seedWorktree(wt, plan);
+
+      // The worktree mirrors the WORKING TREE (the uncommitted edit), not HEAD...
+      expect(await readFile(join(wt, 'tracked.txt'), 'utf8')).toBe('uncommitted edit\n');
+      // ...and untracked files are excluded (only tracked files are snapshotted).
+      expect(await exists(join(wt, 'untracked.txt'))).toBe(false);
+
+      await establishBaseline(wt);
+
+      // The executor's change is measured against the uncommitted snapshot baseline.
+      await writeFile(join(wt, 'tracked.txt'), 'executor change\n');
+      const diff = await captureDiff(wt);
+
+      expect(diff).toContain('-uncommitted edit');
+      expect(diff).toContain('+executor change');
+      expect((diff.match(/^diff --git/gm) ?? []).length).toBe(1);
+    } finally {
+      await rm(workRoot, { recursive: true, force: true });
+      await rm(repo, { recursive: true, force: true });
     }
   });
 });
