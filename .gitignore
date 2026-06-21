@@ -1,8 +1,14 @@
 node_modules/
 dist/
 build/
+
+.claude/
+.codex/
+
 *.log
+
 .DS_Store
+
 # Playwright MCP session output (snapshots/screenshots) the WebSurface integration
 # run writes to cwd.
 .playwright-mcp/
