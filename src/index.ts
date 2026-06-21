@@ -5,6 +5,10 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { devRun, projectKey, relayHome } from './spine/index';
 import type { DevRunOptions, Provider } from './spine/index';
+// The intake compiler (Plan 2): `relay run` composes these into intake -> commit a
+// childless root -> decompose -> apply-back. Phase 1 only confirms they are reachable
+// from the CLI and parses the flags; the composition itself lands in Phase 2/3.
+import { runIntake, compileSeed, commitRoot } from './intake/index';
 import { startWebView } from './webview/index';
 
 const USAGE = `relay v${__RELAY_VERSION__}
@@ -14,6 +18,19 @@ Usage:
   relay [command] [options]
 
 Commands:
+  run                        Compose a REAL run: grill intake (or compile a seed
+                             from --outcome) -> commit a childless root ->
+                             decompose -> apply back to a relay/<runId> branch.
+    [--project <path>]       Project to run for (default: cwd).
+    [--outcome <text>]       Non-interactive: compile a grounded seed from this
+                             outcome (omit to grill interactively).
+    [--provider <name>]      Primary executor: claude | codex (default: claude).
+    [--model <name>]         Executor model override (default: cheapest).
+    [--critic-provider <n>]  Critic provider (default: the not-the-author one).
+    [--critic-model <name>]  Critic model override (default: cheapest).
+    [--brain-provider <n>]   Decompose-judgment provider (default: the author).
+    [--brain-model <name>]   Brain model override (default: cheapest).
+
   dev-run --outcome <text>   Run the REAL orchestrator against this project's
                              user-global ~/.relay/ store and print a recap.
     [--project <path>]       Project to run for (default: cwd).
@@ -106,6 +123,74 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   return 0;
 }
 
+// `relay run`: the real composing command (Plan 2). It grills intake to a seed (or,
+// with --outcome, compiles one non-interactively), commits a CHILDLESS root, lets the
+// orchestrator decompose + execute it, and applies the verified result back as a
+// relay/<runId> branch via the Plan 1 substrate. Phase 1 parses the flags and confirms
+// the intake compiler is reachable from the CLI; the composition lands in Phase 2/3.
+async function runCommand(args: readonly string[]): Promise<number> {
+  const KNOWN_FLAGS = new Set([
+    '--project',
+    '--outcome',
+    '--provider',
+    '--model',
+    '--critic-provider',
+    '--critic-model',
+    '--brain-provider',
+    '--brain-model',
+  ]);
+  // Fail loud on any unrecognized argument with a usage message, rather than silently
+  // ignoring it. Each known flag consumes the following token as its value.
+  for (let i = 0; i < args.length; i++) {
+    if (!KNOWN_FLAGS.has(args[i])) {
+      process.stderr.write(`run: unknown argument '${args[i]}'\n\n${USAGE}`);
+      return 2;
+    }
+    i++;
+  }
+
+  const provider = flag(args, '--provider');
+  if (provider !== undefined && provider !== 'claude' && provider !== 'codex') {
+    process.stderr.write(`run: --provider must be claude or codex (got ${provider})\n`);
+    return 2;
+  }
+  const criticProvider = flag(args, '--critic-provider');
+  if (criticProvider !== undefined && criticProvider !== 'claude' && criticProvider !== 'codex') {
+    process.stderr.write(
+      `run: --critic-provider must be claude or codex (got ${criticProvider})\n`,
+    );
+    return 2;
+  }
+  const brainProvider = flag(args, '--brain-provider');
+  if (brainProvider !== undefined && brainProvider !== 'claude' && brainProvider !== 'codex') {
+    process.stderr.write(`run: --brain-provider must be claude or codex (got ${brainProvider})\n`);
+    return 2;
+  }
+
+  // The full parsed config Phase 2/3 will thread into intake -> commitRoot ->
+  // runOrchestrator -> apply-back. `--outcome`'s presence selects the non-interactive
+  // path. Model flags are free-form overrides validated by the adapter at run time.
+  const runConfig = {
+    projectPath: flag(args, '--project') ?? process.cwd(),
+    outcome: flag(args, '--outcome'),
+    provider: provider as Provider | undefined,
+    executorModel: flag(args, '--model'),
+    criticProvider: criticProvider as Provider | undefined,
+    criticModel: flag(args, '--critic-model'),
+    brainProvider: brainProvider as Provider | undefined,
+    brainModel: flag(args, '--brain-model'),
+  };
+
+  // Deliverable 3: confirm the intake compiler is reachable from the CLI. The real
+  // composition is wired in Phase 2 (interactive) and Phase 3 (--outcome); until then
+  // fail loud rather than pretend a run happened (Rule 11).
+  void { runConfig, runIntake, compileSeed, commitRoot };
+  process.stderr.write(
+    'run: not yet implemented — interactive run lands in Phase 2, --outcome in Phase 3\n',
+  );
+  return 1;
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -166,6 +251,10 @@ async function main(argv: readonly string[]): Promise<number> {
   if (args.includes('--help') || args.includes('-h')) {
     process.stdout.write(USAGE);
     return 0;
+  }
+
+  if (args[0] === 'run') {
+    return runCommand(args.slice(1));
   }
 
   if (args[0] === 'dev-run') {
