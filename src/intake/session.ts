@@ -144,9 +144,16 @@ export function parseInterviewerTurn(message: string): InterviewerTurn {
 // outcome + grounded verifications + a SHORT non-binding sketch), the strict turn
 // protocol it must emit, and the transcript so far. One question at a time keeps the
 // conversation bounded and legible.
+//
+// `oneShot` flips it to the non-interactive `--outcome` compile (Plan 2 Phase 3): the
+// same role and seed shape, but the model is told to ask NO questions and emit the
+// seed in a single turn, inferring grounded verifications and a short sketch from the
+// outcome the human already gave. No new turn protocol is introduced — the `seed` turn
+// is the same one the interactive path emits, so the compile/parse path is identical.
 export function buildInterviewerPrompt(
   transcript: readonly TranscriptEntry[],
   opening?: string,
+  oneShot = false,
 ): string {
   const lines: string[] = [
     'You are the intake interviewer for a single automated run. Your job is to grill',
@@ -176,7 +183,14 @@ export function buildInterviewerPrompt(
       lines.push(`- ${who}: ${entry.text}`);
     }
   }
-  lines.push('', 'Produce your next turn now.');
+  lines.push(
+    '',
+    oneShot
+      ? 'ONE-SHOT MODE: ask NO questions. From the outcome above, compile and emit the ' +
+          '"seed" turn now — infer reasonable grounded verifications and a short sketch. ' +
+          'Output the "seed" turn only; never a "question" turn.'
+      : 'Produce your next turn now.',
+  );
   return lines.join('\n');
 }
 
@@ -225,6 +239,11 @@ export interface AgentInterviewerOptions {
   // Working directory for the shell-out; defaults to the current directory. Intake
   // runs before any worktree exists, so this is just where the CLI is launched.
   cwd?: string;
+  // One-shot compile (Plan 2 Phase 3): drive the prompt to emit a seed in a single
+  // turn with no questions, for the non-interactive `relay run --outcome` path. Paired
+  // with `runIntake`'s `maxQuestions: 0`, a turn that still asks a question fails loud
+  // there rather than committing a degenerate seed. Omitted → the interactive grilling.
+  oneShot?: boolean;
   // Injectable CLI runner so the interviewer is exercisable without the real model
   // (hermetic tests). Defaults to spawning `bin` with the built argv.
   invoke?: (call: InterviewerInvocation) => Promise<InterviewerInvocationResult>;
@@ -255,11 +274,12 @@ export function agentInterviewer(opts: AgentInterviewerOptions): Interviewer {
   const bin = opts.bin ?? provider;
   const model = opts.model ?? (provider === 'claude' ? DEFAULT_CLAUDE_MODEL : DEFAULT_CODEX_MODEL);
   const cwd = opts.cwd ?? process.cwd();
+  const oneShot = opts.oneShot ?? false;
   const invoke = opts.invoke ?? defaultInvoke;
 
   return {
     async next(transcript: readonly TranscriptEntry[]): Promise<InterviewerTurn> {
-      const prompt = buildInterviewerPrompt(transcript, undefined);
+      const prompt = buildInterviewerPrompt(transcript, undefined, oneShot);
       const args = buildInterviewerArgs(provider, prompt, model);
       const { stdout } = await invoke({ bin, args, cwd });
       // Code reads the model's answer (Rule 5); a malformed turn fails loud (Rule 11).

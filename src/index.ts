@@ -173,24 +173,43 @@ async function runCommand(args: readonly string[]): Promise<number> {
   const projectPath = flag(args, '--project') ?? process.cwd();
   const outcome = flag(args, '--outcome');
 
-  // The non-interactive `--outcome` path (a grounded one-shot seed) lands in Phase 3;
-  // until then fail loud rather than silently grilling stdin instead (Rule 11).
-  if (outcome !== undefined) {
-    process.stderr.write('run: --outcome (non-interactive) lands in Phase 3\n');
-    return 1;
-  }
-
-  // Interactive run: grill the human through the real conversational interviewer +
-  // stdin, commit a childless root, decompose, execute, and apply back. The
-  // interviewer runs on the primary provider (the author) at its cheapest default,
-  // from the project dir (intake runs before any worktree exists). Per-role provider
-  // and model overrides thread straight through to `relayRun`'s orchestrator wiring.
+  // Both paths compose the SAME run (intake → childless root → decompose → apply-back);
+  // they differ only in how the seed is sourced. The interviewer runs on the primary
+  // provider (the author) at its cheapest default, from the project dir (intake runs
+  // before any worktree exists). Per-role provider/model overrides thread straight
+  // through to `relayRun`'s orchestrator wiring below.
   const interviewerProvider: IntakeProvider = provider === 'codex' ? 'codex' : 'claude';
-  const runOpts: RelayRunOptions = {
-    projectPath,
-    interviewer: agentInterviewer({ provider: interviewerProvider, cwd: projectPath }),
-    ask: stdinAsk(),
-  };
+  // Non-interactive (`--outcome`): compile a grounded seed in ONE model call with no
+  // stdin (Plan 2 Phase 3). The one-shot interviewer is driven to emit a `seed` turn
+  // immediately and `maxQuestions: 0` forbids a follow-up question; the seed validates
+  // through the same compile path as the interactive `done` turn. A one-shot turn that
+  // can't produce a valid seed (asks a question, or emits a malformed seed) fails loud
+  // inside `relayRun` BEFORE any root is committed (intake precedes commitRoot), so a
+  // degenerate seed never lands a partial root (Rule 11). Interactive (no `--outcome`):
+  // grill the human through the real conversational interviewer + stdin.
+  const runOpts: RelayRunOptions =
+    outcome !== undefined
+      ? {
+          projectPath,
+          interviewer: agentInterviewer({
+            provider: interviewerProvider,
+            cwd: projectPath,
+            oneShot: true,
+          }),
+          // `maxQuestions: 0` makes a non-converging turn throw before `ask` is reached,
+          // so a call here would be a bug — fail loud rather than secretly read stdin.
+          ask: () =>
+            Promise.reject(
+              new Error('run: --outcome is non-interactive and must not read stdin'),
+            ),
+          opening: outcome,
+          maxQuestions: 0,
+        }
+      : {
+          projectPath,
+          interviewer: agentInterviewer({ provider: interviewerProvider, cwd: projectPath }),
+          ask: stdinAsk(),
+        };
   if (provider !== undefined) runOpts.provider = provider as Provider;
   const executorModel = flag(args, '--model');
   if (executorModel !== undefined) runOpts.executorModel = executorModel;

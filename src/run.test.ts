@@ -8,6 +8,7 @@ import { relayRun } from './run';
 import { projectKey } from './spine/index';
 import type { Brain, Executor, ExecutorInput, ExecutorResult } from './spine/index';
 import { readNode } from './relay-state/index';
+import { agentInterviewer } from './intake/index';
 import type { Interviewer, AskHuman, IntakeSeed } from './intake/index';
 
 const execFileP = promisify(execFile);
@@ -162,6 +163,157 @@ describe('relayRun (hermetic intake → decompose → apply-back)', () => {
       }
       // ...while the operator's own working tree was never touched.
       expect(await fileExists(join(project, 'RESULT.txt'))).toBe(false);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+});
+
+// A claude `--output-format stream-json` stdout whose final result text is `message`,
+// so the REAL `agentInterviewer` parse path runs without a live model (mirrors the
+// adapter/session tests). The one-shot `relay run --outcome` path drives this same
+// interviewer, so testing through it exercises the actual compile path the CLI wires.
+function claudeStdout(message: string): string {
+  return [
+    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-haiku-4-5' }),
+    JSON.stringify({
+      type: 'result',
+      result: message,
+      usage: { input_tokens: 1, output_tokens: 1 },
+      total_cost_usd: 0,
+    }),
+  ].join('\n');
+}
+
+// The one-shot interviewer the `--outcome` path constructs (`agentInterviewer({ oneShot
+// })`), here with an injected runner returning `seedDoc` as its single turn — so the
+// seed is COMPILED through `parseInterviewerTurn`/`compileSeed`, not handed in pre-built.
+function oneShotInterviewer(seedDoc: object): Interviewer {
+  return agentInterviewer({
+    provider: 'claude',
+    oneShot: true,
+    invoke: () =>
+      Promise.resolve({ stdout: claudeStdout('```json\n' + JSON.stringify(seedDoc) + '\n```'), code: 0 }),
+  });
+}
+
+// stdin is forbidden on the `--outcome` path; this `ask` records and rejects so a test
+// can prove it was never called (no silent stdin read) and fail loud if it were.
+function forbiddenAsk(): { ask: AskHuman; calls: () => number } {
+  let calls = 0;
+  const ask: AskHuman = () => {
+    calls += 1;
+    return Promise.reject(new Error('one-shot --outcome must not read stdin'));
+  };
+  return { ask, calls: () => calls };
+}
+
+// WHY: the non-interactive `relay run --outcome` path (Phase 3) must be a real run, not
+// a degenerate one. It compiles a GROUNDED seed from a single model call with NO stdin,
+// then composes the SAME childless-root → decompose → apply-back as the interactive
+// path. The CLI wires this as `oneShot` interviewer + `opening: outcome` +
+// `maxQuestions: 0` + a stdin-forbidden `ask`; this drives that exact shape. A
+// regression that read stdin, pre-seeded the root, skipped decompose, or dropped
+// apply-back would each break a distinct assertion. The malformed-seed case pins the
+// fail-loud-before-commit invariant: a bad seed never lands a partial root.
+describe('relayRun --outcome (one-shot grounded seed → decompose → apply-back)', () => {
+  // The same SEED, but as the document the one-shot interviewer emits — so the run is
+  // driven by a COMPILED seed (grounded verification + sketch), identical to SEED.
+  const SEED_DOC = {
+    kind: 'seed',
+    outcome: SEED.spec.outcome,
+    verifications: SEED.spec.verifications,
+    sketch: SEED.sketch,
+  };
+
+  test('compiles a grounded seed with no stdin, commits a childless root, applies back', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'relay-home-'));
+    const project = await cleanGitProject();
+    const relayDir = join(home, projectKey(project));
+    try {
+      let rootChildrenAtDecompose: readonly string[] | undefined;
+      const brain: Brain = {
+        async decompose(req) {
+          rootChildrenAtDecompose = (await readNode(relayDir, 'root')).children;
+          return {
+            children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
+            seams: [],
+          };
+        },
+      };
+
+      const { ask, calls } = forbiddenAsk();
+      const res = await relayRun({
+        projectPath: project,
+        home,
+        // The exact shape the CLI's --outcome branch builds.
+        interviewer: oneShotInterviewer(SEED_DOC),
+        ask,
+        opening: SEED.spec.outcome,
+        maxQuestions: 0,
+        executor: markerExecutor(),
+        brain,
+        now: () => '2026-06-21T00:00:00.000Z',
+        log: () => {},
+      });
+
+      // No stdin read, zero questions — and the seed is the COMPILED, grounded one.
+      expect(calls()).toBe(0);
+      expect(res.questionsAsked).toBe(0);
+      expect(res.seed).toEqual(SEED);
+      expect(res.seed.spec.verifications[0].grounding).toBe('the marker file is present');
+
+      // The committed root was a childless branch when the brain decomposed it...
+      expect(rootChildrenAtDecompose).toEqual([]);
+      // ...and decomposition happened at activation.
+      const root = await readNode(relayDir, 'root');
+      expect(root.kind).toBe('branch');
+      expect(root.children.length).toBeGreaterThan(0);
+
+      // The run reached done and the verified result landed as a branch (not patch-only).
+      expect(res.result.rootStatus).toBe('done');
+      expect(res.result.applyBack.kind).toBe('branch');
+      if (res.result.applyBack.kind === 'branch') {
+        expect(res.result.applyBack.branch).toBe('relay/run-1');
+        const files = (
+          await execFileP('git', ['-C', project, 'show', '--name-only', '--format=', 'relay/run-1'])
+        ).stdout;
+        expect(files).toContain('RESULT.txt');
+      }
+      expect(await fileExists(join(project, 'RESULT.txt'))).toBe(false);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+
+  test('a malformed one-shot seed fails loud, never committing a partial root', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'relay-home-'));
+    const project = await cleanGitProject();
+    const relayDir = join(home, projectKey(project));
+    try {
+      const { ask, calls } = forbiddenAsk();
+      // A seed turn with an empty outcome — `compileSeed` rejects it inside intake,
+      // which runs BEFORE the store is created, so no root can be committed.
+      await expect(
+        relayRun({
+          projectPath: project,
+          home,
+          interviewer: oneShotInterviewer({ kind: 'seed', outcome: '', verifications: [], sketch: { notes: [] } }),
+          ask,
+          opening: 'do the thing',
+          maxQuestions: 0,
+          executor: markerExecutor(),
+          now: () => '2026-06-21T00:00:00.000Z',
+          log: () => {},
+        }),
+      ).rejects.toThrow();
+
+      // Fail-loud-before-commit: intake threw before `ensureProjectStore`, so no store
+      // (and therefore no partial root) was ever written, and stdin was never read.
+      expect(calls()).toBe(0);
+      expect(await fileExists(join(relayDir, 'manifest.md'))).toBe(false);
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(project, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { runIntake, parseInterviewerTurn, agentInterviewer } from './session';
+import { runIntake, parseInterviewerTurn, agentInterviewer, buildInterviewerPrompt } from './session';
 import type { AskHuman, Interviewer, InterviewerTurn, IntakeResult } from './session';
 import type { IntakeSeed } from './seed';
 
@@ -178,5 +178,82 @@ describe('agentInterviewer parses a provider stream into turns', () => {
     expect(result.seed.spec.outcome).toBe('the build passes');
     expect(result.seed.spec.verifications[0].grounding).toBe('CI is green');
     expect(result.seed.sketch.notes).toEqual(['small change']);
+  });
+});
+
+// The non-interactive `relay run --outcome` path (Plan 2 Phase 3): the one-shot
+// interviewer is driven to compile a grounded seed in a SINGLE turn with no human
+// questions. WHY this matters: a scriptable run must (1) compile a real, grounded seed
+// — not a degenerate always-pass one — so the critic gate stays meaningful, and (2)
+// never silently read stdin. `maxQuestions: 0` is the safety rail: a turn that still
+// asks a question fails loud here rather than committing a half-formed root.
+describe('agentInterviewer one-shot compiles a grounded seed without grilling', () => {
+  test('a single seed stream yields the compiled seed, reading no stdin', async () => {
+    let calls = 0;
+    const invoke = (): Promise<{ stdout: string; code: number }> => {
+      calls += 1;
+      return Promise.resolve({
+        stdout: claudeStdout(
+          fenced({
+            kind: 'seed',
+            outcome: 'the build passes',
+            verifications: [{ kind: 'command', grounding: 'CI is green', check: 'npm test' }],
+            sketch: { notes: ['small change'] },
+          }),
+        ),
+        code: 0,
+      });
+    };
+    const interviewer = agentInterviewer({ provider: 'claude', oneShot: true, invoke });
+    // stdin is forbidden on this path: any call is a bug, so it fails loud if reached.
+    let asked = 0;
+    const ask: AskHuman = () => {
+      asked += 1;
+      return Promise.reject(new Error('one-shot must not read stdin'));
+    };
+
+    const result = await runIntake({
+      interviewer,
+      ask,
+      opening: 'make the build pass',
+      maxQuestions: 0,
+    });
+
+    // One model call, zero questions, zero stdin reads — and a GROUNDED seed.
+    expect(calls).toBe(1);
+    expect(asked).toBe(0);
+    expect(result.questionsAsked).toBe(0);
+    expect(result.seed.spec.outcome).toBe('the build passes');
+    expect(result.seed.spec.verifications[0].grounding).toBe('CI is green');
+  });
+
+  test('a one-shot turn that still asks a question fails loud, never reading stdin', async () => {
+    const invoke = (): Promise<{ stdout: string; code: number }> =>
+      Promise.resolve({
+        stdout: claudeStdout(fenced({ kind: 'question', question: 'what does done mean?' })),
+        code: 0,
+      });
+    const interviewer = agentInterviewer({ provider: 'claude', oneShot: true, invoke });
+    let asked = 0;
+    const ask: AskHuman = () => {
+      asked += 1;
+      return Promise.reject(new Error('one-shot must not read stdin'));
+    };
+
+    await expect(
+      runIntake({ interviewer, ask, opening: 'make it work', maxQuestions: 0 }),
+    ).rejects.toThrow(/within 0 questions/);
+    expect(asked).toBe(0);
+  });
+});
+
+describe('buildInterviewerPrompt one-shot directive', () => {
+  test('one-shot forbids questions; the default still asks one per turn', () => {
+    const oneShot = buildInterviewerPrompt([{ role: 'human', text: 'ship the parser' }], undefined, true);
+    expect(oneShot).toMatch(/ONE-SHOT MODE/);
+    expect(oneShot).toMatch(/ask NO questions/);
+    const normal = buildInterviewerPrompt([], undefined, false);
+    expect(normal).not.toMatch(/ONE-SHOT MODE/);
+    expect(normal).toMatch(/Produce your next turn now/);
   });
 });
