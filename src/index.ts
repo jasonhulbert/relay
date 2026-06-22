@@ -34,8 +34,10 @@ Commands:
     [--brain-provider <n>]   Decompose-judgment provider (default: the author).
     [--brain-model <name>]   Brain model override (default: cheapest).
 
-  dev-run --outcome <text>   Run the REAL orchestrator against this project's
-                             user-global ~/.relay/ store and print a recap.
+  dev-run --outcome <text>   Dev/eval HARNESS (not the real entry — see run):
+                             hand-seed a SINGLE-LEAF root (no intake, no
+                             decomposition) and drive the real orchestrator
+                             against this project's ~/.relay/ store; print a recap.
     [--project <path>]       Project to run for (default: cwd).
     [--provider <name>]      Primary executor: claude | codex (default: claude).
     [--model <name>]         Executor model override (default: cheapest).
