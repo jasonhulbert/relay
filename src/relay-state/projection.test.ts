@@ -59,6 +59,49 @@ describe('critic-visible projection (C7)', () => {
     expect(serialized).not.toContain('edge case');
     expect(serialized).toContain('the diff');
   });
+
+  // WHY: the supervisor-visibility work (persisting the brain's decompose
+  // rationale as a `kind: 'rationale'` evidence ref, plus the human-supervisor
+  // projection) must NOT have widened the critic's view. A branch node now carries
+  // its decompose reasoning AND a self-report; the critic must still see only
+  // spec + diff + evidence-ref pointers. This test would fail if `toCriticView`
+  // started copying the rationale CONTENT or any narrative field onto the view, or
+  // if a `kind: 'rationale'` ref were promoted into a narrative field rather than
+  // riding through as an ordinary pointer.
+  test('after the rationale work, a node with a rationale ref + self-report still projects to exactly spec + diff + evidence', () => {
+    const rationaleRef: NodeRecord['evidenceRefs'][number] = {
+      runId: 'r1',
+      path: 'branch-1/decompose-rationale.md',
+      kind: 'rationale',
+      summary: 'split into auth + storage because the seams are independent',
+    };
+    const node: NodeRecord = {
+      id: 'branch-1',
+      parentId: 'root',
+      kind: 'branch',
+      status: 'active',
+      spec: {
+        outcome: 'the subtree is decomposed',
+        verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+      },
+      children: ['leaf-a', 'leaf-b'],
+      selfReport: 'I reasoned carefully about the decomposition and I am sure it is right.',
+      learnings: ['the auth and storage seams do not overlap'],
+      verdict: null,
+      evidenceRefs: [rationaleRef],
+      blocked: null,
+    };
+
+    const view = toCriticView(node, 'the diff');
+    // Shape is unchanged by the rationale work: no narrative field crept in.
+    expect(new Set(Object.keys(view))).toEqual(new Set(['spec', 'diff', 'evidenceRefs']));
+    // The rationale rides through as an ordinary evidence-ref pointer (admissible),
+    // never as content or a narrative field.
+    expect(view.evidenceRefs).toEqual([rationaleRef]);
+    const serialized = JSON.stringify(view);
+    expect(serialized).not.toContain('reasoned carefully');
+    expect(serialized).not.toContain('seams do not overlap');
+  });
 });
 
 // Type-level guard, enforced by `npm run typecheck` (vitest strips types, so the

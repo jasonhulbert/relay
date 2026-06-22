@@ -99,11 +99,20 @@ export function buildClaudeArgs(
     '--output-format',
     'stream-json',
     '--verbose',
-    // The worktree is the sandbox boundary; auto-accept so a non-interactive run
-    // can make its change without a hanging permission prompt. A real OS sandbox
-    // is a later milestone.
+    // Worktree-scoped write posture (workspace-substrate §7), symmetric to Codex's
+    // `--sandbox workspace-write`. `acceptEdits` auto-accepts file edits INSIDE the
+    // cwd (the leaf worktree) so a non-interactive `-p` run makes its change without a
+    // hanging prompt, but does NOT bypass the working-directory boundary: a Write/Edit
+    // to an absolute path outside the worktree is no longer auto-accepted and, with no
+    // TTY to prompt, is denied. This replaces the former `bypassPermissions`, which
+    // skipped ALL permission checks and let an outcome naming an absolute path escape
+    // the sandbox. RESIDUAL GAP (honest, not silently sandboxed — see plan Open
+    // Questions): `Bash` is in `allowedTools`, so a shell command can still write
+    // outside the cwd; only the file-edit tools are dir-scoped here. True subprocess
+    // confinement (matching Codex's OS-level sandbox) is the deferred OS-sandbox
+    // milestone this comment has always pointed at.
     '--permission-mode',
-    'bypassPermissions',
+    'acceptEdits',
     '--allowedTools',
     ...config.allowedTools,
     '--model',
@@ -217,12 +226,13 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
   return {
     capabilities,
     async run(input: ExecutorInput): Promise<ExecutorResult> {
-      const { spec, context, worktree, mcpServers } = input;
+      const { spec, context, worktree, mcpServers, baseRef } = input;
       await mkdir(worktree, { recursive: true });
       // Baseline before dispatch so the captured diff is exactly what the model
       // produced this attempt (the orchestrator discards the worktree between
-      // attempts, so each run re-baselines a clean tree).
-      await establishBaseline(worktree);
+      // attempts, so each run re-baselines a clean tree). A pre-seeded checkout
+      // (`baseRef` set) is already at the base, so this is a no-op there.
+      await establishBaseline(worktree, { preseeded: baseRef !== undefined });
 
       // Cost guardrail: with no explicit override, pin the cheapest model.
       const model = opts.model ?? DEFAULT_CLAUDE_MODEL;
@@ -234,8 +244,10 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
 
       const parsed = parseClaudeStream(stdout);
       // Capture the produced change AFTER the run, from the worktree — never from
-      // the model's narrative (which the critic must not see anyway, C7).
-      const diff = await captureDiff(worktree);
+      // the model's narrative (which the critic must not see anyway, C7). On a
+      // checkout, diff against the per-run base (HEAD may have moved if the model
+      // committed); otherwise against the baseline commit.
+      const diff = await captureDiff(worktree, baseRef);
 
       const usage: ExecutorUsage = {
         provider: 'claude',

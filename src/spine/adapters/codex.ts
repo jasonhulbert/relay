@@ -55,9 +55,10 @@ export interface CodexAdapterOptions {
 // cost-guardrail default (the `--model` flag is ALWAYS present) is testable
 // without spawning the CLI, paralleling `buildClaudeArgs`. The resolved model is
 // either the caller's override or `DEFAULT_CODEX_MODEL`, never the CLI default.
-// `--skip-git-repo-check` is safe here: the worktree is git-init'd by
-// `establishBaseline` before dispatch, and the flag keeps the run robust to that
-// repo's state. Granted MCP servers are routed in as `-c mcp_servers.*` config
+// `--skip-git-repo-check` is safe here: the worktree is always a git tree before
+// dispatch — `establishBaseline` git-inits the empty path, and the checkout path is
+// already a worktree of the operator repo — so the flag only keeps the run robust
+// to that repo's state. Granted MCP servers are routed in as `-c mcp_servers.*` config
 // overrides (Codex's grant path is config, not a single flag like Claude). The
 // prompt is the trailing positional argument.
 export function buildCodexArgs(
@@ -68,6 +69,14 @@ export function buildCodexArgs(
   return [
     'exec',
     '--json',
+    // Worktree-scoped write posture (workspace-substrate §7). `workspace-write` is an
+    // OS-level sandbox confining ALL writes — file edits AND subprocesses — to the cwd
+    // (the leaf worktree), so an outcome naming an absolute path outside it cannot
+    // write there. Now that the Claude adapter dropped `bypassPermissions` for
+    // `acceptEdits`, both providers are dir-scoped and the old absolute-path escape
+    // works on NEITHER. Asymmetry to keep honest: Codex confines subprocesses too,
+    // while Claude's `acceptEdits` scopes only the file-edit tools (its `Bash` is the
+    // residual gap until the OS-sandbox milestone) — see `claude.ts` buildClaudeArgs.
     '--sandbox',
     'workspace-write',
     '--skip-git-repo-check',
@@ -189,12 +198,13 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
   return {
     capabilities,
     async run(input: ExecutorInput): Promise<ExecutorResult> {
-      const { spec, context, worktree, mcpServers } = input;
+      const { spec, context, worktree, mcpServers, baseRef } = input;
       await mkdir(worktree, { recursive: true });
       // Baseline before dispatch so the captured diff is exactly what the model
       // produced this attempt (the orchestrator discards the worktree between
-      // attempts, so each run re-baselines a clean tree).
-      await establishBaseline(worktree);
+      // attempts, so each run re-baselines a clean tree). A pre-seeded checkout
+      // (`baseRef` set) is already at the base, so this is a no-op there.
+      await establishBaseline(worktree, { preseeded: baseRef !== undefined });
 
       // Cost guardrail: with no explicit override, pin the cheapest model.
       const model = opts.model ?? DEFAULT_CODEX_MODEL;
@@ -206,8 +216,10 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
 
       const parsed = parseCodexStream(stdout);
       // Capture the produced change AFTER the run, from the worktree — never from
-      // the model's narrative (which the critic must not see anyway, C7).
-      const diff = await captureDiff(worktree);
+      // the model's narrative (which the critic must not see anyway, C7). On a
+      // checkout, diff against the per-run base (HEAD may have moved if the model
+      // committed); otherwise against the baseline commit.
+      const diff = await captureDiff(worktree, baseRef);
 
       const usage: ExecutorUsage = {
         provider: 'codex',

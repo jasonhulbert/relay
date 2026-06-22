@@ -156,7 +156,7 @@ export interface EvidenceRef {
   runId: string;
   // Path relative to the run's evidence directory.
   path: string;
-  kind: 'diff' | 'self-report' | 'transcript' | 'screenshot' | 'cost' | 'verdict';
+  kind: 'diff' | 'self-report' | 'transcript' | 'screenshot' | 'cost' | 'verdict' | 'rationale';
   summary: string;
 }
 

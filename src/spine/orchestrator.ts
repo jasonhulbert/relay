@@ -13,7 +13,7 @@
 // child's return value or stdout. Leaf children keep the M1 in-process path.
 // Executor + critic stay stubbed; the failure ladder (§3.9) is M3.
 import { dirname, join } from 'node:path';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm } from 'node:fs/promises';
 import {
   applyIntent,
   atomicWriteFile,
@@ -25,6 +25,7 @@ import {
   relativeCostRollupPath,
   relativeLayerPath,
   relativeNodePath,
+  relativeRationalePath,
   relativeUsagePath,
   relayPaths,
   readRunUsage,
@@ -59,7 +60,15 @@ import type {
 import { DEFAULT_PRICE_TABLE, renderCostRollup, resolveCost } from './cost';
 import type { PriceTable } from './cost';
 import { stubExecutor } from './executor';
-import type { Executor, ExecutorResult, ExecutorUsage } from './executor';
+import type { Executor, ExecutorInput, ExecutorResult, ExecutorUsage } from './executor';
+import {
+  applyBackBranch,
+  captureDiff,
+  composeMergeTree,
+  resolveSeedPlan,
+  seedWorktree,
+} from './adapters/worktree-diff';
+import type { ApplyBackOutcome, SeedPlan } from './adapters/worktree-diff';
 import { stubCritic } from './critic';
 import { EscalationLadder } from './ladder';
 import type { AttemptSignal, ExhaustionReason, Rung } from './ladder';
@@ -130,6 +139,11 @@ export interface RunOptions {
   // Worktree root; defaults to a `worktrees/` sibling of `.relay/`. Worktrees are
   // executor sandboxes, never part of the `.relay/` record.
   workRoot?: string;
+  // The operator's resolved absolute project path. When present (a real run), the
+  // executor sandbox is seeded from it and the verified result lands back as a
+  // `relay/<runId>` branch; absent keeps the hermetic empty-worktree stub path.
+  // Plumbed through this phase but not yet acted on (the seam is Phase 2).
+  projectPath?: string;
   // Test-only fault injection, scoped to one leaf so it fires deterministically.
   faultAt?: { leafId: string; point: FaultPoint };
   // Budget caps bounding each leaf's escalation ladder (design §3.7). Defaults to
@@ -196,7 +210,15 @@ export interface OrchestratorResult {
   // The `.relay/`-relative paths this process wrote: its ownership footprint (A6).
   // Disjoint from any concurrent sibling or parent process's footprint.
   ownedWrites: string[];
+  // How the verified `result.patch` was landed back into the operator repo
+  // (workspace-substrate §6): a reviewable `relay/<runId>` branch on the clean
+  // checkout path, a fail-loud patch-only outcome on dirty/non-git/conflict, or
+  // `none` when there was nothing to land (the hermetic/empty path, or a non-done
+  // run). The CLI uses this to render the recap and decide the exit code.
+  applyBack: ApplyBackOutcome;
 }
+
+export type { ApplyBackOutcome } from './adapters/worktree-diff';
 
 interface LeafContext {
   region: string;
@@ -207,6 +229,12 @@ interface LeafContext {
   swapExecutor: Executor;
   critic: CriticSpawn;
   workRoot: string;
+  // The operator's resolved absolute project path on a real run; `undefined` on the
+  // hermetic stub path. Threaded into the executor's `ExecutorInput`.
+  projectPath: RunOptions['projectPath'];
+  // How this run seeds each leaf worktree (resolved once at run start): an empty
+  // dir, or a detached checkout of the operator project at the per-run base.
+  seedPlan: SeedPlan;
   faultAt: RunOptions['faultAt'];
   // Budget caps for this leaf's escalation ladder (design §3.7).
   caps: RailCaps;
@@ -359,17 +387,38 @@ async function discardWorktree(workRoot: string, leafId: string): Promise<void> 
 
 // Merge a completed concurrent layer's child worktrees into one tree the integration
 // gate verifies (A4, §3.8). Each child wrote a disjoint repo footprint — that
-// disjointness is what licensed their concurrency (A2) — so copying every child
-// worktree into one directory composes the layer with no file collision. Rebuilt from
-// scratch each call so a rehydrated re-gate is deterministic; a missing child worktree
-// (a writes-free or rehydrated child) is skipped. The merged tree is a throwaway gate
-// sandbox under `worktrees/`, never part of the `.relay/` record.
+// disjointness is what licensed their concurrency (A2). HOW they compose depends on
+// how the run seeded its leaves:
+//
+//   empty (hermetic / non-seeded): each child wrote its disjoint footprint into an
+//   otherwise-empty worktree, so copying every child worktree into one directory
+//   composes the layer with no file collision (the original behavior).
+//
+//   checkout / snapshot (project-seeded): each child worktree holds the WHOLE project,
+//   so copying them over each other would stack full trees and let the last copy
+//   clobber an earlier sibling's edit to a shared base file. Instead compose each
+//   child's DIFF onto one fresh rebuild of the run's base (`composeMergeTree`) — the
+//   footprint-disjoint patches apply cleanly. The patches are each leaf's persisted
+//   evidence diff, so the merged tree is reconstructable on a rehydrated re-gate.
+//
+// Rebuilt from scratch each call so a rehydrated re-gate is deterministic; a missing
+// child worktree/patch (a writes-free or rehydrated child) is skipped. The merged tree
+// is a throwaway gate sandbox under `worktrees/`, never part of the `.relay/` record.
 async function mergeLayerWorktrees(
   workRoot: string,
   childIds: readonly string[],
   mergedDir: string,
+  seedPlan: SeedPlan,
+  evDir: string,
 ): Promise<void> {
   await rm(mergedDir, { recursive: true, force: true });
+  if (seedPlan.mode !== 'empty') {
+    // Project-seeded: compose each child's disjoint diff onto one fresh base, never
+    // whole trees over each other. The patch is each leaf's persisted evidence diff.
+    const patchFiles = childIds.map((id) => join(evDir, id, 'diff.patch'));
+    await composeMergeTree(mergedDir, seedPlan, patchFiles);
+    return;
+  }
   await mkdir(mergedDir, { recursive: true });
   for (const id of childIds) {
     try {
@@ -430,6 +479,30 @@ function buildLayer(
     }
   });
   return { children, manifest: { parentId, runId, footprints, seams } };
+}
+
+// The brain's decompose rationale as orchestrator-only audit evidence (Sol 2, plan
+// 03). Returns the IntentWrite that puts the full rationale in the run's evidence
+// store — so it joins the SAME atomic transaction as the layer/children commit, and
+// rehydration never sees a committed layer without its rationale — and the
+// `rationale` evidence ref to attach to the decomposed branch node. The full text
+// is persisted for audit fidelity; the read-only human view bounds it at render
+// time. It is NEVER admissible to the critic (C7): no `rationale`-kind ref rides
+// the `CriticView`, which carries spec + diff + evidence refs only.
+function rationaleEvidence(
+  runId: string,
+  nodeId: string,
+  rationale: string,
+): { write: IntentWrite; ref: EvidenceRef } {
+  return {
+    write: { path: relativeRationalePath(runId, nodeId), content: rationale },
+    ref: evidenceRef(
+      runId,
+      `${nodeId}/decompose-rationale.md`,
+      'rationale',
+      'brain decompose rationale (orchestrator-only)',
+    ),
+  };
 }
 
 // A node that is terminal but NOT done — blocked (ladder exhaustion, §3.7) or
@@ -671,6 +744,8 @@ async function dispatchLeaf(
     swapExecutor,
     critic,
     workRoot,
+    projectPath,
+    seedPlan,
     faultAt,
     caps,
     brain,
@@ -739,20 +814,31 @@ async function dispatchLeaf(
     await commitNode(node);
 
     const worktree = join(workRoot, leafId);
-    await mkdir(worktree, { recursive: true });
+    // Seed the sandbox: an empty dir (hermetic / non-clean workspace) or a detached
+    // checkout of the operator project at the per-run base (the executor then edits
+    // against the real code). discardWorktree above removed any prior attempt's dir.
+    await seedWorktree(worktree, seedPlan);
     // Carry the node's accumulated learnings as context so a retried or
     // re-decomposed unit does not relearn them (design §3.5). The granted MCP
     // servers are routed to the executor by the spine (MCP host); the executor
     // connects as a client and may drive them, but only the orchestrator writes
     // `.relay/` (C2, §9.4).
     let result: ExecutorResult;
+    // Build the input conditionally so the hermetic stub path's `ExecutorInput`
+    // stays byte-identical: only a real run carries `projectPath`
+    // (exactOptionalPropertyTypes — never pass an explicit `undefined`).
+    const input: ExecutorInput = {
+      spec: node.spec,
+      context: { learnings: node.learnings },
+      worktree,
+      mcpServers,
+    };
+    if (projectPath !== undefined) input.projectPath = projectPath;
+    // On a checkout seed the worktree IS the base; tell the adapter so it skips
+    // `establishBaseline` and captures the diff against the per-run base.
+    if (seedPlan.mode === 'checkout') input.baseRef = seedPlan.base;
     try {
-      result = await exec.run({
-        spec: node.spec,
-        context: { learnings: node.learnings },
-        worktree,
-        mcpServers,
-      });
+      result = await exec.run(input);
     } catch (err) {
       // A3 loud-violation catch (runtime clash): an executor may raise a
       // `FootprintViolation` for a loud conflict it hit while running — a bound
@@ -872,7 +958,7 @@ async function dispatchLeaf(
     // the same MCP servers as the executor; it returns data and writes nothing —
     // the code below is the sole writer of `.relay/` (C2, §9.4).
     const brainUsages: ExecutorUsage[] = [];
-    const decomposition = await brain.decompose(
+    const { decomposition, rationale } = await brain.decompose(
       { spec: leaf.spec, context: { learnings: leaf.learnings } },
       { worktree: join(workRoot, leafId), mcpServers, onUsage: (u) => brainUsages.push(u) },
     );
@@ -881,6 +967,10 @@ async function dispatchLeaf(
       await persistUsage(relayDir, runId, leafId, 'brain', 0, u, priceTable, writes);
     }
     const { children, manifest } = buildLayer(leafId, runId, decomposition, [reflection]);
+    // The decompose rationale rides the SAME atomic intent as the layer/children, so
+    // rehydration sees the post-promotion branch WITH its rationale, or the pre-
+    // promotion leaf — never a layer missing its reasoning (Sol 2).
+    const rat = rationaleEvidence(runId, leafId, rationale);
     const branch: NodeRecord = {
       ...leaf,
       kind: 'branch',
@@ -889,19 +979,21 @@ async function dispatchLeaf(
       selfReport: null,
       learnings: [...leaf.learnings, reflection],
       verdict: null,
-      evidenceRefs: [],
+      evidenceRefs: [rat.ref],
       blocked: null,
     };
     const txn: IntentWrite[] = [
       { path: relativeNodePath(branch.id), content: serializeNode(branch) },
       ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
       { path: relativeLayerPath(branch.id), content: serializeLayer(manifest) },
+      rat.write,
     ];
     writes.add(relativeNodePath(branch.id));
     for (const c of children) {
       writes.add(relativeNodePath(c.id));
     }
     writes.add(relativeLayerPath(branch.id));
+    writes.add(rat.write.path);
     fault('before-promote');
     const intentId = await writeIntent(relayDir, region, txn);
     fault('promote-intent');
@@ -1052,7 +1144,7 @@ async function decomposeBranch(
   const worktree = join(grant.workRoot, root.id);
   await mkdir(worktree, { recursive: true });
   const brainUsages: ExecutorUsage[] = [];
-  const decomposition = await brain.decompose(
+  const { decomposition, rationale } = await brain.decompose(
     { spec: root.spec, context: { learnings: root.learnings } },
     { worktree, mcpServers: grant.mcpServers, onUsage: (u) => brainUsages.push(u) },
   );
@@ -1061,17 +1153,26 @@ async function decomposeBranch(
     await persistUsage(relayDir, runId, root.id, 'brain', 0, u, grant.priceTable, writes);
   }
   const { children, manifest } = buildLayer(root.id, runId, decomposition, root.learnings);
-  const decomposed: NodeRecord = { ...root, children: children.map((c) => c.id) };
+  // The decompose rationale rides the SAME atomic intent as the layer/children, so a
+  // rehydrated branch always carries the reasoning that produced its layer (Sol 2).
+  const rat = rationaleEvidence(runId, root.id, rationale);
+  const decomposed: NodeRecord = {
+    ...root,
+    children: children.map((c) => c.id),
+    evidenceRefs: [...root.evidenceRefs, rat.ref],
+  };
   const txn: IntentWrite[] = [
     { path: relativeNodePath(decomposed.id), content: serializeNode(decomposed) },
     ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
     { path: relativeLayerPath(decomposed.id), content: serializeLayer(manifest) },
+    rat.write,
   ];
   writes.add(relativeNodePath(decomposed.id));
   for (const c of children) {
     writes.add(relativeNodePath(c.id));
   }
   writes.add(relativeLayerPath(decomposed.id));
+  writes.add(rat.write.path);
   await commit(relayDir, region, txn);
   return decomposed;
 }
@@ -1092,6 +1193,15 @@ export async function runOrchestrator(
   // The journal region is the bound node-id: one OS process owns one region (C6).
   const region = rootId;
   const workRoot = opts.workRoot ?? join(dirname(relayDir), 'worktrees');
+  // The operator's project path on a real run; `undefined` on the hermetic stub
+  // path (no workspace to seed from). Threaded to each leaf's executor below.
+  const projectPath = opts.projectPath;
+  // Decide once, at run start, how to seed every leaf worktree: a real checkout of
+  // a clean operator repo off a fixed base, or the empty `git init` default. Fixing
+  // it here makes every leaf in this activation fork from the SAME base
+  // (disjoint-merge friendly) and keeps the hermetic path a no-op (projectPath
+  // absent ⇒ no git call).
+  const seedPlan = await resolveSeedPlan(projectPath);
   const writes = new Set<string>();
 
   // Rehydration step 1: before anything else, roll forward an intent left by a
@@ -1133,6 +1243,7 @@ export async function runOrchestrator(
       rolledForward,
       region,
       ownedWrites: [...writes].sort(),
+      applyBack: { kind: 'none' },
     };
   }
   // Rehydration of an already-terminal run: a `blocked` root is the settled outcome
@@ -1161,6 +1272,7 @@ export async function runOrchestrator(
       rolledForward,
       region,
       ownedWrites: [...writes].sort(),
+      applyBack: { kind: 'none' },
     };
   }
   // Branch-activation decomposition (§3.10): a branch with no layer yet is
@@ -1212,6 +1324,8 @@ export async function runOrchestrator(
         swapExecutor,
         critic,
         workRoot,
+        projectPath,
+        seedPlan,
         faultAt: opts.faultAt,
         caps,
         brain,
@@ -1389,7 +1503,8 @@ export async function runOrchestrator(
     root.children.every(childDone)
   ) {
     const mergedDir = join(workRoot, `${root.id}__merged`);
-    await mergeLayerWorktrees(workRoot, root.children, mergedDir);
+    const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+    await mergeLayerWorktrees(workRoot, root.children, mergedDir, seedPlan, evDir);
     // The gate's own critic call is a metered model call attributed to this branch
     // node (F5, design §8) — collected via the sink and persisted like the leaf path;
     // the deterministic-only critic spends none, so the hermetic stub run is unchanged.
@@ -1480,6 +1595,75 @@ export async function runOrchestrator(
     }
   }
 
+  // The canonical verified result for apply-back (workspace-substrate §5, C8).
+  // Persist `evidence/<run>/result.patch`: the run's verified change as one clean
+  // patch the apply-back step (Phase 6) lands as a `relay/<runId>` branch, and the
+  // re-derivable record of exactly what was applied. Written once by the TOP-LEVEL
+  // run and ONLY on a project-seeded run (`mode !== 'empty'`), so the hermetic stub
+  // path persists no spurious patch — the same gate posture as the F5 rollup below.
+  // Scoped to a leaf-only `done` tree: a multi-process run with branch children would
+  // need its sub-orchestrators' patches composed (out of this dev-run-validated scope),
+  // and such a run is never project-seeded today, so the `mode` gate already excludes it.
+  // How the verified result was landed back into the operator repo (Phase 6).
+  // Defaults to `none`: a non-done run, the hermetic/empty path, or a run with no
+  // done leaves never lands anything, so the gated block below is the only writer.
+  let applyBack: ApplyBackOutcome = { kind: 'none' };
+  if (
+    root.status === 'done' &&
+    root.parentId === null &&
+    seedPlan.mode !== 'empty' &&
+    root.children.length > 0 &&
+    root.children.every((id) => leafStatuses[id] === 'done')
+  ) {
+    const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+    // On a snapshot run the base is the per-leaf snapshot baseline (no operator ref),
+    // so `captureDiff` takes no base; on a checkout run it diffs against the shared base.
+    const captureBase = seedPlan.mode === 'checkout' ? seedPlan.base : undefined;
+    const doneLeafIds = root.children.filter((id) => leafStatuses[id] === 'done');
+    let resultPatch: string;
+    if (doneLeafIds.length === 1) {
+      // Single-leaf run: the run's change IS that leaf's already-persisted diff,
+      // captured against the per-run base / snapshot baseline — apply-back-ready with
+      // no rebaselining. Reuse it verbatim (byte-identical to the critic's evidence),
+      // never re-derive it.
+      resultPatch = await readFile(join(evDir, doneLeafIds[0], 'diff.patch'), 'utf8');
+    } else if (ranConcurrently) {
+      // Concurrent multi-leaf: the integration gate already composed the layer's
+      // footprint-disjoint diffs onto one fresh base (`mergedDir`). Capture THAT tree
+      // against its base — not a concat of the per-leaf evidence diffs, which is the
+      // critic's evidence text, never a clean apply-back patch.
+      resultPatch = await captureDiff(join(workRoot, `${root.id}__merged`), captureBase);
+    } else {
+      // Serial multi-leaf: no gate ran (it is concurrency-only), so no `mergedDir`
+      // exists. Compose the per-leaf diffs onto one fresh rebuild of the run's base
+      // ourselves — the same disjoint-patch composition the gate uses — rather than
+      // silently dropping every leaf but the first (Rule 11).
+      const resultDir = join(workRoot, `${root.id}__result`);
+      await rm(resultDir, { recursive: true, force: true });
+      await composeMergeTree(
+        resultDir,
+        seedPlan,
+        doneLeafIds.map((id) => join(evDir, id, 'diff.patch')),
+      );
+      resultPatch = await captureDiff(resultDir, captureBase);
+    }
+    await atomicWriteFile(join(evDir, 'result.patch'), resultPatch);
+    writes.add(`evidence/${manifest.runId}/result.patch`);
+
+    // Apply-back (Phase 6, §6): land the canonical `result.patch` as a reviewable
+    // `relay/<runId>` branch in the operator repo. Gated identically to the patch
+    // write — so it runs ONLY on a committed-done, project-seeded top-level run, off
+    // the COMMITTED critic verdict (root `done`), never the executor self-report.
+    // The branch targets the operator `.git`, not `.relay/`, so it is NOT an
+    // `ownedWrites` entry. The throwaway build worktree lives under `workRoot`.
+    applyBack = await applyBackBranch(
+      seedPlan,
+      manifest.runId,
+      join(evDir, 'result.patch'),
+      join(workRoot, `${root.id}__applyback`),
+    );
+  }
+
   // F5 per-run rollup (design §8). Written once, by the TOP-LEVEL run (a node with no
   // parent) — a sub-orchestrator persists its own nodes' per-call records into the
   // shared evidence store, and by the time the root process returns they are all on
@@ -1509,5 +1693,6 @@ export async function runOrchestrator(
     rolledForward,
     region,
     ownedWrites: [...writes].sort(),
+    applyBack,
   };
 }

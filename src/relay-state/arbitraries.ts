@@ -77,7 +77,15 @@ const arbSpec = fc.record({
 const arbEvidenceRef = fc.record({
   runId: safeId,
   path: trickyText,
-  kind: fc.constantFrom('diff', 'self-report', 'transcript', 'screenshot', 'cost', 'verdict'),
+  kind: fc.constantFrom(
+    'diff',
+    'self-report',
+    'transcript',
+    'screenshot',
+    'cost',
+    'verdict',
+    'rationale',
+  ),
   summary: trickyText,
 });
 

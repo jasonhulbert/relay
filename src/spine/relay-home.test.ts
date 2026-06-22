@@ -1,6 +1,6 @@
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { beforeAll, describe, expect, test } from 'vitest';
 import {
   commitStore,
@@ -68,6 +68,11 @@ describe('ensureProjectStore', () => {
       expect(await exists(join(first.storeDir, '.git'))).toBe(true);
       // Worktree root is OUTSIDE the store so sandboxes never enter the git record.
       expect(first.workRoot.startsWith(first.storeDir)).toBe(false);
+      // WHY: the operator's absolute project path is the source the executor sandbox
+      // is seeded from and the repo a verified result lands back into. The store must
+      // surface it (resolved once) so the run never re-derives it; a store that
+      // dropped it would force every downstream step to re-resolve the cwd.
+      expect(first.projectPath).toBe(resolve(project));
 
       const index1 = await readProjectIndex(home);
       expect(index1.projects[first.key]).toEqual({

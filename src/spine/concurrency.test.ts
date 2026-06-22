@@ -58,15 +58,18 @@ function leavesWithFootprints(footprints: Footprint[]): Brain {
   return {
     decompose: () =>
       Promise.resolve({
-        children: footprints.map((footprint, i) => ({
-          spec: {
-            outcome: `part ${(i + 1).toString()}`,
-            verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
-          },
-          kind: 'leaf' as const,
-          footprint,
-        })),
-        seams: [],
+        decomposition: {
+          children: footprints.map((footprint, i) => ({
+            spec: {
+              outcome: `part ${(i + 1).toString()}`,
+              verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
+            },
+            kind: 'leaf' as const,
+            footprint,
+          })),
+          seams: [],
+        },
+        rationale: 'N disjoint-footprint leaf siblings',
       }),
   };
 }
@@ -78,24 +81,27 @@ function twoLeavesWithUncheckableSeam(): Brain {
   return {
     decompose: () =>
       Promise.resolve({
-        children: [0, 1].map((i) => ({
-          spec: {
-            outcome: `part ${(i + 1).toString()}`,
-            verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
-          },
-          kind: 'leaf' as const,
-          footprint: { writeGlobs: [`part-${(i + 1).toString()}/**`] },
-        })),
-        seams: [
-          {
-            id: 'seam-0',
-            kind: 'http' as const,
-            producer: 0,
-            consumer: 1,
-            payload: {},
-            intent: 'part 1 serves part 2 over http (no v0.1 predicate)',
-          },
-        ],
+        decomposition: {
+          children: [0, 1].map((i) => ({
+            spec: {
+              outcome: `part ${(i + 1).toString()}`,
+              verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
+            },
+            kind: 'leaf' as const,
+            footprint: { writeGlobs: [`part-${(i + 1).toString()}/**`] },
+          })),
+          seams: [
+            {
+              id: 'seam-0',
+              kind: 'http' as const,
+              producer: 0,
+              consumer: 1,
+              payload: {},
+              intent: 'part 1 serves part 2 over http (no v0.1 predicate)',
+            },
+          ],
+        },
+        rationale: 'two leaves joined by an uncheckable http seam',
       }),
   };
 }

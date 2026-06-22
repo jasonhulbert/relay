@@ -36,9 +36,13 @@ not an autonomous agent. Internalize these invariants before changing anything:
 
 ## Where things live (`src/`)
 
-- `index.ts` — the CLI. Two commands: `relay dev-run --outcome <text>` runs the
-  real orchestrator against the project's `~/.relay/` store; `relay web` serves a
-  read-only browser view of that store.
+- `index.ts` — the CLI. Three commands: `relay run` is the real entry — it grills
+  intake (or compiles a grounded seed from `--outcome`), commits a CHILDLESS root,
+  lets the orchestrator decompose + execute it, and applies the verified result
+  back as a `relay/<runId>` branch; `relay dev-run --outcome <text>` is the
+  dev/eval harness — it hand-seeds a single-leaf root (no intake, no decomposition)
+  and drives the same real orchestrator against the project's `~/.relay/` store;
+  `relay web` serves a read-only browser view of that store.
 - `spine/` — the orchestrator state machine: dispatch, promotion, done/blocked
   transitions, the brain (decompose judgment), the critic, cost telemetry, and the
   per-region write-ahead intent journal. `spine/adapters/` holds the Claude and

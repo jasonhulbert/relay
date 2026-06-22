@@ -130,6 +130,24 @@ describe('buildClaudeArgs cost guardrail', () => {
     expect(overridden[overridden.indexOf('--model') + 1]).toBe('claude-opus-4-8');
   });
 
+  // WHY: workspace-substrate §7 closes the unconfined-write escape. The former
+  // `--permission-mode bypassPermissions` skipped ALL permission checks, so an outcome
+  // naming an absolute path could write outside the worktree sandbox. The argv must now
+  // carry the worktree-scoped `acceptEdits` posture (symmetric to Codex's
+  // `workspace-write`) and NEVER `bypassPermissions` — this pins that the escape stays
+  // closed regardless of model/MCP config.
+  test('carries the worktree-scoped acceptEdits posture, never bypassPermissions', () => {
+    const args = buildClaudeArgs(spec, ctx, {
+      model: DEFAULT_CLAUDE_MODEL,
+      allowedTools: ['Read', 'Write'],
+      mcpServers: [],
+    });
+    expect(args).not.toContain('bypassPermissions');
+    const i = args.indexOf('--permission-mode');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe('acceptEdits');
+  });
+
   test('only adds --mcp-config when servers are granted', () => {
     const none = buildClaudeArgs(spec, ctx, {
       model: DEFAULT_CLAUDE_MODEL,

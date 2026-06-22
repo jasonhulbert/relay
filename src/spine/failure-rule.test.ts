@@ -125,17 +125,20 @@ function threeLeavesOneSeam(): Brain {
   return {
     decompose: () =>
       Promise.resolve({
-        children: [child('part D', 'd/**'), child('part S1', 's1/**'), child('part S2', 's2/**')],
-        seams: [
-          {
-            id: 'seam-0',
-            kind: 'file-boundary' as const,
-            producer: 0, // D
-            consumer: 1, // S1
-            payload: { producerGlobs: ['d/**'], consumerGlobs: ['s1/**'] },
-            intent: 'D publishes a file S1 consumes',
-          },
-        ],
+        decomposition: {
+          children: [child('part D', 'd/**'), child('part S1', 's1/**'), child('part S2', 's2/**')],
+          seams: [
+            {
+              id: 'seam-0',
+              kind: 'file-boundary' as const,
+              producer: 0, // D
+              consumer: 1, // S1
+              payload: { producerGlobs: ['d/**'], consumerGlobs: ['s1/**'] },
+              intent: 'D publishes a file S1 consumes',
+            },
+          ],
+        },
+        rationale: 'three leaves D/S1/S2 with one file-boundary seam D→S1',
       }),
   };
 }
