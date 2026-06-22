@@ -73,7 +73,7 @@ function fencedDecomposition(): string {
 // split AND now carry footprints + a seam (what "decomposing a layer" produces).
 describe('stubBrain', () => {
   test('returns a deterministic 2-leaf split with disjoint footprints and one seam', async () => {
-    const d = await stubBrain.decompose(req, ctx);
+    const { decomposition: d, rationale } = await stubBrain.decompose(req, ctx);
     expect(d.children).toHaveLength(2);
     expect(d.children.map((c) => c.kind)).toEqual(['leaf', 'leaf']);
     expect(d.children.map((c) => c.spec.outcome)).toEqual([
@@ -86,11 +86,16 @@ describe('stubBrain', () => {
     expect(d.children[0].footprint.writeGlobs).not.toEqual(d.children[1].footprint.writeGlobs);
     expect(d.seams).toHaveLength(1);
     expect(d.seams[0]).toMatchObject({ kind: 'file-boundary', producer: 0, consumer: 1 });
+    // The rationale is carried alongside (Sol 2) — persisted as audit evidence, never
+    // discarded; here it names the outcome it split.
+    expect(rationale).toContain(req.spec.outcome);
   });
 
   test('is byte-identical across calls (rehydration determinism)', async () => {
     const a = await stubBrain.decompose(req, ctx);
     const b = await stubBrain.decompose(req, ctx);
+    // The whole result — decomposition AND rationale — is byte-identical, so a
+    // kill-and-rehydrate persists identical audit evidence (§3.2).
     expect(a).toEqual(b);
   });
 });
@@ -200,7 +205,7 @@ describe('agentBrain', () => {
       onUsage: (u) => usages.push(u),
     });
 
-    const d = await brain.decompose(req, {
+    const { decomposition: d, rationale } = await brain.decompose(req, {
       worktree: '/tmp/relay-brain',
       mcpServers: [{ name: 'probe', command: 'srv' }],
     });
@@ -208,6 +213,9 @@ describe('agentBrain', () => {
     // The leaf-vs-branch classification survived the round trip.
     expect(d.children.map((c) => c.kind)).toEqual(['leaf', 'branch']);
     expect(d.seams).toHaveLength(1);
+    // The raw model review is carried out as the rationale (Sol 2), not discarded
+    // once parsed — it still contains the fenced JSON the parser read.
+    expect(rationale).toContain('```json');
     // The spine routed the grant into the agent's argv.
     expect(seenArgs).toContain('--mcp-config');
     // The judgment's own usage was surfaced for the recap (F5).
@@ -226,7 +234,7 @@ describe.skipIf(!process.env.RELAY_E2E)('agentBrain end-to-end (real CLI)', () =
     const base = await mkdtemp(join(tmpdir(), 'relay-brain-e2e-'));
     try {
       const brain = agentBrain({ provider: 'claude' });
-      const d = await brain.decompose(
+      const { decomposition: d } = await brain.decompose(
         {
           spec: {
             outcome:

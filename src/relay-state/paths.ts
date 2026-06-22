@@ -53,6 +53,14 @@ export function relayPaths(relayDir: string) {
       assertSafeId(role);
       return join(relayDir, 'evidence', runId, nodeId, 'usage', `${role}-${seq.toString()}.md`);
     },
+    // The brain's decompose rationale, attributed to the branch it decomposed
+    // (Sol 2, plan 03). Full audit text on disk; the node carries a `rationale`
+    // evidence ref into it. Written in the SAME atomic intent as the layer commit.
+    rationaleFile: (runId: string, nodeId: string): string => {
+      assertSafeId(runId);
+      assertSafeId(nodeId);
+      return join(relayDir, 'evidence', runId, nodeId, 'decompose-rationale.md');
+    },
     // The per-run cost rollup: a read-time projection composed from the per-call
     // records, written once by the top-level run (F5, design §8).
     costRollup: (runId: string): string => {
@@ -112,4 +120,10 @@ export function relativeUsagePath(
 export function relativeCostRollupPath(runId: string): string {
   assertSafeId(runId);
   return `evidence/${runId}/cost.md`;
+}
+
+export function relativeRationalePath(runId: string, nodeId: string): string {
+  assertSafeId(runId);
+  assertSafeId(nodeId);
+  return `evidence/${runId}/${nodeId}/decompose-rationale.md`;
 }

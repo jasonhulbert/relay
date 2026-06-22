@@ -28,7 +28,7 @@ import { runOrchestrator, visualCritic, STUB_USAGE } from '../../spine/index';
 import type {
   Brain,
   DecomposeRequest,
-  Decomposition,
+  DecomposeResult,
   Executor,
   ExecutorResult,
 } from '../../spine/index';
@@ -43,10 +43,13 @@ import { PANEL_FIXTURE, buildDrillInPanelFixture } from './fixture';
 // into a SINGLE leaf carrying the root's exact verifications (the visual outcome), so
 // the visual critic grades that leaf against the committed spec.
 const oneLeafBrain: Brain = {
-  decompose(req: DecomposeRequest): Promise<Decomposition> {
+  decompose(req: DecomposeRequest): Promise<DecomposeResult> {
     return Promise.resolve({
-      children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
-      seams: [],
+      decomposition: {
+        children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
+        seams: [],
+      },
+      rationale: 'single leaf carrying the root verifications (drill-in-panel dogfood)',
     });
   },
 };

@@ -91,34 +91,37 @@ describe('branch-activation decomposition commits a real layer atomically (§3.1
       const brain: Brain = {
         decompose: () =>
           Promise.resolve({
-            children: [
-              {
-                spec: {
-                  outcome: 'the data layer',
-                  verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+            decomposition: {
+              children: [
+                {
+                  spec: {
+                    outcome: 'the data layer',
+                    verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+                  },
+                  kind: 'leaf',
+                  footprint: { writeGlobs: ['src/data/**'] },
                 },
-                kind: 'leaf',
-                footprint: { writeGlobs: ['src/data/**'] },
-              },
-              {
-                spec: {
-                  outcome: 'the UI on top of the data layer',
-                  verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+                {
+                  spec: {
+                    outcome: 'the UI on top of the data layer',
+                    verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+                  },
+                  kind: 'branch',
+                  footprint: { writeGlobs: ['src/ui/**'] },
                 },
-                kind: 'branch',
-                footprint: { writeGlobs: ['src/ui/**'] },
-              },
-            ],
-            seams: [
-              {
-                id: 's1',
-                kind: 'interface',
-                producer: 0,
-                consumer: 1,
-                intent: 'the data layer publishes the Widget type the UI consumes',
-                payload: { symbol: 'Widget' },
-              },
-            ],
+              ],
+              seams: [
+                {
+                  id: 's1',
+                  kind: 'interface',
+                  producer: 0,
+                  consumer: 1,
+                  intent: 'the data layer publishes the Widget type the UI consumes',
+                  payload: { symbol: 'Widget' },
+                },
+              ],
+            },
+            rationale: 'split into a data layer and a UI branch joined by the Widget interface seam',
           }),
       };
 
@@ -152,6 +155,19 @@ describe('branch-activation decomposition commits a real layer atomically (§3.1
       // The owned-writes footprint records that CODE wrote the layer + children.
       expect(res.ownedWrites).toContain('layers/root.md');
       expect(res.ownedWrites).toContain('nodes/root.c0.md');
+
+      // Sol 2: the brain's decompose rationale was persisted as node-attributed audit
+      // evidence in the SAME commit as the layer — the decomposed branch carries a
+      // `rationale` evidence ref into the on-disk file, and the file holds the raw
+      // reasoning. A wiring that discarded the rationale (the pre-Sol-2 loss), or wrote
+      // it OUTSIDE the layer's atomic commit, fails here.
+      const rationalePath = join(relayDir, 'evidence', 'run-1', 'root', 'decompose-rationale.md');
+      expect(await readFile(rationalePath, 'utf8')).toContain('Widget interface seam');
+      const branch = await readNode(relayDir, 'root');
+      const ratRef = branch.evidenceRefs.find((r) => r.kind === 'rationale');
+      expect(ratRef).toBeDefined();
+      expect(ratRef?.path).toBe('root/decompose-rationale.md');
+      expect(res.ownedWrites).toContain('evidence/run-1/root/decompose-rationale.md');
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -182,17 +198,20 @@ describe('a tool-using brain judgment writes nothing to .relay/ (C2)', () => {
           await writeFile(probe, 'src/gen/**');
           const derivedGlob = await readFile(probe, 'utf8');
           return {
-            children: [
-              {
-                spec: {
-                  outcome: 'the generated module',
-                  verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+            decomposition: {
+              children: [
+                {
+                  spec: {
+                    outcome: 'the generated module',
+                    verifications: [{ kind: 'command', grounding: 'exit 0', check: 'true' }],
+                  },
+                  kind: 'leaf',
+                  footprint: { writeGlobs: [derivedGlob] },
                 },
-                kind: 'leaf',
-                footprint: { writeGlobs: [derivedGlob] },
-              },
-            ],
-            seams: [],
+              ],
+              seams: [],
+            },
+            rationale: `derived the generated module footprint ${derivedGlob} from a tool probe`,
           };
         },
       };

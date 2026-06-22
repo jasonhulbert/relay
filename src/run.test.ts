@@ -118,8 +118,11 @@ describe('relayRun (hermetic intake → decompose → apply-back)', () => {
         async decompose(req) {
           rootChildrenAtDecompose = (await readNode(relayDir, 'root')).children;
           return {
-            children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
-            seams: [],
+            decomposition: {
+              children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
+              seams: [],
+            },
+            rationale: 'one-leaf split for the hermetic relay run',
           };
         },
       };
@@ -237,8 +240,11 @@ describe('relayRun --outcome (one-shot grounded seed → decompose → apply-bac
         async decompose(req) {
           rootChildrenAtDecompose = (await readNode(relayDir, 'root')).children;
           return {
-            children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
-            seams: [],
+            decomposition: {
+              children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
+              seams: [],
+            },
+            rationale: 'one-leaf split for the hermetic relay run',
           };
         },
       };
