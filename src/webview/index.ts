@@ -3,8 +3,14 @@
 // verification. M5 Phase 1 is the read-time projection that composes the whole
 // tree, statuses, and run log from the per-node files (design §4, I3); the HTTP
 // surface (Phase 2) and cost rollups (Phase 3) build on it.
-export { projectRun } from './projection';
-export type { NodeView, TreeNode, RunProjection } from './projection';
+export { projectRun, projectSupervisorNode } from './projection';
+export type {
+  NodeView,
+  TreeNode,
+  RunProjection,
+  SupervisorView,
+  EvidenceContent,
+} from './projection';
 export { renderRunPage, renderErrorPage, renderNodePanel, panelHref } from './render';
 export { createWebViewServer, startWebView } from './server';
 export type { WebViewServerOptions, StartedWebView } from './server';
