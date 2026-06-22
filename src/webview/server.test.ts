@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { writeManifest, writeNode } from '../relay-state/index';
+import { atomicWriteFile, relayPaths, writeManifest, writeNode } from '../relay-state/index';
 import type { NodeRecord, OutcomeSpec, RootManifest } from '../relay-state/index';
 import { projectRun } from './projection';
 import { renderRunPage } from './render';
@@ -334,6 +334,133 @@ describe('webview HTTP server', () => {
       const url = await serve(relayDir);
       const res = await fetch(`${url}/node/ghost`);
       expect(res.status).toBe(404);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // Materialize an evidence file under the run's evidence dir, the way the orchestrator
+  // persists artifacts (evidence/<runId>/<nodeId>/<file>).
+  async function writeEvidence(
+    relayDir: string,
+    nodeId: string,
+    file: string,
+    content: string,
+  ): Promise<void> {
+    await atomicWriteFile(join(relayPaths(relayDir).evidenceDir('run-1'), nodeId, file), content);
+  }
+
+  // A done leaf whose evidence files (self-report, diff, verdict) are materialized on
+  // disk — the shape the human-supervisor detail reads CONTENT from (Sol 1, Phase 3).
+  async function seedWithEvidenceFiles(relayDir: string): Promise<void> {
+    await writeManifest(relayDir, {
+      runId: 'run-1',
+      rootId: 'root',
+      spec: spec('a run whose leaf carries on-disk evidence'),
+      sketch: { notes: [] },
+      createdAt: '2026-06-18T00:00:00.000Z',
+    });
+    await writeNode(
+      relayDir,
+      node({ id: 'root', kind: 'branch', status: 'done', children: ['leaf'] }),
+    );
+    await writeNode(
+      relayDir,
+      node({
+        id: 'leaf',
+        parentId: 'root',
+        kind: 'leaf',
+        status: 'done',
+        selfReport: 'wrote the data module',
+        verdict: {
+          pass: true,
+          provider: 'codex',
+          rationale: 'the data layer satisfies the spec',
+          evidenceRefs: [],
+        },
+        evidenceRefs: [
+          { runId: 'run-1', path: 'leaf/self-report.md', kind: 'self-report', summary: 'report' },
+          { runId: 'run-1', path: 'leaf/diff.patch', kind: 'diff', summary: 'the diff' },
+          { runId: 'run-1', path: 'leaf/verdict.md', kind: 'verdict', summary: 'the verdict' },
+        ],
+      }),
+    );
+    await writeEvidence(relayDir, 'leaf', 'self-report.md', 'wrote the data module in full');
+    await writeEvidence(relayDir, 'leaf', 'diff.patch', 'A src/data/widget.ts\n+export const W = 1;');
+    await writeEvidence(relayDir, 'leaf', 'verdict.md', '# critic verdict\n\n- Result: PASS\n');
+  }
+
+  // WHY (Validation: the per-node route surfaces the self-report, diff, verdict, and
+  // rationale): the `/node/<id>` page is the human supervisor's window into a node. This
+  // drives the REAL HTTP path (projectRun + projectSupervisorNode → renderNodePanel) and
+  // pins that the orchestrator-visible narrative AND the on-disk evidence content reach
+  // the served page — the OTHER side of the C7 split the run page deliberately withholds.
+  test('the per-node route serves the human-supervisor detail from disk', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
+    const relayDir = join(base, '.relay');
+    try {
+      await seedWithEvidenceFiles(relayDir);
+      const url = await serve(relayDir);
+
+      const res = await fetch(`${url}/node/leaf`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      // The evidence panel (M9) is still present — the detail is appended, not replacing.
+      expect(html).toContain('data-testid="evidence-panel"');
+      expect(html).toContain('data-testid="supervisor-detail"');
+      // Narrative (record) and evidence-file CONTENT (disk) both surface.
+      expect(html).toContain('wrote the data module'); // self-report narrative
+      expect(html).toContain('export const W = 1;'); // diff content read off disk
+      expect(html).toContain('the data layer satisfies the spec'); // verdict rationale
+      expect(html).toContain('Result: PASS'); // verdict.md content
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // WHY (Rule 11, the Phase 3 headline): a node that EXISTS but whose verdict.md was
+  // never written (a blocked node has a self-report but no verdict) must still serve 200
+  // with an inline "(artifact missing)" notice — NOT the 500 error page. A route that
+  // read evidence files eagerly without the typed marker would 500 the whole page on one
+  // half-written file, hiding everything else.
+  test('a node missing an evidence file still returns 200 with an inline missing notice', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
+    const relayDir = join(base, '.relay');
+    try {
+      await writeManifest(relayDir, {
+        runId: 'run-1',
+        rootId: 'root',
+        spec: spec('a run with a blocked leaf'),
+        sketch: { notes: [] },
+        createdAt: '2026-06-18T00:00:00.000Z',
+      });
+      await writeNode(
+        relayDir,
+        node({ id: 'root', kind: 'branch', status: 'active', children: ['leaf'] }),
+      );
+      await writeNode(
+        relayDir,
+        node({
+          id: 'leaf',
+          parentId: 'root',
+          kind: 'leaf',
+          status: 'blocked',
+          selfReport: 'attempted the change',
+          evidenceRefs: [
+            { runId: 'run-1', path: 'leaf/self-report.md', kind: 'self-report', summary: 'r' },
+            { runId: 'run-1', path: 'leaf/verdict.md', kind: 'verdict', summary: 'v' }, // never written
+          ],
+        }),
+      );
+      await writeEvidence(relayDir, 'leaf', 'self-report.md', 'attempted the change in full');
+      const url = await serve(relayDir);
+
+      const res = await fetch(`${url}/node/leaf`);
+      expect(res.status).toBe(200); // NOT 500 — the missing file degrades, not the route
+      const html = await res.text();
+      expect(html).toContain('attempted the change in full'); // the present file still renders
+      expect(html).toContain('(artifact missing)'); // the absent verdict.md is surfaced
+      expect(html).not.toContain('Cannot render this run'); // never the error page
     } finally {
       await rm(base, { recursive: true, force: true });
     }

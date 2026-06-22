@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import type { EvidenceRef } from '../relay-state/index';
-import type { NodeView, RunProjection, TreeNode } from './projection';
+import type {
+  EvidenceContent,
+  NodeView,
+  RunProjection,
+  SupervisorView,
+  TreeNode,
+} from './projection';
 import { panelHref, renderErrorPage, renderNodePanel, renderRunPage } from './render';
 
 function leaf(over: Partial<TreeNode> & Pick<TreeNode, 'id'>): TreeNode {
@@ -250,5 +256,164 @@ describe('webview evidence drill-in panel (M9)', () => {
     const scope = panelScope(html);
     expect(scope).toContain('no evidence captures');
     expect(scope).not.toContain('data-testid="evidence-next"');
+  });
+});
+
+// The Sol 1 human-supervisor detail (plan 03 Phase 3): the OTHER side of the C7 split,
+// rendered as a sibling section after the evidence panel. It surfaces the orchestrator-
+// visible narrative (self-report, learnings, decompose footprints/seams) and the on-disk
+// evidence content the auditor reviews — bounded at render — none of which the critic
+// ever receives.
+describe('webview supervisor detail (plan 03 Phase 3)', () => {
+  const ref = (kind: EvidenceRef['kind'], path: string): EvidenceRef => ({
+    runId: 'run-1',
+    path,
+    kind,
+    summary: `${kind} summary`,
+  });
+
+  const content = (
+    kind: EvidenceRef['kind'],
+    path: string,
+    text: string | null,
+    missing = false,
+  ): EvidenceContent => ({ ref: ref(kind, path), content: text, missing });
+
+  function supervisor(over: Partial<SupervisorView> = {}): SupervisorView {
+    return {
+      id: 'root.c0',
+      parentId: 'root',
+      kind: 'leaf',
+      status: 'done',
+      outcome: 'build the data layer',
+      selfReport: 'wrote the data module',
+      learnings: ['the data layer must land before the UI'],
+      verdict: {
+        pass: true,
+        provider: 'codex',
+        rationale: 'the data layer satisfies the spec',
+        evidenceRefs: [],
+      },
+      blocked: null,
+      evidence: [
+        content('self-report', 'root.c0/self-report.md', 'wrote the data module in full'),
+        content('diff', 'root.c0/diff.patch', 'A src/data/widget.ts\n+export const x = 1;'),
+        content('verdict', 'root.c0/verdict.md', '# critic verdict\n\n- Result: PASS\n'),
+      ],
+      layer: null,
+      ...over,
+    };
+  }
+
+  // The supervisor detail is appended to the node page via renderNodePanel's 4th arg.
+  const renderDetail = (view: SupervisorView, node?: NodeView): string =>
+    renderNodePanel(projection({}), node ?? leaf({ id: view.id, evidenceRefs: [] }), 0, view);
+
+  // WHY (Validation: the page contains self-report, diff, verdict, and rationale): the
+  // human view's whole point is to surface exactly what the critic cannot see. This pins
+  // that the narrative, the diff content, the verdict, and the decompose rationale all
+  // reach the page when the supervisor view carries them.
+  test('renders self-report, diff content, verdict, and decompose rationale', () => {
+    const view = supervisor({
+      selfReport: 'decomposed into a data layer and a UI layer',
+      kind: 'branch',
+      evidence: [
+        content('rationale', 'root/decompose-rationale.md', 'split because the UI consumes Widget'),
+        content('diff', 'root/diff.patch', 'A src/data/widget.ts\n+export const Widget = 1;'),
+      ],
+      layer: {
+        parentId: 'root',
+        runId: 'run-1',
+        footprints: { 'root.c0': { writeGlobs: ['src/data/**'] } },
+        seams: [
+          {
+            id: 'seam-0',
+            kind: 'interface',
+            producer: 'root.c0',
+            consumer: 'root.c1',
+            intent: 'the data layer publishes the Widget type',
+            payload: { symbol: 'Widget' },
+          },
+        ],
+      },
+    });
+    const html = renderDetail(view);
+    expect(html).toContain('decomposed into a data layer and a UI layer');
+    expect(html).toContain('export const Widget');
+    expect(html).toContain('the data layer satisfies the spec'); // verdict rationale
+    expect(html).toContain('split because the UI consumes Widget'); // decompose rationale
+    // The decompose JUDGMENT — footprints + seams — is surfaced for the branch.
+    expect(html).toContain('src/data/**');
+    expect(html).toContain('the data layer publishes the Widget type');
+  });
+
+  // WHY (Validation: a very large self-report is truncated and links to its on-disk
+  // path): untrusted model prose is bounded at RENDER while the full text stays on disk
+  // for audit. A renderer that dumped the whole thing — or truncated without a pointer —
+  // would fail here. The cap is the load-bearing behavior, so this exercises a report
+  // well past it.
+  test('a very large self-report is truncated and points at its on-disk path', () => {
+    const huge = 'x'.repeat(5000);
+    const view = supervisor({
+      selfReport: huge,
+      evidence: [content('self-report', 'root.c0/self-report.md', huge)],
+    });
+    const html = renderDetail(view);
+    // The full text is NOT in the page; a bounded head is, with the pointer.
+    expect(html).not.toContain(huge);
+    expect(html).toContain('prose-truncated');
+    expect(html).toContain('full text at');
+    expect(html).toContain('evidence/run-1/root.c0/self-report.md');
+  });
+
+  // WHY (Rule 11, fail visible): a ref whose file is absent (a blocked node has a
+  // self-report but no verdict) renders an inline "(artifact missing)" notice, never a
+  // throw or a blank — the rest of the node still renders so the operator sees what IS
+  // there alongside what is missing.
+  test('a missing evidence artifact renders an inline notice, not a gap', () => {
+    const view = supervisor({
+      status: 'blocked',
+      verdict: null,
+      evidence: [
+        content('self-report', 'root.c0/self-report.md', 'attempted the change'),
+        content('verdict', 'root.c0/verdict.md', null, true), // never written — node blocked
+      ],
+    });
+    const html = renderDetail(view);
+    expect(html).toContain('attempted the change');
+    expect(html).toContain('(artifact missing)');
+  });
+
+  // WHY: the narrative and evidence content are model-authored free text — an injection
+  // sink if rendered raw. This pins that the supervisor detail escapes angle brackets in
+  // both the self-report and the evidence-file content, the same discipline the run page
+  // applies.
+  test('escapes untrusted prose in the self-report and evidence content', () => {
+    const view = supervisor({
+      selfReport: '<script>alert(1)</script>',
+      evidence: [content('diff', 'root.c0/diff.patch', '<img src=x onerror=1>')],
+    });
+    const html = renderDetail(view);
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<img src=x onerror=1>');
+    expect(html).toContain('&lt;img src=x onerror=1&gt;');
+  });
+
+  // WHY (V7 isolation, the dogfood's invariant): the supervisor detail must be a sibling
+  // section AFTER the evidence panel, never nested in it — the dogfood scopes its
+  // structural grade to the first `evidence-panel` section, so detail content leaking
+  // into that scope could decide the verdict on the wrong facts. This pins the ordering.
+  test('the supervisor detail is a sibling after the evidence panel, outside its scope', () => {
+    const node = leaf({
+      id: 'root.c0',
+      evidenceRefs: [{ runId: 'run-1', path: 'root.c0/diff.patch', kind: 'diff', summary: 'd' }],
+    });
+    const html = renderDetail(supervisor(), node);
+    const panelAt = html.indexOf('data-testid="evidence-panel"');
+    const detailAt = html.indexOf('data-testid="supervisor-detail"');
+    const panelClose = html.indexOf('</section>', panelAt);
+    expect(panelAt).toBeGreaterThan(-1);
+    expect(detailAt).toBeGreaterThan(panelClose); // detail opens after the panel closes
   });
 });
