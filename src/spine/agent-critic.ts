@@ -1,22 +1,21 @@
-// The real cross-provider critic (design §3.6, §6.1) — the gate on done-ness this
-// milestone makes real. It is an INDEPENDENT agent: a different provider than the
-// author by default, that did not do the work, handed ONLY the C7 critic-visible
-// projection (spec + diff + evidence) and never the executor's self-report. Its
-// integrity is structural, not prompted: the projection withheld the narrative
-// before this code ran.
+// The real cross-provider critic — the gate on done-ness. It is an INDEPENDENT
+// agent: a different provider than the author by default, that did not do the work,
+// handed ONLY the evidence-only critic-visible projection (spec + diff + evidence)
+// and never the executor's self-report. Its integrity is structural, not prompted:
+// the projection withheld the narrative before this code ran.
 //
-// One critic stage, the §6.3 kinds composed cheapest-first:
+// One critic stage, the verification kinds composed cheapest-first:
 //   1. run the declared DETERMINISTIC kinds (command/test/artifact) in code
 //      (verify.ts, Rule 5). A declared check that fails is ground truth — short-
 //      circuit to FAIL without paying for a model (cheapest-first);
-//   2. otherwise spawn the cross-provider model (`agent-critic` kind, §6.3 #6) over
-//      the projection plus those deterministic results, and parse its verdict
+//   2. otherwise spawn the cross-provider model (`agent-critic` kind) over the
+//      projection plus those deterministic results, and parse its verdict
 //      deterministically (the model judges; code reads the answer, Rule 5).
 //
-// Cost guardrail (design §8): the critic defaults to the provider's cheapest model,
-// the same per-role knob the executor adapters use. The critic is granted
-// `mcp_servers` exactly as the executor is (§3.252, C9); the real code-owned MCP
-// loop that populates the grant is Phase 5 (today it is empty).
+// Cost guardrail: the critic defaults to the provider's cheapest model, the same
+// per-role knob the executor adapters use. The critic is granted `mcp_servers`
+// exactly as the executor is; the real code-owned MCP loop that populates the grant
+// is not yet built (today it is empty).
 import { spawn } from 'node:child_process';
 import { DEFAULT_CLAUDE_MODEL, parseClaudeStream } from './adapters/claude';
 import { DEFAULT_CODEX_MODEL, parseCodexStream } from './adapters/codex';
@@ -36,19 +35,19 @@ export type CriticProvider = 'claude' | 'codex';
 
 export interface AgentCriticOptions {
   // Which provider renders the verdict. The orchestrator/harness picks the
-  // not-the-author provider by default (design §3.6); this is that resolved choice.
+  // not-the-author provider by default; this is that resolved choice.
   provider: CriticProvider;
-  // Per-role cost-guardrail knob (design §8). Omitted pins the provider's cheapest
-  // model — never the CLI's pricier default — mirroring the executor adapters.
+  // Per-role cost-guardrail knob. Omitted pins the provider's cheapest model —
+  // never the CLI's pricier default — mirroring the executor adapters.
   model?: string;
   // The provider binary; defaults to the one on PATH.
   bin?: string;
   // Injectable CLI runner so the critic is exercisable without the real model
   // (hermetic tests). Defaults to spawning `bin` with the built argv.
   invoke?: (call: CriticInvocation) => Promise<CriticInvocationResult>;
-  // Observe each critic model call's usage (F5). The harness records it into the
-  // same per-call sink as the executor so the recap surfaces it; node-attributed
-  // usage and rollups are Phase 6.
+  // Observe each critic model call's usage. The harness records it into the same
+  // per-call sink as the executor so the recap surfaces it; node-attributed usage
+  // and the cost rollup are not yet wired.
   onUsage?: (usage: ExecutorUsage) => void;
 }
 
@@ -65,8 +64,8 @@ export interface CriticInvocationResult {
 
 // Render the critic prompt from the projection plus the deterministic grounding.
 // Pure and exported so the prompt is testable without a model — and so a test can
-// assert it carries NO narrative (the C7 guarantee re-checked on the real path):
-// it only ever reads `view.spec`, `view.diff`, and the verification results, never
+// assert it carries NO narrative (the evidence-only guarantee re-checked on the
+// real path): it only ever reads `view.spec`, `view.diff`, and the verification results, never
 // a self-report or learnings (the projection has none to read).
 export function buildCriticPrompt(
   view: CriticView,
@@ -217,8 +216,8 @@ function parseProviderStream(
   };
 }
 
-// Build the real cross-provider critic as a `CriticSpawn` (the C7-typed path: only a
-// constructed `CriticView` can reach it). The deterministic kinds run first against
+// Build the real cross-provider critic as a `CriticSpawn` (the evidence-only typed
+// path: only a constructed `CriticView` can reach it). The deterministic kinds run first against
 // the produced-change worktree; the cross-provider model renders the verdict on the
 // projection only.
 export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
@@ -228,8 +227,8 @@ export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
   const invoke = opts.invoke ?? defaultInvoke;
 
   return async (view: CriticView, ctx: CriticContext): Promise<CriticVerdict> => {
-    // Cheapest-first (§6.3): the deterministic kinds are ground truth. A declared
-    // check that fails settles done-ness without spending a model call.
+    // Cheapest-first: the deterministic kinds are ground truth. A declared check
+    // that fails settles done-ness without spending a model call.
     const results = await runDeterministicVerifications(view.spec.verifications, ctx.worktree);
     const failed = results.filter((r) => !r.pass);
     if (failed.length > 0) {
@@ -242,8 +241,8 @@ export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
       };
     }
 
-    // The independent agent stage (§6.1, §6.3 #6): the cross-provider model judges
-    // the projection. The prompt is built from the view + deterministic grounding —
+    // The independent agent stage: the cross-provider model judges the projection.
+    // The prompt is built from the view + deterministic grounding —
     // structurally no narrative can ride in.
     const prompt = buildCriticPrompt(view, results);
     const args = buildCriticArgs(provider, prompt, { model, mcpServers: ctx.mcpServers });
@@ -253,7 +252,7 @@ export function agentCritic(opts: AgentCriticOptions): CriticSpawn {
     const { review, usage } = parseProviderStream(provider, stdout, model, wallClockMs);
     // Two sinks, both write-only: `opts.onUsage` is the construction-time observer
     // (direct unit calls), `ctx.onUsage` is the orchestrator's node-attributed sink
-    // for F5 persistence (design §8). On a real run only the latter is set.
+    // for per-call usage persistence. On a real run only the latter is set.
     opts.onUsage?.(usage);
     ctx.onUsage?.(usage);
 

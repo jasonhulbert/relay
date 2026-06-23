@@ -32,7 +32,7 @@ const SEED: IntakeSeed = {
 };
 
 // A scripted interviewer that grills once, then approves the seed — the same
-// Phase 1 → Phase 2 handoff the intake tests exercise, but driven here through the
+// intake → decompose handoff the intake tests exercise, but driven here through the
 // real `relay run` composition rather than `runIntake` directly.
 function scriptedIntake(): { interviewer: Interviewer; ask: AskHuman } {
   let turn = 0;
@@ -102,7 +102,7 @@ async function cleanGitProject(): Promise<string> {
   return project;
 }
 
-// WHY: this is the Phase 2 contract end-to-end on hermetic stand-ins — the whole
+// WHY: this is the end-to-end contract on hermetic stand-ins — the whole
 // point of `relay run` (vs the `dev-run` harness) is that it does NOT pre-seed a
 // leaf. It must commit the intake seed as a CHILDLESS root, let the brain author the
 // first layer at ACTIVATION, drive it to done, and land the verified result back as a
@@ -221,7 +221,7 @@ function forbiddenAsk(): { ask: AskHuman; calls: () => number } {
   return { ask, calls: () => calls };
 }
 
-// WHY: the non-interactive `relay run --outcome` path (Phase 3) must be a real run, not
+// WHY: the non-interactive `relay run --outcome` path must be a real run, not
 // a degenerate one. It compiles a GROUNDED seed from a single model call with NO stdin,
 // then composes the SAME childless-root → decompose → apply-back as the interactive
 // path. The CLI wires this as `oneShot` interviewer + `opening: outcome` +

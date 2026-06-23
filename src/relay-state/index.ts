@@ -1,7 +1,8 @@
 // On-disk `.relay/` mechanics: node files, the root manifest, evidence refs, the
 // human decision inbox, and the per-region write-ahead intent journal with
-// idempotent roll-forward on rehydration (design §4, §9.3). Code is the sole
-// writer of `.relay/` (C2). See docs/relay-state-layout.md for the conventions.
+// idempotent roll-forward on rehydration. Code is the sole writer of `.relay/`.
+// See docs/relay-spec.md for the architecture this implements.
+// See docs/relay-state-layout.md for the conventions.
 export type {
   McpServerConfig,
   NodeKind,

@@ -6,11 +6,11 @@ import { describe, expect, test } from 'vitest';
 import { arbLayerManifest } from './arbitraries';
 import { deserializeLayer, readLayer, serializeLayer, tryReadLayer, writeLayer } from './layer';
 
-// The layer manifest is the child-manifest of the one layer a branch decomposed
-// (design §4, §3.8): the footprints + seam graph the scheduler (A2) and the failure
-// rule (§3.9) read back. If it cannot round-trip faithfully, the structural facts a
-// rehydrated orchestrator depends on are corrupted — so it must survive write/read
-// as faithfully as a node file.
+// The layer manifest is the child-manifest of the one layer a branch decomposed:
+// the footprints + seam graph the scheduler and the failure rule read back. If it
+// cannot round-trip faithfully, the structural facts a rehydrated orchestrator
+// depends on are corrupted — so it must survive write/read as faithfully as a node
+// file.
 describe('layer manifest round-trip', () => {
   test('survives write-then-read with no field loss', async () => {
     await fc.assert(

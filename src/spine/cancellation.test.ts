@@ -57,7 +57,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-// WHY: the inbox is the human's only write channel onto a running tree (I4), and it
+// WHY: the inbox is the human's only write channel onto a running tree, and it
 // is durable state the orchestrator merely reads — so a queued decision must take
 // effect on the *next activation whoever runs it*, and survive teardown to be
 // drained by a replacement. The transition must be atomic (no torn node + dangling
@@ -112,10 +112,10 @@ describe('the decision inbox is drained at activation', () => {
 });
 
 // WHY: human cancellation rides the same terminal-failure machinery as ladder
-// exhaustion (§3.9) — the node goes terminal and the failure surfaces up the parent
-// chain with no route-around, the lesson is kept before the worktree is reset
-// (§3.5), and in serial form NOTHING else happens: no seam graph is traced and no
-// independent in-flight work is drained (both deferred to concurrency, M10). A
+// exhaustion — the node goes terminal and the failure surfaces up the parent
+// chain with no route-around, the lesson is kept before the worktree is reset,
+// and in serial form NOTHING else happens: no seam graph is traced and no
+// independent in-flight work is drained (both deferred to concurrency). A
 // wiring that let the parent reach `done` over a cancelled child, dropped the
 // lesson, or left the worktree, fails here.
 describe('serial-form cancellation marks the node terminal and halts', () => {
@@ -124,7 +124,7 @@ describe('serial-form cancellation marks the node terminal and halts', () => {
     try {
       await seedFixture(relayDir);
 
-      // A stale worktree from a prior attempt: cancellation must reset it (§3.5).
+      // A stale worktree from a prior attempt: cancellation must reset it.
       const leafWorktree = join(workRoot, LEAF_ID);
       await mkdir(leafWorktree, { recursive: true });
       await writeFile(join(leafWorktree, 'CHANGE.txt'), 'partial work\n');
@@ -167,7 +167,7 @@ describe('serial-form cancellation marks the node terminal and halts', () => {
 
       // Serial form: only the targeted node is cancelled, no branch child was driven,
       // nothing was promoted — there is no seam graph to trace and no independent work
-      // to drain (deferred to M10). The refusing executor never threw, proving no work
+      // to drain (deferred to concurrency). The refusing executor never threw, proving no work
       // was run anywhere.
       expect(res.cancelledNodes).toEqual([LEAF_ID]);
       expect(res.childStatuses).toEqual({});

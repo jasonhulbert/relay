@@ -1,6 +1,6 @@
-// Phase 2 validation criterion 3: "The full loop completes from intake to `done` for
-// this outcome." This is the dogfood headline — the FIRST real-work outcome driven
-// through the spine's own loop (design §12 / D2): the committed compactor seed is
+// Validation criterion: "The full loop completes from intake to `done` for this
+// outcome." This is the dogfood headline — the FIRST real-work outcome driven through
+// the spine's own loop: the committed compactor seed is
 // compiled by the REAL intake compiler, committed by the REAL `commitRoot`, decomposed,
 // executed, and gated by the REAL cross-provider critic running the committed
 // `test`-kind checks. The loop reaches `done` ONLY because the compactor those checks

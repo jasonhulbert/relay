@@ -8,7 +8,7 @@ import { deserializeDecision, readInbox, serializeDecision, writeDecision } from
 import type { DecisionRecord } from './types';
 
 // WHY this matters: the decision inbox is durable state a rehydrated orchestrator
-// reads to find pending human decisions (design §3.11). A note dropped or mangled
+// reads to find pending human decisions. A note dropped or mangled
 // in the codec would silently change what a cancellation reflection records, and a
 // target-id corrupted on round-trip would mis-apply a decision to the wrong node.
 // The round-trip is the falsifiable guard, fuzzed with YAML-hostile note text.

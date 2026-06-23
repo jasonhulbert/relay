@@ -17,7 +17,7 @@ import { STUB_USAGE, stubCapabilities } from './executor';
 import type { Executor } from './executor';
 import type { Brain } from './brain';
 
-// ── The pure partition: the cancel-vs-drain line IS the seam graph (B4) ──────────
+// ── The pure partition: the cancel-vs-drain line IS the seam graph ──────────
 // WHY: the entire failure rule rests on this being a STRUCTURAL decision, not a
 // judgment. A node reachable from the dead one through the seam graph is invalidated
 // (cancel); one with no seam path is still valid (drain). If the partition leaked
@@ -67,7 +67,7 @@ describe('partitionBySeam splits the layer by seam-reachability from the dead no
   });
 });
 
-// ── End-to-end: the unified failure rule in the orchestrator (B3) ────────────────
+// ── End-to-end: the unified failure rule in the orchestrator ────────────────
 
 async function freshRelay(): Promise<{ base: string; relayDir: string; workRoot: string }> {
   const base = await mkdtemp(join(tmpdir(), 'relay-failrule-'));
@@ -114,7 +114,7 @@ async function seedChildlessBranch(relayDir: string): Promise<void> {
 
 // A brain that decomposes into three disjoint-footprint leaves D / S1 / S2 with a
 // single file-boundary seam D→S1. The seam is code-checkable, so it does NOT force
-// serialization (F3) — all three run in one parallel stage — yet it is the structural
+// serialization — all three run in one parallel stage — yet it is the structural
 // edge the failure rule traces: S1 is seam-dependent on D, S2 is independent.
 function threeLeavesOneSeam(): Brain {
   const child = (outcome: string, glob: string) => ({
@@ -144,8 +144,8 @@ function threeLeavesOneSeam(): Brain {
 }
 
 // An executor scripted per child: the leaf whose outcome contains `failOutcome`
-// reports a write OUTSIDE its declared footprint (a loud A3 violation → blocked under
-// a tight cap); the others report an in-footprint write and reach done.
+// reports a write OUTSIDE its declared footprint (a loud footprint-escape violation →
+// blocked under a tight cap); the others report an in-footprint write and reach done.
 function loudViolationFor(failOutcome: string): Executor {
   return {
     capabilities: () => stubCapabilities,
@@ -178,7 +178,7 @@ const refusingExecutor: Executor = {
   },
 };
 
-describe('the unified failure rule cancels seam-dependents and drains seam-independents (B3/B4)', () => {
+describe('the unified failure rule cancels seam-dependents and drains seam-independents', () => {
   // WHY (validation 1): the phase's reason to exist. When a node in a concurrent
   // layer dies, the cancel-vs-preserve line must be the SEAM GRAPH, not a blanket
   // "cancel the layer" or "keep everything." The seam-dependent sibling's work is
@@ -300,7 +300,7 @@ async function seedDecomposedBranch(relayDir: string): Promise<void> {
   await writeLayer(relayDir, layer);
 }
 
-describe('a decision-inbox cancellation preempts and runs the unified rule (I4/§3.9)', () => {
+describe('a decision-inbox cancellation preempts and runs the unified rule', () => {
   // WHY (validation 2): human cancellation rides the SAME rule and preempts — it does
   // not wait for work to run. Cancelling D at activation must (a) dispatch nothing new
   // anywhere (the refusing executor never runs), (b) cancel D's seam-dependent sibling

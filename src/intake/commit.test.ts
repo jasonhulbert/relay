@@ -22,8 +22,8 @@ const SEED: IntakeSeed = {
 };
 
 // A scripted interviewer that grills once, then approves with the seed — exercising
-// the Phase 1 → Phase 2 handoff: `runIntake` returns the seed at the `done` turn
-// (approval) having run nothing, and Phase 2 commits what it returns.
+// the produce-then-commit handoff: `runIntake` returns the seed at the `done` turn
+// (approval) having run nothing, and the commit step writes what it returns.
 function scriptedIntake(): { interviewer: Interviewer; ask: AskHuman } {
   let turn = 0;
   const interviewer: Interviewer = {
@@ -44,7 +44,7 @@ async function freshRelay(): Promise<{ base: string; relayDir: string; workRoot:
   return { base, relayDir: join(base, '.relay'), workRoot: join(base, 'worktrees') };
 }
 
-// Validation 1: after approval the committed root is activatable by the M2
+// Validation 1: after approval the committed root is activatable by the
 // orchestrator and a run begins from it. Drives the interview to a seed, commits it,
 // then activates the orchestrator on the committed root — which decomposes it (the
 // brain owns the first layer at activation, NOT intake) and drives it to done. This
@@ -99,7 +99,7 @@ describe('intake commits no binding decomposition beyond the sketch', () => {
       expect(root.children).toEqual([]);
       expect(await tryReadLayer(relayDir, rootId)).toBeNull();
 
-      // The root commit is one atomic intent-journal transaction (C8): a clean commit
+      // The root commit is one atomic intent-journal transaction: a clean commit
       // leaves no pending intent in the root's region.
       expect(await pendingIntents(relayDir, rootId)).toEqual([]);
     } finally {

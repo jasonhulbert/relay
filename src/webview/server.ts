@@ -1,9 +1,9 @@
-// The local read-only HTTP surface for the operator web view (M5 Phase 2). It
-// serves the render of `.relay/` and writes nothing (I3): every request RE-runs
-// `projectRun` against the store on disk, so the page always reflects the current
-// per-node files — mutate a node file and refresh, and the change shows, because
-// the global view is composed at read time, never cached as a shared artifact (A6,
-// design §4). There is no write path anywhere in this module.
+// The local read-only HTTP surface for the operator web view. It serves the render
+// of `.relay/` and writes nothing — the supervisor view writes nothing to `.relay/`:
+// every request RE-runs `projectRun` against the store on disk, so the page always
+// reflects the current per-node files — mutate a node file and refresh, and the
+// change shows, because the global view is composed at read time, never cached as a
+// shared artifact. There is no write path anywhere in this module.
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
@@ -59,11 +59,11 @@ export function createWebViewServer(opts: WebViewServerOptions): Server {
     const url = req.url ?? '/';
     const path = url.split('?')[0];
 
-    // The per-node detail (M9 evidence panel + Sol 1 human-supervisor view):
+    // The per-node detail (evidence panel + human-supervisor view):
     // `/node/<id>` renders one node's evidence panel, `?capture=<n>` navigates its
     // ordered captures, and below it the human-supervisor detail (self-report, evidence
     // content, verdict, decompose footprints/seams/rationale) — all plain GET, so the
-    // read-only contract is unbroken (I3). Like the run page, it recomposes per request
+    // read-only contract is unbroken. Like the run page, it recomposes per request
     // and fails loud on an incoherent tree. An unknown node id is a 404 (the same as any
     // unknown path); a node that EXISTS but has a half-written evidence file still renders
     // 200 with an inline "(artifact missing)" notice, never the error page (Rule 11).
@@ -79,7 +79,7 @@ export function createWebViewServer(opts: WebViewServerOptions): Server {
             return undefined;
           }
           // The node exists, so the supervisor read resolves (a missing evidence FILE is
-          // a typed marker the detail renders inline, not a throw — Phase 2).
+          // a typed marker the detail renders inline, not a throw).
           return projectSupervisorNode(opts.relayDir, nodeId).then((supervisor) => {
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
             res.end(renderNodePanel(projection, node, capture, supervisor));

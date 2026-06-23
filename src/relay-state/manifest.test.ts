@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest';
 import { arbRootManifest } from './arbitraries';
 import { deserializeManifest, readManifest, serializeManifest, writeManifest } from './manifest';
 
-// The root manifest anchors the run (design §4); rehydration reads it to find
+// The root manifest anchors the run; rehydration reads it to find
 // the root node and spec, so it must round-trip as faithfully as a node file.
 describe('root manifest round-trip', () => {
   test('survives write-then-read with no field loss', async () => {

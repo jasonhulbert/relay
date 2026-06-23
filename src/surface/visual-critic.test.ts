@@ -41,14 +41,14 @@ function fakeSurface(cfg: FakeConfig = {}): { surface: Surface; interactions: In
   return { surface, interactions };
 }
 
-// WHY (deliverable: the path is a distinct critic-visible field that passes the C7
-// property test): the visual verification is field-isolated — it carries the path,
-// granularity, scope, and a semantic expectation, and structurally NO narrative
-// field. If a self-report ever leaked onto it, the critic's verdict would be
-// corruptible by the author's framing (the exact leak C7 closes). This pins the key
-// set the same way relay-state's C7 projection test does, so adding a narrative
-// field breaks it.
-describe('VisualVerification is field-isolated (C7)', () => {
+// WHY (deliverable: the path is a distinct critic-visible field that passes the
+// narrative-inadmissibility property test): the visual verification is field-isolated
+// — it carries the path, granularity, scope, and a semantic expectation, and
+// structurally NO narrative field. If a self-report ever leaked onto it, the critic's
+// verdict would be corruptible by the author's framing (the exact leak the
+// evidence-only critic closes). This pins the key set the same way relay-state's
+// projection test does, so adding a narrative field breaks it.
+describe('VisualVerification is field-isolated (orchestrator narrative inadmissible)', () => {
   const NARRATIVE_KEYS = ['selfReport', 'learnings', 'narrative', 'self_report', 'rationale'];
 
   const arbInteraction: fc.Arbitrary<Interaction> = fc.oneof(
@@ -59,7 +59,7 @@ describe('VisualVerification is field-isolated (C7)', () => {
   const arbScope = fc.option(fc.record({ ref: fc.string() }), { nil: undefined });
   // Conditionally include `scope` (omit the key when absent rather than setting it to
   // undefined, which `exactOptionalPropertyTypes` forbids) so the generated value is
-  // a real `VisualVerification` — the type the C7 invariant is asserted against.
+  // a real `VisualVerification` — the type the narrative-inadmissibility invariant is asserted against.
   const arbVerification: fc.Arbitrary<VisualVerification> = fc.oneof(
     fc
       .tuple(fc.array(arbInteraction), arbScope, fc.string())
@@ -114,9 +114,9 @@ describe('VisualVerification is field-isolated (C7)', () => {
   });
 });
 
-// WHY (V7 plumbing): the critic addresses an element by the opaque ref Playwright MCP
+// WHY (element-scoping plumbing): the critic addresses an element by the opaque ref Playwright MCP
 // embeds in the a11y tree as `[ref=eNN]`. The contract treats the tree as text, so
-// the critic parses refs here; if parsing drifted, element-scoping (V7) could not
+// the critic parses refs here; if parsing drifted, element-scoping could not
 // target anything.
 describe('parseRefs', () => {
   test('extracts refs in document order, deduplicated', () => {
@@ -134,11 +134,11 @@ describe('parseRefs', () => {
   });
 });
 
-// WHY (deliverable V1: the critic replays the executor-emitted path itself): the
+// WHY (deliverable: the critic replays the executor-emitted path itself): the
 // critic must drive the declared `Interaction[]` in order through the Surface — that
 // is how it reaches the verifiable state to capture its OWN evidence, instead of
 // trusting the executor's screenshot.
-describe('replayPath (V1)', () => {
+describe('replayPath', () => {
   test('drives every interaction through the surface in order', async () => {
     const { surface, interactions } = fakeSurface();
     const path: Interaction[] = [
@@ -155,7 +155,7 @@ describe('replayPath (V1)', () => {
 // structural granularity against the fixture): both rungs must reach a verdict after
 // replaying. Structural asserts over the semantic subtree (no model); intent defers
 // to the injected judge (the model seam), graded on the critic's own capture.
-describe('replayAndGrade — granularity (V4)', () => {
+describe('replayAndGrade — match-granularity', () => {
   const path: Interaction[] = [{ kind: 'click', ref: 'e3' }];
 
   test('structural: passes when every expected semantic fact is present', async () => {
@@ -215,7 +215,7 @@ describe('replayAndGrade — granularity (V4)', () => {
   });
 
   test('baseline-diff: refuses to grade without an injected grader (no silent skip)', async () => {
-    // Phase 4 wired the baseline pipeline in as an injected `BaselineGrader` (mirroring
+    // The baseline pipeline is wired in as an injected `BaselineGrader` (mirroring
     // the intent judge); the rung now grades when the grader is supplied and fails loud
     // when it is not — never silently skipping the strictest rung. The grader's own
     // behavior is covered hermetically in baseline.test.ts.
@@ -231,7 +231,7 @@ describe('replayAndGrade — granularity (V4)', () => {
 // Surface already reports, so the loop — not a judgment — decides what a failed replay
 // means. These pin each of the three buckets and that classification consults no
 // model (only the Surface's typed error and a liveness probe).
-describe('classifyReplayFailure (V5) — no model call', () => {
+describe('classifyReplayFailure — no model call', () => {
   test('a transient step-timeout classifies as retry', async () => {
     const { surface } = fakeSurface();
     const err = new SurfaceCallError(
@@ -298,11 +298,11 @@ describe('classifyReplayFailure (V5) — no model call', () => {
 });
 
 // WHY (Validation: a component-scoped check ignores an unrelated changing region in
-// the same frame): V7 isolation is the whole point of element-scoping. The fixture's
+// the same frame): isolation is the whole point of element-scoping. The fixture's
 // clock ticks every frame; a check scoped to the panel must be stable across frames,
 // while the SAME check unscoped would flip as the clock changes. This proves scoping
 // is what buys the stability, not luck.
-describe('component scoping ignores an unrelated changing region (V7)', () => {
+describe('component scoping ignores an unrelated changing region', () => {
   // A frame whose unscoped tree carries the ever-changing clock, but whose
   // panel-scoped tree carries only the stable component.
   function frame(tick: number): (ref: string | undefined) => string {

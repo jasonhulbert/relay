@@ -114,7 +114,7 @@ describe('persistent failure promotes the leaf, keeping the lesson', () => {
         expect(child.learnings).toContain(reflection);
       }
 
-      // The failed attempt's worktree is reset to clean (design §3.5).
+      // The failed attempt's worktree is reset to clean.
       expect(await exists(join(workRoot, LEAF_ID))).toBe(false);
     } finally {
       await rm(base, { recursive: true, force: true });

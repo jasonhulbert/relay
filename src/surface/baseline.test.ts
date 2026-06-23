@@ -119,12 +119,12 @@ function ctxFor(
 }
 
 // WHY (deliverable: capture-and-promote at structural-or-better; store/ref split;
-// V6 gating). The first structural-or-better pass promotes a baseline whose BINARY is
-// in the content-addressed store and whose REF is a Markdown file in `.relay/` —
-// binaries never enter files-only `.relay/`. The structural-or-better gate is what
-// keeps a loose intent pass from freezing a sloppy UI as ground truth, so it is
-// code-enforced, not trusted to the caller.
-describe('capture-and-promote (V6, F2)', () => {
+// structural-or-better gating). The first structural-or-better pass promotes a
+// baseline whose BINARY is in the content-addressed store and whose REF is a Markdown
+// file in `.relay/` — binaries never enter files-only `.relay/`. The
+// structural-or-better gate is what keeps a loose intent pass from freezing a sloppy
+// UI as ground truth, so it is code-enforced, not trusted to the caller.
+describe('capture-and-promote', () => {
   test('first structural pass writes the binary to the store and the ref to .relay/', async () => {
     const { relayDir, storeDir } = await tempBase();
     const { ctx } = ctxFor(relayDir, storeDir);
@@ -132,8 +132,8 @@ describe('capture-and-promote (V6, F2)', () => {
 
     const ref = await promoteBaseline(ctx, capture, { granularity: 'structural', tolerance: 0.02 });
 
-    // The ref carries exactly the F2 fields (hash, outcome-id, granularity, version,
-    // tolerance) and is version 1.
+    // The ref carries exactly the content-addressed-store fields (hash, outcome-id,
+    // granularity, version, tolerance) and is version 1.
     expect(ref).toMatchObject({
       outcomeId: 'outcome-1',
       granularity: 'structural',
@@ -156,7 +156,7 @@ describe('capture-and-promote (V6, F2)', () => {
     expect(onDisk).toEqual(ref);
   });
 
-  test('an intent-only pass is refused (V6 gates promotion at structural-or-better)', async () => {
+  test('an intent-only pass is refused (promotion is gated at structural-or-better)', async () => {
     const { relayDir, storeDir } = await tempBase();
     const { ctx } = ctxFor(relayDir, storeDir);
     await expect(
@@ -181,7 +181,7 @@ describe('capture-and-promote (V6, F2)', () => {
 // that: a real compaction run that drops an orphan capture leaves the store's digest
 // byte-for-byte identical. If someone ever rooted the store inside `.relay/evidence/`,
 // this fails.
-describe('the baseline store is excluded from a compaction run (F2)', () => {
+describe('the baseline store is excluded from a compaction run', () => {
   test('a compaction that drops an orphan leaves the sibling store untouched', async () => {
     const { relayDir, storeDir } = await tempBase();
     const { ctx } = ctxFor(relayDir, storeDir);
@@ -211,11 +211,11 @@ describe('the baseline store is excluded from a compaction run (F2)', () => {
 
 // WHY (deliverable: re-versioning a known-good baseline needs human approval; prior
 // versions persist by hash). Code never silently overwrites a baseline — telling an
-// intended redesign from a regression is the one judgment V6 says the baseline is not
+// intended redesign from a regression is the one judgment the baseline is not
 // an oracle for. A re-version ATTEMPT surfaces a decision and leaves the ref alone;
 // only an APPROVED re-version bumps the version, and the prior binary stays
 // retrievable by hash.
-describe('re-versioning is human-gated; prior versions persist by hash (F2)', () => {
+describe('re-versioning is human-gated; prior versions persist by hash', () => {
   test('a re-version attempt surfaces a decision rather than overwriting', async () => {
     const { relayDir, storeDir } = await tempBase();
     const { ctx, seen } = ctxFor(relayDir, storeDir);
@@ -272,12 +272,12 @@ describe('re-versioning is human-gated; prior versions persist by hash (F2)', ()
 });
 
 // WHY (deliverable: flake budget = spatial tolerance + retry count; never auto-pass,
-// never silent fail). The grade path is the V4 rung-3 + V6/F2 behavior the visual
-// critic delegates to: a within-tolerance diff passes, a transient above-tolerance
-// diff is absorbed by the retry budget, and a PERSISTENT above-tolerance diff against
-// a healthy app surfaces a mismatch decision AND returns a non-pass — the two halves
-// of "never an auto-pass and never a silent fail".
-describe('baseline-diff grading + flake budget (V4 rung 3, F2)', () => {
+// never silent fail). The grade path is the baseline-diff-rung + structural-or-better
+// behavior the visual critic delegates to: a within-tolerance diff passes, a transient
+// above-tolerance diff is absorbed by the retry budget, and a PERSISTENT
+// above-tolerance diff against a healthy app surfaces a mismatch decision AND returns a
+// non-pass — the two halves of "never an auto-pass and never a silent fail".
+describe('baseline-diff grading + flake budget', () => {
   const baselineDiff = (tolerance?: number): VisualVerification =>
     tolerance === undefined
       ? { granularity: 'baseline-diff', path: [] }
@@ -364,8 +364,9 @@ describe('baseline-diff grading + flake budget (V4 rung 3, F2)', () => {
   });
 });
 
-// WHY (deliverable: wire baseline-diff into `replayAndGrade`, which Phase 3 left
-// throwing "owned by Phase 4"). The grader is injected exactly like the intent judge:
+// WHY (deliverable: wire baseline-diff into `replayAndGrade`, which the structural rung
+// left throwing "owned by the baseline-diff rung"). The grader is injected exactly like
+// the intent judge:
 // with it, `replayAndGrade` grades the rung; without it, it fails loud rather than
 // silently skipping the strictest rung.
 describe('replayAndGrade baseline-diff integration', () => {

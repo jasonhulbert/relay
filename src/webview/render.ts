@@ -1,16 +1,15 @@
-// The minimal HTML render of a `RunProjection` for the operator web view (M5
-// Phase 2). Pure string composition — no I/O, no server — so the render is
-// unit-testable on its own and the server (server.ts) only has to wire a request
-// to `projectRun` + this. It is strictly a view: it shows the structural,
-// supervision-facing fields the projection already lifted (status, provider,
-// critic verdict, evidence refs, blocked record) and CANNOT show the
-// orchestrator-visible narrative — `NodeView` does not carry it (C7, design §3.6).
+// The minimal HTML render of a `RunProjection` for the read-only operator web view.
+// Pure string composition — no I/O, no server — so the render is unit-testable on
+// its own and the server (server.ts) only has to wire a request to `projectRun` +
+// this. It is strictly a view: it shows the structural, supervision-facing fields
+// the projection already lifted (status, provider, critic verdict, evidence refs,
+// blocked record) and CANNOT show the orchestrator-visible narrative — `NodeView`
+// does not carry it (the critic sees evidence only).
 //
-// Scope: tree + per-node status/provider/verdict/evidence (Phase 2) plus the F5
-// budget burn and cost rollup (Phase 3) — per-node spend on each card and the
-// whole-run total in the header, sourced from the projection's cost fields. The
-// evidence drill-in panel is M9, not this; evidence refs render as their summary +
-// path only.
+// Scope: tree + per-node status/provider/verdict/evidence plus the budget burn and
+// cost rollup — per-node spend on each card and the whole-run total in the header,
+// sourced from the projection's cost fields. The evidence drill-in panel is a
+// separate surface; here evidence refs render as their summary + path only.
 import type {
   CriticVerdict,
   EvidenceRef,
@@ -37,15 +36,15 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// Dollars to the per-MTok precision the F5 rollup uses (6 dp), so the view reads
+// Dollars to the per-MTok precision the cost rollup uses (6 dp), so the view reads
 // identically to the persisted `cost.md`.
 function fmtUsd(cost: number): string {
   return `$${cost.toFixed(6)}`;
 }
 
-// One node's budget burn (F5): its priced total, and — surfaced not hidden (Rule
-// 11) — a count of any unpriced calls, since an unpriced call means the total
-// understates real spend rather than being exact. A node with no attributed call
+// One node's budget burn: its priced total, and — surfaced not hidden (Rule 11) — a
+// count of any unpriced calls, since an unpriced call means the total understates
+// real spend rather than being exact. A node with no attributed call
 // has `cost === null` and renders nothing.
 function costHtml(cost: NodeCost | null): string {
   if (cost === null) return '';
@@ -82,9 +81,10 @@ function evidenceHtml(refs: EvidenceRef[]): string {
   return `<ul class="evidence">${items}</ul>`;
 }
 
-// The route the evidence drill-in panel for `nodeId` is reached at (M9). Capture 0 is
-// the bare `/node/<id>`; later captures ride a `?capture=<n>` query — plain GET, no
-// stored state (I3). The single source for both the run-page open-evidence link and
+// The route the evidence drill-in panel for `nodeId` is reached at. Capture 0 is the
+// bare `/node/<id>`; later captures ride a `?capture=<n>` query — plain GET, no
+// stored state (the view writes nothing). The single source for both the run-page
+// open-evidence link and
 // the panel's prev/next navigation, so the served URLs always agree, and it mirrors
 // the dogfood `PANEL_FIXTURE.panelRouteFor` the seed's path resolves against.
 export function panelHref(nodeId: string, capture: number): string {
@@ -104,8 +104,8 @@ function nodeHtml(node: NodeView): string {
       ? ''
       : `<div class="blocked"><span class="blocked-reason">blocked: ${esc(node.blocked.reason)}</span> ` +
         `<span class="blocked-human">${esc(node.blocked.humanFacing)}</span></div>`;
-  // A node carrying evidence gets a drill-in control (M9): it opens that node's
-  // evidence panel (`/node/<id>`). The `data-testid` is the panel DOM contract the
+  // A node carrying evidence gets a drill-in control: it opens that node's evidence
+  // panel (`/node/<id>`). The `data-testid` is the panel DOM contract the
   // dogfood's semantic-action path clicks (PANEL_FIXTURE.selectors.openEvidence). A
   // node with no evidence has nothing to drill into, so it gets no control.
   const openEvidence =
@@ -210,7 +210,7 @@ function page(title: string, body: string): string {
   );
 }
 
-// The whole-run F5 rollup line for the header: the run total, call count, and any
+// The whole-run cost rollup line for the header: the run total, call count, and any
 // uncosted-call gap. `calls === 0` is a run that spent no model call (distinct from
 // an all-$0 run), so it reads "no model calls" rather than "$0".
 function runCostHtml(cost: RunCost): string {
@@ -229,7 +229,7 @@ function runCostHtml(cost: RunCost): string {
   );
 }
 
-// The whole-run page: header (run id, root outcome, created-at, F5 cost rollup),
+// The whole-run page: header (run id, root outcome, created-at, cost rollup),
 // the composed tree with per-node burn, and — surfaced not dropped (Rule 11) — any
 // orphan node files unreachable from the root.
 export function renderRunPage(projection: RunProjection): string {
@@ -252,10 +252,10 @@ export function renderRunPage(projection: RunProjection): string {
   return page(`relay · ${projection.runId}`, body);
 }
 
-// One evidence capture rendered inside the drill-in panel (M9): its semantic facts —
+// One evidence capture rendered inside the drill-in panel: its semantic facts —
 // kind, summary, path — which are exactly what the structural visual check grades
 // against (the node id is on the panel container). Drawn from the projection's
-// evidence refs, never from a re-read of the capture file (I3, single-sourced codec).
+// evidence refs, never from a re-read of the capture file (single-sourced codec).
 function panelCaptureHtml(ref: EvidenceRef, index: number, total: number): string {
   return (
     `<div class="panel-capture">` +
@@ -267,14 +267,14 @@ function panelCaptureHtml(ref: EvidenceRef, index: number, total: number): strin
   );
 }
 
-// The evidence drill-in panel SECTION for one node (M9, design §12 / D3): one
+// The evidence drill-in panel SECTION for one node: one
 // `<section data-testid="evidence-panel">` rendering ONE capture index with prev/next
 // navigation. Kept as its own builder so the node page can compose it ahead of the
-// human-supervisor detail (Phase 3) without disturbing this exact markup — the
-// `data-testid`s are the panel DOM contract the dogfood's PANEL_FIXTURE selectors
-// address, and the dogfood scopes its structural grade to this single section by
-// matching its first `</section>`, so the supervisor detail MUST stay a sibling after
-// it, never nested within (V7 isolation).
+// human-supervisor detail without disturbing this exact markup — the `data-testid`s
+// are the panel DOM contract the dogfood's PANEL_FIXTURE selectors address, and the
+// dogfood scopes its structural grade to this single section by matching its first
+// `</section>`, so the supervisor detail MUST stay a sibling after it, never nested
+// within (panel-scoped isolation).
 function nodePanelSection(node: NodeView, captureIndex: number): string {
   const refs = node.evidenceRefs;
   const total = refs.length;
@@ -309,15 +309,16 @@ function nodePanelSection(node: NodeView, captureIndex: number): string {
   );
 }
 
-// The per-node page (M9 evidence panel + Sol 1 human-supervisor detail). The evidence
+// The per-node page (evidence panel + human-supervisor detail). The evidence
 // drill-in panel renders ONE capture index and links to the next (navigation is plain
-// GET on `?capture=<n>`, I3); when a `supervisor` view is supplied (the server always
-// supplies it), the human-supervisor detail — self-report, evidence-file content,
-// critic verdict, and the decompose footprints/seams/rationale — renders as a SIBLING
-// section after the panel. That ordering is load-bearing: the dogfood scopes its
-// structural grade to the `evidence-panel` section alone, and the header + detail sit
-// outside it so neither can decide the verdict (V7 isolation point). The detail bounds
-// untrusted model prose at render (Phase 3); the full text stays on disk for audit.
+// GET on `?capture=<n>`, writing nothing); when a `supervisor` view is supplied (the
+// server always supplies it), the human-supervisor detail — self-report, evidence-file
+// content, critic verdict, and the decompose footprints/seams/rationale — renders as a
+// SIBLING section after the panel. That ordering is load-bearing: the dogfood scopes
+// its structural grade to the `evidence-panel` section alone, and the header + detail
+// sit outside it so neither can decide the verdict (the panel-scoped isolation point).
+// The detail bounds untrusted model prose at render; the full text stays on disk for
+// audit.
 export function renderNodePanel(
   projection: RunProjection,
   node: NodeView,
@@ -335,21 +336,21 @@ export function renderNodePanel(
   );
 }
 
-// The render-time cap on an untrusted-prose block (Sol 1, Phase 3). The full text is
+// The render-time cap on an untrusted-prose block. The full text is
 // persisted on disk for audit fidelity; the view shows at most this many characters
 // and points at the on-disk path. Bounds self-report and decompose-rationale prose —
 // model-authored free text that can be arbitrarily long — so one node's page cannot be
 // blown up by a runaway report.
 const PROSE_CAP = 2000;
 
-// The on-disk path of an evidence ref (Sol 1): `evidence/<runId>/<ref.path>`, the
+// The on-disk path of an evidence ref: `evidence/<runId>/<ref.path>`, the
 // pointer the bounded view shows so an auditor can read the full artifact. The ref
 // carries its own `runId`, so the path is self-contained.
 function evidenceDiskPath(ref: EvidenceRef): string {
   return `evidence/${ref.runId}/${ref.path}`;
 }
 
-// Render an untrusted-prose block bounded at `PROSE_CAP` (Sol 1, Phase 3). Always
+// Render an untrusted-prose block bounded at `PROSE_CAP`. Always
 // escaped (the text is model-authored free text — an injection sink otherwise). When
 // it exceeds the cap, only the head is shown, followed by a "full text at <path>"
 // pointer to the on-disk artifact — fail-visible truncation, never a silent cut.
@@ -365,7 +366,7 @@ function boundedProse(text: string, diskPath: string): string {
   );
 }
 
-// One on-disk evidence artifact for the supervisor detail (Sol 1): its kind, its disk
+// One on-disk evidence artifact for the supervisor detail: its kind, its disk
 // path, and either its bounded content or — when the ref is present but the file is
 // absent (a blocked node has a diff/self-report but no verdict; an errored executor may
 // leave a ref's file unwritten) — an inline "(artifact missing)" notice. The notice is
@@ -383,7 +384,7 @@ function evidenceArtifactHtml(item: EvidenceContent): string {
 }
 
 // The decompose JUDGMENT — per-child write footprints and the seam graph between the
-// children — lifted off the branch's layer manifest (Sol 1). This is orchestrator-
+// children — lifted off the branch's layer manifest. This is orchestrator-
 // visible reasoning the critic never receives; the human supervisor sees it here.
 function layerHtml(layer: LayerManifest): string {
   const footprints = Object.entries(layer.footprints)
@@ -405,16 +406,16 @@ function layerHtml(layer: LayerManifest): string {
   return `<div class="footprints"><h4>footprints</h4><ul>${footprints}</ul></div>${seams}`;
 }
 
-// The human-supervisor detail for one node (Sol 1, plan 03 Phase 3). The OTHER side of
-// the C7 split: it surfaces the orchestrator-visible narrative (self-report, learnings)
-// and the decompose judgment (footprints/seams/rationale) the critic never sees, plus
-// the on-disk evidence content the auditor reviews. Untrusted model prose is bounded at
+// The human-supervisor detail for one node. The OTHER side of the evidence-only-critic
+// split: it surfaces the orchestrator-visible narrative (self-report, learnings) and
+// the decompose judgment (footprints/seams/rationale) the critic never sees, plus the
+// on-disk evidence content the auditor reviews. Untrusted model prose is bounded at
 // render (`boundedProse`); the full text stays on disk. It is a sibling `<section>`
-// AFTER the evidence panel — outside the dogfood's `evidence-panel` grade scope (V7).
+// AFTER the evidence panel — outside the dogfood's `evidence-panel` grade scope.
 function renderSupervisorDetail(view: SupervisorView): string {
   const blocks: string[] = [];
 
-  // Self-report narrative — surfaced to the HUMAN, never the critic (C7). Bounded; the
+  // Self-report narrative — surfaced to the HUMAN, never the critic. Bounded; the
   // pointer is the self-report.md artifact when present, else the node file where the
   // record narrative is persisted.
   if (view.selfReport !== null) {
@@ -467,7 +468,7 @@ function renderSupervisorDetail(view: SupervisorView): string {
 
 // The error page. `projectRun` fails loud on an incoherent tree (missing root,
 // dangling child, cycle); the server renders this instead of a blank or partial
-// page so the operator sees the fault directly (Phase 1 notes, Rule 11).
+// page so the operator sees the fault directly (Rule 11).
 export function renderErrorPage(message: string): string {
   return page(
     'relay · error',

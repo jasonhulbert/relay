@@ -17,11 +17,12 @@ import {
 import type { BaselineContext, BaselineMismatch } from './baseline';
 import type { Surface } from './types';
 
-// The Phase 4 Validation, run for real against the fixture over a live browser:
+// The baseline-pipeline validation, run for real against the fixture over a live
+// browser:
 //   - a real scoped screenshot is captured-and-promoted as a baseline — binary in the
-//     content-addressed store, ref in `.relay/` (V6, F2);
-//   - re-capturing the same STATIC panel grades within tolerance (the V7-scoped region
-//     is byte-stable frame-to-frame), so the baseline-diff rung passes;
+//     content-addressed store, ref in `.relay/`;
+//   - re-capturing the same STATIC panel grades within tolerance (the element-scoped
+//     region is byte-stable frame-to-frame), so the baseline-diff rung passes;
 //   - a full-frame baseline drifts the moment the unrelated clock ticks, so a
 //     persistent above-tolerance diff against the healthy app surfaces a mismatch
 //     decision — never an auto-pass, never a silent fail.
@@ -74,7 +75,7 @@ integration('baseline pipeline against the fixture (live browser)', () => {
     await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
   });
 
-  test('promotes a real scoped screenshot — binary in the store, ref in .relay/ (V6, F2)', async () => {
+  test('promotes a real scoped screenshot — binary in the store, ref in .relay/', async () => {
     const tree = (await surface.snapshot()).tree;
     const panelRef = refForLabel(tree, 'panel');
     const ctx = ctxFor('panel-baseline');
@@ -93,7 +94,7 @@ integration('baseline pipeline against the fixture (live browser)', () => {
     expect(parsed.data).toMatchObject({ hash: ref.hash, version: 1, granularity: 'structural' });
   }, 180_000);
 
-  test('a re-capture of the static panel grades within tolerance (V7-scoped, byte-stable)', async () => {
+  test('a re-capture of the static panel grades within tolerance (element-scoped, byte-stable)', async () => {
     const tree = (await surface.snapshot()).tree;
     const panelRef = refForLabel(tree, 'panel');
     const ctx = ctxFor('panel-baseline');
@@ -108,7 +109,7 @@ integration('baseline pipeline against the fixture (live browser)', () => {
     expect(seen).toHaveLength(0);
   }, 180_000);
 
-  test('a full-frame baseline drifts as the clock ticks → mismatch surfaced (F2)', async () => {
+  test('a full-frame baseline drifts as the clock ticks → mismatch surfaced', async () => {
     const ctx = ctxFor('frame-baseline');
     // Promote the whole frame (includes the ticking clock) as the baseline.
     const first = await surface.screenshot();

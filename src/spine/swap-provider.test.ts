@@ -41,7 +41,7 @@ function fakeProvider(provider: string, calls: string[]): Executor {
 }
 
 // WHY: the swap-provider rung exists so a leaf that a provider cannot satisfy is
-// re-tried under a DIFFERENT provider, not the same one again (design §3.7). A
+// re-tried under a DIFFERENT provider, not the same one again. A
 // loop that re-dispatched the primary on swap-provider would burn the rung for
 // nothing — the cross-provider critic and the whole multi-provider premise rest on
 // this actually switching. This pins exactly that: two failures walk retry then
@@ -86,7 +86,7 @@ describe('the swap-provider rung re-dispatches under the other provider', () => 
     try {
       await seedFixture(relayDir);
 
-      // No swapExecutor: the swap rung must fall back to the primary so the M1–M3
+      // No swapExecutor: the swap rung must fall back to the primary so the
       // stub ladder behavior is unchanged.
       const result = await runOrchestrator(relayDir, 'root', {
         executor: fakeProvider('primary', calls),

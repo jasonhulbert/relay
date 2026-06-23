@@ -1,18 +1,17 @@
-// Phase 2 validation, the dogfood headline (design §12 / D3, M9): the SECOND pinned
-// dogfood driven through the full loop, and the first to exercise the entire visual
-// path. The committed drill-in-panel seed is compiled by the REAL intake compiler,
-// committed by the REAL `commitRoot`, decomposed, executed, and gated by the visual
-// critic bridge — which REPLAYS the seed's semantic-action path (V1) against the REAL
-// M5 web view serving the panel, grades it at structural granularity (V4) scoped to
-// the panel element (V7), and captures-and-promotes a baseline (V6). The loop reaches
-// `done` ONLY because the panel actually renders the node's evidence — break the panel
-// render and the structural facts vanish from the scoped snapshot, the grade fails, the
-// leaf blocks, and the root never reaches `done`. That coupling is the dogfood's point.
+// The dogfood headline: the SECOND pinned dogfood driven through the full loop, and the
+// first to exercise the entire visual path. The committed drill-in-panel seed is compiled
+// by the REAL intake compiler, committed by the REAL `commitRoot`, decomposed, executed,
+// and gated by the visual critic bridge — which REPLAYS the seed's semantic-action path
+// against the REAL read-only web view serving the panel, grades it at structural
+// granularity scoped to the panel element, and captures-and-promotes a baseline. The loop
+// reaches `done` ONLY because the panel actually renders the node's evidence — break the
+// panel render and the structural facts vanish from the scoped snapshot, the grade fails,
+// the leaf blocks, and the root never reaches `done`. That coupling is the dogfood's point.
 //
 // What is hermetic vs. real here: the intake compile + commit, the orchestrator state
-// machine, the brain decomposition, the M5 web view (started for real over HTTP and
-// serving the real `renderNodePanel`), the visual critic's replay + structural grade,
-// and the V6 baseline promote are all real. The ONE stand-in is the browser layer: the
+// machine, the brain decomposition, the read-only web view (started for real over HTTP
+// and serving the real `renderNodePanel`), the visual critic's replay + structural grade,
+// and the baseline promote are all real. The ONE stand-in is the browser layer: the
 // Surface drives the running server over plain GET (the same `panelHref` routes the
 // server serves), and its a11y "snapshot" is the served panel HTML scoped to the
 // element while its "screenshot" is that HTML's bytes — deterministic because the
@@ -54,10 +53,10 @@ const oneLeafBrain: Brain = {
   },
 };
 
-// The executor stand-in: in a real run it edits the M5 view to build the panel; here
-// the panel is the real production code already on disk and served, so it only produces
-// a gradeable change. The visual critic ignores the diff and grades the live render —
-// the same "checkout-emulating executor" shape the compactor dogfood uses.
+// The executor stand-in: in a real run it edits the read-only web view to build the
+// panel; here the panel is the real production code already on disk and served, so it
+// only produces a gradeable change. The visual critic ignores the diff and grades the
+// live render — the same "checkout-emulating executor" shape the compactor dogfood uses.
 const panelExecutor: Executor = {
   capabilities: () => ({
     provider: 'dogfood',
@@ -84,9 +83,9 @@ function parseTestId(ref: string): string {
   return m[1];
 }
 
-// Slice the element carrying `data-testid="<testid>"` out of a served page — the V7
-// scope (only this subtree is graded). The panel is a single `<section>` with no nested
-// section, so matching the opening tag's close is unambiguous.
+// Slice the element carrying `data-testid="<testid>"` out of a served page — the
+// element scope (only this subtree is graded). The panel is a single `<section>` with no
+// nested section, so matching the opening tag's close is unambiguous.
 function extractElement(html: string, testid: string): string {
   const marker = `data-testid="${testid}"`;
   const at = html.indexOf(marker);
@@ -170,9 +169,9 @@ describe('the drill-in panel dogfood runs through the real loop from intake to d
     const store = new BaselineStore(join(base, 'baseline-store')); // sibling of `.relay/`
     let started: StartedWebView | undefined;
     try {
-      // The deterministic fixture (V3): a fresh seeded `.relay/` run whose leaf carries
-      // the ordered captures the panel renders. The M5 web view hosts the panel against
-      // it; the panel is reached over plain GET (I3).
+      // The deterministic fixture: a fresh seeded `.relay/` run whose leaf carries
+      // the ordered captures the panel renders. The read-only web view hosts the panel
+      // against it; the panel is reached over plain GET.
       const fx = await buildDrillInPanelFixture(join(base, 'fixture'));
       started = await startWebView({ relayDir: fx.relayDir });
       const { surface, interactions } = webPanelSurface(started.url);
@@ -184,7 +183,7 @@ describe('the drill-in panel dogfood runs through the real loop from intake to d
       await commitRoot(relayDir, seed, { createdAt: '2026-06-20T00:00:00.000Z' });
 
       // The full loop: decompose → execute → visual critic (replay + structural grade +
-      // V6 promote) → done. The visual critic IS the done-ness gate.
+      // baseline promote) → done. The visual critic IS the done-ness gate.
       const result = await runOrchestrator(relayDir, 'root', {
         executor: panelExecutor,
         brain: oneLeafBrain,
@@ -204,7 +203,7 @@ describe('the drill-in panel dogfood runs through the real loop from intake to d
       expect(result.leafStatuses[leafId]).toBe('done');
 
       // Validation 1: the leaf was certified by the visual critic at structural
-      // granularity — and the semantic-action path was REPLAYED (V1): open the node,
+      // granularity — and the semantic-action path was REPLAYED: open the node,
       // advance one capture, exactly the seed's path against the panel DOM contract.
       const leaf = await readNode(relayDir, leafId);
       expect(leaf.status).toBe('done');
@@ -216,7 +215,7 @@ describe('the drill-in panel dogfood runs through the real loop from intake to d
       ]);
 
       // Validation 2: the first structural-or-better pass promoted a baseline — the ref
-      // in `.relay/`, the binary in the sibling content-addressed store (V6 / F2).
+      // in `.relay/`, the binary in the sibling content-addressed store.
       const ref = await readBaselineRef(relayDir, 'drill-in-panel');
       expect(ref).not.toBeNull();
       expect(ref?.version).toBe(1);

@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import { checkFileBoundary, checkInterface, seamIsCheckable } from './seam';
 
-// WHY: `seamIsCheckable` is the F3 forcing function the scheduler reads. If a deferred
-// kind (no v0.1 predicate) read as checkable, the scheduler would let two siblings
-// merge in parallel across a seam nothing can verify — the exact unsafe direction A2
-// forbids. These pin which kinds the gate trusts.
-describe('seamIsCheckable — the F3 forcing gate', () => {
-  test('the two v0.1 kinds are checkable; the deferred kinds are not', () => {
+// WHY: `seamIsCheckable` is the seam-checkability forcing function the scheduler reads.
+// If a deferred kind (no code predicate yet) read as checkable, the scheduler would let
+// two siblings merge in parallel across a seam nothing can verify — the exact unsafe
+// direction the concurrency law forbids. These pin which kinds the gate trusts.
+describe('seamIsCheckable — the seam-checkability forcing gate', () => {
+  test('the two checkable kinds are checkable; the deferred kinds are not', () => {
     expect(seamIsCheckable('file-boundary')).toBe(true);
     expect(seamIsCheckable('interface')).toBe(true);
     expect(seamIsCheckable('http')).toBe(false);

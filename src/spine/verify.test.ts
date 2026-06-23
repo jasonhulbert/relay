@@ -14,7 +14,7 @@ afterEach(async () => {
   await rm(worktree, { recursive: true, force: true });
 });
 
-// WHY: the deterministic kinds are the critic's cheap ground truth (§6.3). If a
+// WHY: the deterministic kinds are the critic's cheap ground truth. If a
 // `command`/`test` ran in the wrong directory it would grade the orchestrator's
 // cwd, not the produced change — so these pin that the check sees the WORKTREE and
 // that exit 0 is the only pass.
@@ -84,7 +84,7 @@ describe('runDeterministicVerifications filters to the code-checkable kinds', ()
     expect(results.every((r) => r.pass)).toBe(true);
   });
 
-  test('isDeterministicKind classifies the §6.3 kinds', () => {
+  test('isDeterministicKind classifies the deterministic kinds', () => {
     expect(isDeterministicKind('command')).toBe(true);
     expect(isDeterministicKind('test')).toBe(true);
     expect(isDeterministicKind('artifact')).toBe(true);

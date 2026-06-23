@@ -1,12 +1,14 @@
+// See docs/relay-spec.md for the architecture this implements.
+//
 // Executors are disposable single-purpose workers behind a uniform adapter, so
-// the loop never special-cases a provider (design §5, §3.1). A fresh executor is
+// the loop never special-cases a provider. A fresh executor is
 // spawned per leaf, does one outcome in its own worktree, and dies. It returns a
 // compact verdict — `diff` (produced change, the critic's evidence) plus a
 // narrative `selfReport` (orchestrator-only) — never its transcript, and it
-// never writes `.relay/` (only the owning orchestrator does, C2).
+// never writes `.relay/` (only the owning orchestrator does).
 //
-// As of M4 a real provider CLI (`claude -p`, then `codex exec`) sits behind this
-// same contract (see adapters/). The stubs below stay for the M1–M3 spine tests:
+// A real provider CLI (`claude -p`, then `codex exec`) sits behind this
+// same contract (see adapters/). The stubs below stay for the hermetic spine tests:
 // they do a trivial deterministic change so the load-bearing mechanics (journal,
 // projection, rehydration, ladder) can be exercised without a model.
 import { join } from 'node:path';
@@ -16,11 +18,11 @@ import type { McpServerConfig, OutcomeSpec } from '../relay-state/index';
 // The granted-MCP-server descriptor is a durable capability type, so it lives in
 // relay-state alongside the other `.relay/` contracts; re-exported here so the
 // executor adapters keep importing it from `../executor` (the critic grants the
-// same shape — design §3.6, C9). The real code-owned MCP loop is Phase 5.
+// same shape). The real code-owned MCP loop is not yet built.
 export type { McpServerConfig } from '../relay-state/index';
 
 // What an executor is handed beyond its unit and sandbox: the keep-lesson
-// reflections already accumulated on the node (design §3.5), so a retried or
+// reflections already accumulated on the node, so a retried or
 // re-decomposed unit does not relearn what an earlier attempt established.
 export interface ExecutorContext {
   learnings: readonly string[];
@@ -43,15 +45,15 @@ export interface ExecutorInput {
   // this ref. Absent ⇒ the empty `git init` baseline path (hermetic / non-clean
   // workspace), so injected-stub callers are unaffected.
   baseRef?: string;
-  // Granted MCP servers (empty until the Phase 4 MCP loop populates them).
+  // Granted MCP servers (empty until the code-owned MCP loop populates them).
   mcpServers: readonly McpServerConfig[];
 }
 
-// Per-call usage parsed from the provider stream (F5, design §8). Tokens are
+// Per-call usage parsed from the provider stream (the cost rollup). Tokens are
 // ground truth; dollars are direct when the provider reports them (Claude
 // `total_cost_usd`) or `null` when they must be derived from a price table
-// (Codex, Phase 5). Phase 1 captures the raw numbers; per-outcome attribution and
-// run rollups are Phase 5.
+// (Codex). The raw numbers are captured now; per-outcome attribution and
+// run rollups are not yet built.
 export interface ExecutorUsage {
   provider: string;
   // The concrete model the provider ran, when the stream names it.
@@ -64,27 +66,27 @@ export interface ExecutorUsage {
   // Wall-clock the spine observed around the dispatch.
   wallClockMs: number;
   // Direct dollar cost when the provider reports it; `null` when it must be
-  // derived from a local price table (Phase 5).
+  // derived from a local price table (not yet built).
   costUsd: number | null;
 }
 
 export interface ExecutorResult {
-  // `produced_changes` (design §5): the diff the critic grades. Orchestrator and
+  // `produced_changes`: the diff the critic grades. Orchestrator and
   // critic both see this.
   diff: string;
   // Narrative for the orchestrator only — structurally withheld from the critic
-  // by the C7 projection (§3.6).
+  // by the evidence-only projection (orchestrator-visible narrative is never admissible to the critic).
   selfReport: string;
-  // Per-call usage (F5). Always present; the stubs report a zero record.
+  // Per-call usage. Always present; the stubs report a zero record.
   usage: ExecutorUsage;
   exitStatus: number;
   // A sizing judgment the executor may raise instead of a gradeable change: the
-  // outcome is too large to land as one leaf (design §3.9). It preempts the
+  // outcome is too large to land as one leaf. It preempts the
   // critic and drives the ladder straight to promote (leaf→branch). Absent means
   // a normal attempt the critic then grades.
   sizeSignal?: 'too-big';
   // The repo-relative paths this attempt actually wrote, for the footprint
-  // hint/loud-violation check (A3, design §3.8): the orchestrator compares them to
+  // hint/loud-violation check (a footprint escape is loud): the orchestrator compares them to
   // the leaf's declared footprint and throws a `FootprintViolation` on a write that
   // escapes it. Absent means the executor reports no write footprint, so no check
   // runs — the hermetic stub path, which stays byte-identical.
@@ -92,7 +94,7 @@ export interface ExecutorResult {
 }
 
 // What an adapter supports, so the loop can choose rungs (resume, provider swap)
-// without provider special-casing (design §5). Reported by `capabilities()`.
+// without provider special-casing. Reported by `capabilities()`.
 export interface ExecutorCapabilities {
   provider: string;
   // Structured (JSON/JSONL) stream output the spine can parse deterministically.
@@ -101,7 +103,7 @@ export interface ExecutorCapabilities {
   resume: boolean;
   // Sandboxed file writes scoped to the worktree.
   sandbox: boolean;
-  // Granted MCP tools inside the code-owned loop (C9).
+  // Granted MCP tools inside the code-owned loop.
   mcp: boolean;
 }
 
@@ -112,7 +114,7 @@ export interface Executor {
 
 // The capability + usage shapes the stubs report: a stub runs no model, so it has
 // no structured stream, no resume, no real sandbox, no MCP, and produces no
-// tokens or cost. Shared so the M1–M3 test executors stay consistent.
+// tokens or cost. Shared so the hermetic test executors stay consistent.
 export const stubCapabilities: ExecutorCapabilities = {
   provider: 'stub',
   json: false,
@@ -148,13 +150,13 @@ export const stubExecutor: Executor = {
   },
 };
 
-// A controllable executor for M3's deterministic ladder tests. It produces the
+// A controllable executor for the deterministic ladder tests. It produces the
 // same trivial change as `stubExecutor`, but can raise a scripted `too-big`
 // sizing judgment on a given attempt so a test can drive the ladder's
 // promote-on-too-big path through a real executor seam rather than the
 // controller boundary alone. The signal per call is consumed in order; the final
 // entry repeats once the script is exhausted, so a one-entry script is a
-// constant. The real provider CLIs arrive at M4.
+// constant. The real provider CLIs sit behind the same contract.
 export interface ScriptedExecutorOptions {
   // Size judgment per call, in order; the final entry repeats thereafter.
   // `ok` makes a normal gradeable change, `too-big` raises the sizing signal.

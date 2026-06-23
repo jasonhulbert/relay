@@ -21,7 +21,7 @@ const TABLE: PriceTable = {
   'test-mini': { inputPerMTok: 1, cachedInputPerMTok: 0.1, outputPerMTok: 4 },
 };
 
-// WHY: F5's whole point is a deterministic dollar figure (Rule 5). A provider that
+// WHY: the cost rollup's whole point is a deterministic dollar figure (Rule 5). A provider that
 // reports its own cost (Claude `total_cost_usd`) must be trusted as-is, never
 // re-derived; a token-only provider (Codex) must be priced from the table by the
 // SAME buckets the adapter splits — getting either wrong silently misattributes spend.

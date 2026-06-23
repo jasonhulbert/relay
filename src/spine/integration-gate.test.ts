@@ -62,7 +62,7 @@ function spyCritic(result: 'pass' | 'fail'): { critic: CriticSpawn; calls: () =>
 }
 
 // A critic that throws if reached — pins that a deterministic failure short-circuits
-// before any model call (Rule 5: the cheap checks gate the expensive one).
+// before any model call (the cheap checks gate the expensive one).
 const exploding: CriticSpawn = (): Promise<CriticVerdict> => {
   throw new Error('critic must not run after a deterministic-layer failure');
 };
@@ -150,8 +150,8 @@ describe('layer 1 — footprint from the WAL', () => {
   });
 });
 
-// WHY (deterministic-first, layer 2): the seam predicates verify the pinned contracts
-// (A8) the parent authored — code answers, not a model. A broken seam must fail here,
+// WHY (deterministic-first, layer 2): the seam predicates verify the pinned seam
+// contracts the parent authored — code answers, not a model. A broken seam must fail here,
 // after the footprint layer and before the critic.
 describe('layer 2 — seam predicates', () => {
   test('an overlapping file-boundary seam fails at the seam layer, before the critic', async () => {

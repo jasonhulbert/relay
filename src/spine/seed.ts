@@ -1,9 +1,8 @@
-// Hand-seeded fixture root: a branch with one leaf (M1 assumption). The real
-// intake compiler that commits the `.relay/` root from a human conversation is
-// M6 (design §3.11); here we write the seed directly so the walking-skeleton loop
-// has a tree to drive. Seeding writes the initial state with the plain Phase-1
-// writers (no transition to journal yet — there is no prior state to be atomic
-// against).
+// Hand-seeded fixture root: a branch with one leaf. The real intake compiler that
+// commits the `.relay/` root from a human conversation is not built yet; here we
+// write the seed directly so the walking-skeleton loop has a tree to drive.
+// Seeding writes the initial state with the plain direct writers (no transition to
+// journal yet — there is no prior state to be atomic against).
 import { writeManifest, writeNode } from '../relay-state/index';
 import type { NodeRecord, OutcomeSpec, RootManifest } from '../relay-state/index';
 
@@ -11,11 +10,11 @@ export interface SeedOptions {
   runId?: string;
   rootId?: string;
   leafId?: string;
-  // The leaf's command verification (design §6.3, kind `command`). Defaults to a
+  // The leaf's command verification (kind `command`). Defaults to a
   // deterministic always-pass check so the skeleton's happy path is hermetic.
   check?: string;
   // The concrete outcome the executor must achieve. Omitted keeps the generic
-  // walking-skeleton wording (M1–M3 fixture tests); a real run (the M4 dev
+  // walking-skeleton wording (the hermetic fixture tests); a real run (the dev
   // harness) passes the operator's actual outcome so the executor aims at it.
   outcome?: string;
 }
@@ -26,7 +25,7 @@ export interface SeedResult {
   leafId: string;
 }
 
-// M2 adds the sub-orchestrator level between root and leaf.
+// The two-level fixture adds the sub-orchestrator level between root and leaf.
 export interface HierarchySeedResult extends SeedResult {
   midId: string;
 }
@@ -49,7 +48,7 @@ export async function seedFixture(relayDir: string, opts: SeedOptions = {}): Pro
     rootId,
     spec: commandSpec('the seeded run completes end-to-end', check),
     // Hand-seeded fixture: no human intake, so the orientation sketch is empty (the
-    // real intake compiler, M6, commits a populated one).
+    // real intake compiler commits a populated one).
     sketch: { notes: [] },
     // Fixed so the fixture is byte-deterministic across runs (kill-and-rehydrate
     // compares the resulting `.relay/` records exactly).
@@ -93,8 +92,8 @@ export async function seedFixture(relayDir: string, opts: SeedOptions = {}): Pro
 }
 
 // Hand-seeded two-level fixture: a root branch whose one child is itself a branch
-// (the sub-orchestrator) that owns one leaf (M2 assumption). This is the smallest
-// tree that exercises one-process-per-orchestrator (C6): the root spawns the mid
+// (the sub-orchestrator) that owns one leaf. This is the smallest
+// tree that exercises one-process-per-orchestrator: the root spawns the mid
 // branch as a separate process, which runs the leaf in its own region. Same
 // fixed-timestamp determinism as `seedFixture` so kill-and-rehydrate can compare
 // the resulting `.relay/` byte-for-byte.

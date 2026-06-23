@@ -1,22 +1,23 @@
-// The Codex executor adapter (design §5, F5), the second real provider behind the
-// same `Executor` contract as the Claude adapter. Drives `codex exec --json
-// --sandbox workspace-write` in the leaf's sandbox worktree, parses the JSONL
-// event stream for a compact self-report and per-call usage, and reads the
-// produced change back as a git diff. The orchestrator loop never special-cases
-// the provider — the Claude↔Codex swap-provider rung relies on exactly this
-// parity (design §3.7).
+// The Codex executor adapter (per-call usage attribution), the second real
+// provider behind the same `Executor` contract as the Claude adapter. Drives
+// `codex exec --json --sandbox workspace-write` in the leaf's sandbox worktree,
+// parses the JSONL event stream for a compact self-report and per-call usage, and
+// reads the produced change back as a git diff. The orchestrator loop never
+// special-cases the provider — the Claude↔Codex swap-provider rung relies on
+// exactly this parity (the self-sufficient summary contract).
 //
-// The same two audiences come out of one run (the C7 split the projection later
-// enforces):
+// The same two audiences come out of one run (the evidence-only critic split the
+// projection later enforces — orchestrator-visible narrative is NEVER admissible
+// to the critic):
 //   - critic-visible: the `diff` (produced change) — captured from the worktree
 //     via git, never from the model's narrative;
 //   - orchestrator-visible: the `selfReport` — the stream's final `agent_message`
 //     text, a bounded summary, NOT the transcript.
 //
 // MCP is NOT wired here. Codex grants MCP servers through config, not a single
-// CLI flag like Claude, and the code-owned MCP loop is Phase 5 — so `capabilities`
-// reports `mcp: false` and `run` fails loud (Rule 11) if servers are granted
-// before that wiring exists, rather than silently dropping a grant.
+// CLI flag like Claude, and the code-owned MCP loop is not yet built — so
+// `capabilities` reports `mcp: false` and `run` fails loud (Rule 11) if servers are
+// granted before that wiring exists, rather than silently dropping a grant.
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { captureDiff, establishBaseline } from './worktree-diff';
@@ -35,7 +36,7 @@ import type {
 } from '../executor';
 import type { OutcomeSpec } from '../../relay-state/index';
 
-// The cost guardrail (design §8, M4), mirroring `DEFAULT_CLAUDE_MODEL`: with no
+// The cost guardrail (the cost rollup), mirroring `DEFAULT_CLAUDE_MODEL`: with no
 // per-role override the adapter pins Codex's cheapest model so dev/eval spend
 // stays bounded. A default, not auto-routing (Rule 5). Pinned from the account's
 // model list at build time (`gpt-5.4-mini` — "Small, fast, and cost-efficient
@@ -69,14 +70,15 @@ export function buildCodexArgs(
   return [
     'exec',
     '--json',
-    // Worktree-scoped write posture (workspace-substrate §7). `workspace-write` is an
+    // Worktree-scoped write posture (the workspace substrate). `workspace-write` is an
     // OS-level sandbox confining ALL writes — file edits AND subprocesses — to the cwd
     // (the leaf worktree), so an outcome naming an absolute path outside it cannot
     // write there. Now that the Claude adapter dropped `bypassPermissions` for
     // `acceptEdits`, both providers are dir-scoped and the old absolute-path escape
     // works on NEITHER. Asymmetry to keep honest: Codex confines subprocesses too,
     // while Claude's `acceptEdits` scopes only the file-edit tools (its `Bash` is the
-    // residual gap until the OS-sandbox milestone) — see `claude.ts` buildClaudeArgs.
+    // residual gap until OS-level subprocess confinement lands) — see `claude.ts`
+    // buildClaudeArgs.
     '--sandbox',
     'workspace-write',
     '--skip-git-repo-check',
@@ -98,7 +100,7 @@ export interface ParsedCodexStream {
   cachedInputTokens: number;
   outputTokens: number;
   // Always `null`: Codex reports tokens, not dollars; the price-table derivation
-  // is Phase 6 (design §8).
+  // into the cost rollup is not yet built.
   costUsd: number | null;
 }
 
@@ -216,7 +218,8 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
 
       const parsed = parseCodexStream(stdout);
       // Capture the produced change AFTER the run, from the worktree — never from
-      // the model's narrative (which the critic must not see anyway, C7). On a
+      // the model's narrative (which the critic must not see anyway — narrative is
+      // never admissible to the critic). On a
       // checkout, diff against the per-run base (HEAD may have moved if the model
       // committed); otherwise against the baseline commit.
       const diff = await captureDiff(worktree, baseRef);

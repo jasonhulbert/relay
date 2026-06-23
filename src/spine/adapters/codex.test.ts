@@ -53,11 +53,12 @@ const SAMPLE_STREAM = [
   }),
 ].join('\n');
 
-// WHY: F5 and the C7 split both ride on this parse. The orchestrator must get the
-// model's COMPACT final summary as the self-report — not an earlier message or the
-// tool transcript — and faithful per-call token numbers split into uncached vs
-// cached the same way the Claude adapter reports them, or cost attribution
-// (Phase 6) and provider-agnostic usage are built on fiction.
+// WHY: per-call usage attribution and the evidence-only-critic split both ride on
+// this parse. The orchestrator must get the model's COMPACT final summary as the
+// self-report — not an earlier message or the tool transcript — and faithful
+// per-call token numbers split into uncached vs cached the same way the Claude
+// adapter reports them, or cost attribution and provider-agnostic usage are built
+// on fiction.
 describe('parseCodexStream', () => {
   test('extracts the final agent message and splits cached input tokens', () => {
     const p = parseCodexStream(SAMPLE_STREAM);
@@ -73,7 +74,7 @@ describe('parseCodexStream', () => {
     expect(p.inputTokens).toBe(73354 - 61824);
     expect(p.cachedInputTokens).toBe(61824);
     expect(p.outputTokens).toBe(2371);
-    // Codex reports tokens, not dollars — the price-table derivation is Phase 6.
+    // Codex reports tokens, not dollars — the price-table derivation is not yet built.
     expect(p.costUsd).toBeNull();
     // The stream never names the model; the adapter fills it from `--model`.
     expect(p.model).toBeNull();
@@ -89,7 +90,7 @@ describe('parseCodexStream', () => {
   });
 });
 
-// WHY: the cost guardrail (M4) is "cheapest model unless overridden," mirrored from
+// WHY: the cost guardrail is "cheapest model unless overridden," mirrored from
 // the Claude adapter. The `--model` flag must ALWAYS be present (never the CLI's
 // pricier default), pinned to DEFAULT_CODEX_MODEL by default and to the override
 // when one is given — that single knob is what bounds dev/eval spend.
@@ -119,7 +120,7 @@ describe('buildCodexArgs cost guardrail', () => {
     expect(args[args.length - 1]).toContain('do a thing');
   });
 
-  // WHY: Phase 5 wires Codex's MCP grant through config (`-c mcp_servers.*`), not a
+  // WHY: Codex's MCP grant is wired through config (`-c mcp_servers.*`), not a
   // single flag like Claude. A granted server must appear as the dotted config
   // overrides Codex parses as TOML, so the agent can connect to the spine-hosted
   // server as a client.
@@ -136,7 +137,7 @@ describe('buildCodexArgs cost guardrail', () => {
 });
 
 describe('codexExecutor capabilities', () => {
-  test('reports json/resume/sandbox/mcp support (Phase 5 wires the MCP grant)', () => {
+  test('reports json/resume/sandbox/mcp support (the config-routed MCP grant is wired)', () => {
     const caps = codexExecutor().capabilities();
     expect(caps).toEqual({
       provider: 'codex',
@@ -184,7 +185,7 @@ describe.skipIf(!process.env.RELAY_E2E)('codexExecutor end-to-end (real CLI)', (
       expect(result.usage.model).toBe(DEFAULT_CODEX_MODEL);
       expect(result.usage.outputTokens).toBeGreaterThan(0);
       expect(result.usage.wallClockMs).toBeGreaterThan(0);
-      // Codex dollars are price-table-derived (Phase 6), so direct cost is null.
+      // Codex dollars are price-table-derived (not yet built), so direct cost is null.
       expect(result.usage.costUsd).toBeNull();
     } finally {
       await rm(base, { recursive: true, force: true });

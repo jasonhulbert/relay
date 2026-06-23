@@ -6,11 +6,12 @@ import { LocalHostRunner } from './local-host-runner';
 import { startFixture } from './fixture';
 import type { StartedFixture } from './fixture';
 
-// The Phase 2 Validation, run for real: a visual check runs on the tier-A session
+// The tier-A validation, run for real: a visual check runs on the tier-A session
 // (a HEADED browser on the logged-in macOS session) against the fixture page, and
-// the F4 wait-fraction metric is recorded for the run and visible in the run summary.
+// the surface-wait fraction metric is recorded for the run and visible in the run
+// summary.
 //
-// GATED, like the Phase 1 surface integration test: `npm test` stays hermetic (no
+// GATED, like the surface integration test: `npm test` stays hermetic (no
 // test spawns a real browser/process), so this is opt-in and skipped otherwise. It
 // drives a HEADED browser, so run it on the logged-in macOS session with the
 // Playwright browser installed:
@@ -34,7 +35,7 @@ integration('LocalHostRunner against the fixture (tier-A, headed)', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  test('runs a visual check on the tier-A session and records the F4 metric', async () => {
+  test('runs a visual check on the tier-A session and records the wait-fraction metric', async () => {
     const lines: string[] = [];
     const runner = new LocalHostRunner({
       home,
@@ -66,8 +67,8 @@ integration('LocalHostRunner against the fixture (tier-A, headed)', () => {
       return after.value;
     });
 
-    // F4 is recorded for the run: a real headed session spends real time, so the
-    // wait fraction is a positive, valid ratio.
+    // The metric is recorded for the run: a real headed session spends real time, so
+    // the wait fraction is a positive, valid ratio.
     expect(result.value).toContain('ran');
     expect(result.surfaceWaitMs).toBeGreaterThan(0);
     expect(result.runWallClockMs).toBeGreaterThan(0);
@@ -75,7 +76,7 @@ integration('LocalHostRunner against the fixture (tier-A, headed)', () => {
     expect(result.waitFraction).toBeLessThanOrEqual(1);
 
     // And it is visible in the run summary.
-    expect(result.summary).toContain('F4 surface-wait fraction:');
+    expect(result.summary).toContain('surface-wait fraction:');
     expect(lines).toContain(result.summary);
   }, 180_000);
 });

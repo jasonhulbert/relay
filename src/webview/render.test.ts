@@ -79,10 +79,10 @@ describe('webview render', () => {
     expect(html).toContain('stray');
   });
 
-  // WHY: Phase 3 — budget burn is the operator's cost-per-outcome signal. The
-  // per-node total must render on the card and the run total in the header, both at
-  // the 6-dp precision the F5 rollup uses so the view reads identically to the
-  // persisted `cost.md`.
+  // WHY: budget burn is the operator's cost-per-outcome signal. The per-node total
+  // must render on the card and the run total in the header, both at the 6-dp
+  // precision the cost rollup uses so the view reads identically to the persisted
+  // `cost.md`.
   test('renders per-node burn and the per-run cost total', () => {
     const burnt = leaf({
       id: 'leaf-1',
@@ -142,10 +142,10 @@ describe('webview render', () => {
   });
 });
 
-// The M9 evidence drill-in panel render. These pin the panel DOM contract the dogfood
+// The evidence drill-in panel render. These pin the panel DOM contract the dogfood
 // drives (the `data-testid`s and `/node/<id>` route shape), capture navigation, and
-// the V7 isolation the structural visual check relies on.
-describe('webview evidence drill-in panel (M9)', () => {
+// the panel-scoped isolation the structural visual check relies on.
+describe('webview evidence drill-in panel', () => {
   const ref = (kind: EvidenceRef['kind'], summary: string, path: string): EvidenceRef => ({
     runId: 'run-1',
     path,
@@ -153,8 +153,8 @@ describe('webview evidence drill-in panel (M9)', () => {
     summary,
   });
 
-  // Extract the `evidence-panel` section the way a scoped snapshot/screenshot does
-  // (V7): only this subtree is graded, so a test asserting scoping reads exactly it.
+  // Extract the `evidence-panel` section the way a scoped snapshot/screenshot does:
+  // only this subtree is graded, so a test asserting scoping reads exactly it.
   function panelScope(html: string): string {
     const at = html.indexOf('data-testid="evidence-panel"');
     expect(at).toBeGreaterThan(-1);
@@ -217,10 +217,10 @@ describe('webview evidence drill-in panel (M9)', () => {
     expect(scope).toContain('href="/node/sample-leaf?capture=2"');
   });
 
-  // WHY (V7 isolation, the whole reason the check is element-scoped): the capture facts
-  // must live INSIDE the scoped panel, not in the surrounding header. If a graded fact
-  // leaked into an unscoped region, a check scoped to the panel could pass on the wrong
-  // evidence — the false-verdict failure mode V7 closes.
+  // WHY (panel-scoped isolation, the whole reason the check is element-scoped): the
+  // capture facts must live INSIDE the scoped panel, not in the surrounding header. If a
+  // graded fact leaked into an unscoped region, a check scoped to the panel could pass on
+  // the wrong evidence — the false-verdict failure mode the panel scoping closes.
   test('the graded capture facts are inside the scoped panel, not the header', () => {
     const node = withEvidence();
     const html = renderNodePanel(projection({}), node, 1);
@@ -259,12 +259,12 @@ describe('webview evidence drill-in panel (M9)', () => {
   });
 });
 
-// The Sol 1 human-supervisor detail (plan 03 Phase 3): the OTHER side of the C7 split,
+// The human-supervisor detail: the OTHER side of the evidence-only-critic split,
 // rendered as a sibling section after the evidence panel. It surfaces the orchestrator-
 // visible narrative (self-report, learnings, decompose footprints/seams) and the on-disk
 // evidence content the auditor reviews — bounded at render — none of which the critic
 // ever receives.
-describe('webview supervisor detail (plan 03 Phase 3)', () => {
+describe('webview supervisor detail', () => {
   const ref = (kind: EvidenceRef['kind'], path: string): EvidenceRef => ({
     runId: 'run-1',
     path,
@@ -400,9 +400,9 @@ describe('webview supervisor detail (plan 03 Phase 3)', () => {
     expect(html).toContain('&lt;img src=x onerror=1&gt;');
   });
 
-  // WHY (V7 isolation, the dogfood's invariant): the supervisor detail must be a sibling
-  // section AFTER the evidence panel, never nested in it — the dogfood scopes its
-  // structural grade to the first `evidence-panel` section, so detail content leaking
+  // WHY (panel-scoped isolation, the dogfood's invariant): the supervisor detail must be
+  // a sibling section AFTER the evidence panel, never nested in it — the dogfood scopes
+  // its structural grade to the first `evidence-panel` section, so detail content leaking
   // into that scope could decide the verdict on the wrong facts. This pins the ordering.
   test('the supervisor detail is a sibling after the evidence panel, outside its scope', () => {
     const node = leaf({

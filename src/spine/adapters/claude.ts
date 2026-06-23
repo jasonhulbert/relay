@@ -1,18 +1,18 @@
-// The Claude executor adapter (design §5, F5). Drives `claude -p --output-format
+// The Claude executor adapter (with per-call usage attribution). Drives `claude -p --output-format
 // stream-json --verbose` in the leaf's sandbox worktree, parses the JSONL stream
 // for a compact self-report and per-call usage, and reads back the produced change
 // as a git diff. It implements the same `Executor` contract as the stubs, so the
 // orchestrator loop never special-cases the provider.
 //
-// Two audiences come out of one run (the C7 split the projection later enforces):
+// Two audiences come out of one run (the evidence-only-critic split the projection
+// later enforces — orchestrator-visible narrative is NEVER admissible to the critic):
 //   - critic-visible: the `diff` (produced change) — captured from the worktree,
 //     never from the model's narrative;
 //   - orchestrator-visible: the `selfReport` — the stream's final `result` text,
-//     a bounded summary, NOT the transcript (the "bounded reflection" the phase
-//     calls for).
+//     a bounded summary, NOT the transcript (the "bounded reflection").
 //
-// The real code-owned MCP tool loop is Phase 4; `mcpServers` is threaded into the
-// CLI here so the surface is stable, but the orchestrator passes none yet.
+// The real code-owned MCP tool loop is not yet built; `mcpServers` is threaded into
+// the CLI here so the surface is stable, but the orchestrator passes none yet.
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { captureDiff, establishBaseline } from './worktree-diff';
@@ -28,7 +28,7 @@ import type {
 import type { ExecutorContext } from '../executor';
 import type { OutcomeSpec } from '../../relay-state/index';
 
-// The cost guardrail (design §8, M4): with no per-role override the adapter pins
+// The cost guardrail (the cost rollup): with no per-role override the adapter pins
 // Claude's cheapest model so dev/eval spend stays bounded. A default, not
 // auto-routing (Rule 5) — `ClaudeAdapterOptions.model` is the single knob that
 // raises it, and the later Codex adapter reuses the same per-role pattern.
@@ -99,7 +99,7 @@ export function buildClaudeArgs(
     '--output-format',
     'stream-json',
     '--verbose',
-    // Worktree-scoped write posture (workspace-substrate §7), symmetric to Codex's
+    // Worktree-scoped write posture (the workspace substrate), symmetric to Codex's
     // `--sandbox workspace-write`. `acceptEdits` auto-accepts file edits INSIDE the
     // cwd (the leaf worktree) so a non-interactive `-p` run makes its change without a
     // hanging prompt, but does NOT bypass the working-directory boundary: a Write/Edit
@@ -244,7 +244,8 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
 
       const parsed = parseClaudeStream(stdout);
       // Capture the produced change AFTER the run, from the worktree — never from
-      // the model's narrative (which the critic must not see anyway, C7). On a
+      // the model's narrative (which the critic must not see anyway — narrative is
+      // never admissible to the critic). On a
       // checkout, diff against the per-run base (HEAD may have moved if the model
       // committed); otherwise against the baseline commit.
       const diff = await captureDiff(worktree, baseRef);

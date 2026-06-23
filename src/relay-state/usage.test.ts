@@ -23,7 +23,7 @@ function rec(over: Partial<CallUsage> = {}): CallUsage {
   };
 }
 
-// WHY: the per-call record is the F5 ground truth the rollup is composed from. A
+// WHY: the per-call record is the ground truth the rollup is composed from. A
 // lossy codec would silently corrupt cost attribution, so the front-matter must
 // round-trip every field exactly (the body is a generated rendering, not parsed).
 describe('usage record codec', () => {

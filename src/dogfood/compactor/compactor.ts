@@ -1,7 +1,6 @@
-// The evidence-directory compactor (design §12 step 8 / D2, M7 Phase 2). This is the
-// first real-work outcome the spine drives through its own loop: pure core-logic with
-// no external CLI and no UI, verified by command/test alone, so the dogfood isolates
-// the loop from provider flakiness.
+// The evidence-directory compactor. This is the first real-work outcome the spine
+// drives through its own loop: pure core-logic with no external CLI and no UI, verified
+// by command/test alone, so the dogfood isolates the loop from provider flakiness.
 //
 // What it does, scanning ONLY `.relay/evidence/<runId>/`:
 //   - LIVE refs are retained: a capture a surviving node's `evidenceRefs` names still
@@ -13,17 +12,17 @@
 //   - a compaction MANIFEST enumerating kept/dropped/compressed is written.
 //
 // Two exclusions are structural, not asserted:
-//   - the content-addressed BASELINE store is a SIBLING of `.relay/` (design F2), so a
-//     scan rooted at `.relay/evidence/` can never reach it. The compactor takes no
-//     baseline path at all — it is incapable of touching baselines, which is a
-//     stronger guarantee than checking that it didn't (baselines do not exist until
-//     M8, but the exclusion holds the moment they do).
-//   - per-call usage/cost telemetry (F5) is NOT a capture and is NOT orphan-dropped:
+//   - the content-addressed BASELINE store is a SIBLING of `.relay/`, so a scan rooted
+//     at `.relay/evidence/` can never reach it. The compactor takes no baseline path at
+//     all — it is incapable of touching baselines, which is a stronger guarantee than
+//     checking that it didn't (baselines do not exist until the visual subsystem lands,
+//     but the exclusion holds the moment they do).
+//   - per-call usage/cost telemetry is NOT a capture and is NOT orphan-dropped:
 //     `evidence/<runId>/<node>/usage/` records and the `cost.md` rollup are governed by
-//     F5's own prune-after-rollup rule, a separate concern. The capture scan skips the
+//     their own prune-after-rollup rule, a separate concern. The capture scan skips the
 //     `usage/` subtree and the run-level `cost.md`/`compaction.md` files, so a live
-//     telemetry record is never mistaken for an orphan. (Phase 2 decision: the
-//     compactor preserves F5 telemetry rather than pruning it — see `GOLDEN`.)
+//     telemetry record is never mistaken for an orphan. The compactor preserves usage/
+//     cost telemetry rather than pruning it — see `GOLDEN`.
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -34,7 +33,7 @@ import {
   serializeFrontmatter,
 } from '../../relay-state/index';
 
-// The verifiable record the compactor produces (design D2): which captures it kept,
+// The verifiable record the compactor produces: which captures it kept,
 // which it dropped, and which it compressed. Returned to the caller AND written to
 // `evidence/<runId>/compaction.md`. All three lists hold evidence-dir-relative paths,
 // sorted, so the manifest is byte-deterministic across runs.
@@ -51,7 +50,7 @@ export interface CompactionManifest {
 // The evidence-dir-relative path of the manifest the compactor writes. Excluded from
 // the capture scan so a second compaction does not see it as an orphan.
 const MANIFEST_REL = 'compaction.md';
-// The run-level F5 cost rollup (design §8); telemetry, never a capture.
+// The run-level cost rollup; telemetry, never a capture.
 const COST_ROLLUP_REL = 'cost.md';
 
 // Collect every LIVE evidence ref for this run from the durable node records — never
@@ -72,14 +71,14 @@ async function collectLiveRefs(relayDir: string, runId: string): Promise<Set<str
 
 // A path is telemetry/bookkeeping (not a capture) iff it sits in a node's `usage/`
 // subtree or is the run-level cost rollup / the compaction manifest itself. These are
-// skipped so F5 telemetry is preserved and the manifest is not self-orphaned.
+// skipped so usage/cost telemetry is preserved and the manifest is not self-orphaned.
 function isTelemetryOrManifest(rel: string): boolean {
   const segments = rel.split('/');
   return segments.includes('usage') || rel === COST_ROLLUP_REL || rel === MANIFEST_REL;
 }
 
 // Enumerate the capture files actually on disk under the evidence dir, as
-// evidence-dir-relative POSIX paths, skipping the F5 `usage/` subtrees (and any
+// evidence-dir-relative POSIX paths, skipping the `usage/` subtrees (and any
 // telemetry/manifest file). Missing evidence dir → no captures.
 async function listCaptures(evidenceDir: string): Promise<string[]> {
   const out: string[] = [];
@@ -93,7 +92,7 @@ async function listCaptures(evidenceDir: string): Promise<string[]> {
     for (const entry of entries) {
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        // F5 telemetry subtree is governed by prune-after-rollup, not orphan-drop.
+        // The usage/ telemetry subtree is governed by prune-after-rollup, not orphan-drop.
         if (entry.name === 'usage') continue;
         await walk(join(dir, entry.name), childRel);
       } else if (entry.isFile() && !isTelemetryOrManifest(childRel)) {
@@ -121,10 +120,10 @@ function manifestBody(m: CompactionManifest): string {
   ].join('\n');
 }
 
-// Compact the run's evidence dir (design D2). Pure core-logic: it reads the durable
-// node records for the live set, partitions the on-disk captures into live/orphan,
-// drops orphans, compresses retained captures in place, and writes the manifest. The
-// baseline store is never named, so F2 exclusion is structural. Returns the manifest
+// Compact the run's evidence dir. Pure core-logic: it reads the durable node records
+// for the live set, partitions the on-disk captures into live/orphan, drops orphans,
+// compresses retained captures in place, and writes the manifest. The baseline store is
+// never named, so baseline-store exclusion is structural. Returns the manifest
 // (also persisted to `evidence/<runId>/compaction.md`).
 export async function compactEvidence(
   relayDir: string,

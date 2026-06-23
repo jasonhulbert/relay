@@ -1,11 +1,13 @@
-// The bounded interactive intake session (design §3.11, C3, M6 Phase 1): the
-// system's ONE genuinely conversational agent. It grills the human one question at a
-// time until it can distill a run seed, then terminates at approval. Its only output
-// is an `IntakeSeed` (I1/I2) — it holds no executor, orchestrator, or `.relay/`
-// handle, so it is structurally incapable of "continuing into execution." Committing
-// the seed as the `.relay/` root is Phase 2; this module stops at the seed.
+// See docs/relay-spec.md for the architecture this implements.
 //
-// Like the brain (§3.3), the interviewer is an AGENT (a `claude -p` / `codex exec`
+// The bounded interactive intake session: the system's ONE genuinely conversational
+// agent. It grills the human one question at a time until it can distill a run seed,
+// then terminates at approval. Its only output is an `IntakeSeed` — it holds no
+// executor, orchestrator, or `.relay/` handle, so it is structurally incapable of
+// "continuing into execution." Committing the seed as the `.relay/` root is a
+// separate step; this module stops at the seed.
+//
+// Like the brain, the interviewer is an AGENT (a `claude -p` / `codex exec`
 // shell-out) that returns structured data the code reads (Rule 5). The "interactive"
 // quality lives in the LOOP here — the human answers between turns — not in a
 // persistent REPL: each turn re-feeds the running transcript, exactly as the brain
@@ -45,8 +47,8 @@ export interface Interviewer {
 // execution capability in scope, so intake cannot bleed into running the loop.
 export type AskHuman = (question: string) => Promise<string>;
 
-// Default cap on questions before the interview MUST converge on a seed. Bounded
-// component (C3): keeps the one conversational agent finite.
+// Default cap on questions before the interview MUST converge on a seed. A bounded
+// component: keeps the one conversational agent finite.
 export const DEFAULT_MAX_QUESTIONS = 24;
 
 export interface IntakeOptions {
@@ -60,7 +62,7 @@ export interface IntakeOptions {
 }
 
 export interface IntakeResult {
-  // The conversation's sole output (I1/I2). Phase 2 commits this as the root.
+  // The conversation's sole output. A later step commits this as the root.
   seed: IntakeSeed;
   // The full Q&A transcript, in order. Kept for the recap / evidence; never executed.
   transcript: TranscriptEntry[];
@@ -84,7 +86,7 @@ export async function runIntake(opts: IntakeOptions): Promise<IntakeResult> {
     const turn = await opts.interviewer.next(transcript);
     if (turn.done) {
       // Approval: the seed is the conversation's only output. Return control to the
-      // caller (Phase 2 decides to commit); intake itself stops here.
+      // caller (which decides to commit); intake itself stops here.
       return { seed: turn.seed, transcript, questionsAsked };
     }
     if (questionsAsked >= maxQuestions) {
@@ -145,8 +147,8 @@ export function parseInterviewerTurn(message: string): InterviewerTurn {
 // protocol it must emit, and the transcript so far. One question at a time keeps the
 // conversation bounded and legible.
 //
-// `oneShot` flips it to the non-interactive `--outcome` compile (Plan 2 Phase 3): the
-// same role and seed shape, but the model is told to ask NO questions and emit the
+// `oneShot` flips it to the non-interactive `--outcome` compile: the same role and
+// seed shape, but the model is told to ask NO questions and emit the
 // seed in a single turn, inferring grounded verifications and a short sketch from the
 // outcome the human already gave. No new turn protocol is introduced — the `seed` turn
 // is the same one the interactive path emits, so the compile/parse path is identical.
@@ -196,7 +198,7 @@ export function buildInterviewerPrompt(
 
 // Build the conversational argv. The interviewer needs no tools and writes nothing —
 // it only talks — so Claude gets no `--allowedTools` and Codex runs `--sandbox
-// read-only`. The model is always pinned (the cost guardrail, §8), mirroring the
+// read-only`. The model is always pinned (the cost guardrail), mirroring the
 // brain and adapters.
 export function buildInterviewerArgs(
   provider: IntakeProvider,
@@ -230,16 +232,16 @@ export interface InterviewerInvocationResult {
 }
 
 export interface AgentInterviewerOptions {
-  // Which provider renders the conversation. Provider-agnostic by design (C3).
+  // Which provider renders the conversation. Provider-agnostic by design.
   provider: IntakeProvider;
-  // Per-role cost-guardrail knob (§8): omitted pins the provider's cheapest model.
+  // Per-role cost-guardrail knob: omitted pins the provider's cheapest model.
   model?: string;
   // The provider binary; defaults to the one on PATH.
   bin?: string;
   // Working directory for the shell-out; defaults to the current directory. Intake
   // runs before any worktree exists, so this is just where the CLI is launched.
   cwd?: string;
-  // One-shot compile (Plan 2 Phase 3): drive the prompt to emit a seed in a single
+  // One-shot compile: drive the prompt to emit a seed in a single
   // turn with no questions, for the non-interactive `relay run --outcome` path. Paired
   // with `runIntake`'s `maxQuestions: 0`, a turn that still asks a question fails loud
   // there rather than committing a degenerate seed. Omitted → the interactive grilling.
@@ -268,7 +270,7 @@ function providerMessage(provider: IntakeProvider, stdout: string): string {
 }
 
 // The real interviewer: a provider shell-out that, given the transcript, returns its
-// next parsed turn. Provider-agnostic (C3) and tool-free; it writes nothing durable.
+// next parsed turn. Provider-agnostic and tool-free; it writes nothing durable.
 export function agentInterviewer(opts: AgentInterviewerOptions): Interviewer {
   const provider = opts.provider;
   const bin = opts.bin ?? provider;

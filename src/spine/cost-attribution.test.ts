@@ -52,7 +52,7 @@ function codexishExecutor(): Executor {
 }
 
 // A Claude-shaped critic: reports its own dollar figure (direct), and passes. It
-// emits usage into the orchestrator-supplied F5 sink, attributed to the graded leaf.
+// emits usage into the orchestrator-supplied usage sink, attributed to the graded leaf.
 function claudeishCritic(directCost: number): CriticSpawn {
   return (_view, ctx) => {
     ctx.onUsage?.({
@@ -80,7 +80,7 @@ const TABLE: PriceTable = {
 // Validation (headline): a multi-call run produces per-node cost attribution AND a
 // per-run rollup in `.relay/`; the Claude figure equals the stream's direct cost and
 // the Codex figure equals the price-table derivation from its tokens (fixed table).
-describe('F5 cost attribution and rollup (§8)', () => {
+describe('per-call cost attribution and rollup', () => {
   test('per-call records (direct vs derived) and a per-run rollup land in .relay/', async () => {
     const { base, relayDir, workRoot } = await freshRelay();
     try {
@@ -132,8 +132,8 @@ describe('F5 cost attribution and rollup (§8)', () => {
     }
   });
 
-  // WHY: F5 telemetry is about REAL spend. The hermetic stub path runs no model, so
-  // it must persist NO usage records and write NO rollup — otherwise every M1–M3
+  // WHY: usage telemetry is about REAL spend. The hermetic stub path runs no model, so
+  // it must persist NO usage records and write NO rollup — otherwise every hermetic
   // spine run would gain telemetry files and the ownership-footprint assertions
   // (e.g. hierarchy's exact ownedWrites) would shift under it.
   test('the stub path writes no telemetry', async () => {

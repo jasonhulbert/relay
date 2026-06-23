@@ -17,8 +17,8 @@ import { GOLDEN, buildCompactorFixture } from './fixture';
 import { compactEvidence } from './compactor';
 
 // A byte-for-byte digest of a directory tree (sorted rel paths + content hashes), used
-// to prove the compactor left a region — the baseline store, the F5 telemetry —
-// completely untouched. A single changed/added/removed byte changes the digest.
+// to prove the compactor left a region — the baseline store, the usage/cost telemetry
+// — completely untouched. A single changed/added/removed byte changes the digest.
 async function hashTree(root: string): Promise<string> {
   const parts: string[] = [];
   async function walk(dir: string, rel: string): Promise<void> {
@@ -47,8 +47,8 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-// Phase 1 validation criterion 1: "The outcome spec and grounding are committed via
-// intake." The compactor seed is compiled through the REAL intake compiler and
+// Validation criterion: "The outcome spec and grounding are committed via intake." The
+// compactor seed is compiled through the REAL intake compiler and
 // committed by the REAL `commitRoot` — the same path a live conversation takes — so
 // this is the falsifiable "spec+grounding commit via intake" claim, hermetic and
 // deterministic (no live model).
@@ -58,16 +58,17 @@ describe('the compactor outcome spec and grounding commit via intake', () => {
     const relayDir = join(base, '.relay');
     try {
       // The seed parses through intake's own validation (which rejects an ungrounded
-      // check, §6) — so a successful compile already proves every check is grounded.
+      // check) — so a successful compile already proves every check is grounded.
       const seed = compactorSeed();
       expect(seed.spec.outcome).toMatch(/compactor/i);
       // Five grounded facets: live-ref retention, orphan drop, retained compression,
-      // manifest write, baseline-store exclusion (D2 / F2).
+      // manifest write, baseline-store exclusion.
       expect(seed.spec.verifications).toHaveLength(5);
       expect(seed.spec.verifications.every((v) => v.grounding.trim() !== '')).toBe(true);
       expect(seed.spec.verifications.every((v) => v.kind === 'test')).toBe(true);
-      // The baseline-store exclusion facet is present and grounded (F2) — the one the
-      // compactor must honor even though baselines do not exist until M8.
+      // The baseline-store exclusion facet is present and grounded — the one the
+      // compactor must honor even though baselines do not exist until the visual
+      // subsystem lands.
       expect(seed.spec.verifications.some((v) => /baseline[- ]store/i.test(v.grounding))).toBe(
         true,
       );
@@ -82,7 +83,7 @@ describe('the compactor outcome spec and grounding commit via intake', () => {
 
       // Intake commits NO binding decomposition: the root is a childless pending branch
       // with no layer manifest (the brain owns the first layer at activation), and the
-      // commit is one clean atomic transaction (C8) — no pending intent left behind.
+      // commit is one clean atomic transaction — no pending intent left behind.
       const root = await readNode(relayDir, rootId);
       expect(root.kind).toBe('branch');
       expect(root.status).toBe('pending');
@@ -95,10 +96,10 @@ describe('the compactor outcome spec and grounding commit via intake', () => {
   });
 });
 
-// Phase 1 validation criterion 2: "The fixture enumerates which refs are live, which
-// are orphaned, and which baseline-store paths must be untouched." These assert that
-// GOLDEN is internally consistent AND that it matches what the fixture actually
-// materializes — so Phase 2 can trust GOLDEN as the graded contract.
+// Validation criterion: "The fixture enumerates which refs are live, which are
+// orphaned, and which baseline-store paths must be untouched." These assert that GOLDEN
+// is internally consistent AND that it matches what the fixture actually materializes —
+// so the compactor run can trust GOLDEN as the graded contract.
 describe('the compactor fixture enumerates live refs, orphans, and untouched baselines', () => {
   test('GOLDEN is internally consistent: live and orphans disjoint, retained == live', () => {
     expect(GOLDEN.liveRefs.length).toBeGreaterThan(0);
@@ -142,7 +143,7 @@ describe('the compactor fixture enumerates live refs, orphans, and untouched bas
 
       // "Which baseline-store paths must be untouched" — each exists in the baseline
       // store, and the store is a SIBLING of `.relay/` (a scan of `.relay/` cannot
-      // reach it), so excluding baselines from compaction is structural (F2).
+      // reach it), so excluding baselines from compaction is structural.
       const rel = relative(fx.relayDir, fx.baselineStoreDir);
       expect(rel.startsWith('..')).toBe(true);
       for (const p of GOLDEN.untouchedBaselinePaths) {
@@ -160,13 +161,13 @@ describe('the compactor fixture enumerates live refs, orphans, and untouched bas
   });
 });
 
-// Phase 2 deliverable + validation: the compactor passes golden and property tests
-// against the fixture. These five `test`-kind selectors are NAMED EXACTLY to satisfy
-// the committed seed's checks (`vitest run dogfood/compactor -t "…"`, see seed.ts), so
-// the run's critic grades the dogfood against the same suite a reader can run by hand.
-// WHY each matters: the compactor is the FIRST real-work outcome the spine drives
-// through its own loop (D2); if any facet — retain live, drop orphan, compress, write a
-// truthful manifest, never touch baselines — were wrong, the loop would certify a
+// The compactor deliverable + validation: the compactor passes golden and property
+// tests against the fixture. These five `test`-kind selectors are NAMED EXACTLY to
+// satisfy the committed seed's checks (`vitest run dogfood/compactor -t "…"`, see
+// seed.ts), so the run's critic grades the dogfood against the same suite a reader can
+// run by hand. WHY each matters: the compactor is the FIRST real-work outcome the spine
+// drives through its own loop; if any facet — retain live, drop orphan, compress, write
+// a truthful manifest, never touch baselines — were wrong, the loop would certify a
 // broken compactor as done. The fixture (`GOLDEN`) is the graded ground truth.
 describe('the evidence compactor honors its outcome facets against the fixture', () => {
   test('retains every live ref', async () => {
@@ -245,8 +246,8 @@ describe('the evidence compactor honors its outcome facets against the fixture',
     const base = await mkdtemp(join(tmpdir(), 'relay-compactor-baseline-'));
     try {
       const fx = await buildCompactorFixture(base);
-      // The content-addressed baseline store is a SIBLING of `.relay/` (F2); the
-      // compactor never names it, so it must hash identically before and after.
+      // The content-addressed baseline store is a SIBLING of `.relay/`; the compactor
+      // never names it, so it must hash identically before and after.
       const beforeHash = await hashTree(fx.baselineStoreDir);
       await compactEvidence(fx.relayDir, fx.runId);
       expect(await hashTree(fx.baselineStoreDir)).toBe(beforeHash);
@@ -259,11 +260,11 @@ describe('the evidence compactor honors its outcome facets against the fixture',
     }
   });
 
-  // WHY (Phase 2 F5 decision): per-call usage/cost telemetry lives UNDER the evidence
-  // dir but is governed by F5's prune-after-rollup rule, not orphan-drop. A compactor
-  // that swept the evidence dir naively would eat these (no live ref names them). This
-  // pins the decision that the compactor PRESERVES them byte-for-byte.
-  test('preserves F5 usage and cost telemetry', async () => {
+  // WHY (usage/cost preservation decision): per-call usage/cost telemetry lives UNDER
+  // the evidence dir but is governed by its prune-after-rollup rule, not orphan-drop. A
+  // compactor that swept the evidence dir naively would eat these (no live ref names
+  // them). This pins the decision that the compactor PRESERVES them byte-for-byte.
+  test('preserves usage and cost telemetry', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-compactor-telemetry-'));
     try {
       const fx = await buildCompactorFixture(base);
@@ -331,7 +332,7 @@ describe('compactor invariants hold for any set of extra orphans', () => {
           for (const p of GOLDEN.liveRefs) {
             expect(await fileExists(join(fx.evidenceDir, p))).toBe(true);
           }
-          // Invariant 3: baselines and F5 telemetry are byte-for-byte unchanged.
+          // Invariant 3: baselines and usage/cost telemetry are byte-for-byte unchanged.
           expect(await hashTree(fx.baselineStoreDir)).toBe(baselineHash);
           for (const p of GOLDEN.preservedTelemetry) {
             expect(await readFile(join(fx.evidenceDir, p), 'utf8')).toBe(telemetryBefore.get(p));

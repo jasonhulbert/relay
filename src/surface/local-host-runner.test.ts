@@ -61,13 +61,13 @@ describe('caffeinateCommand', () => {
   });
 });
 
-// WHY (Validation: the F4 metric must be visible in the run summary): the summary is
+// WHY: the surface-wait metric must be visible in the run summary — the summary is
 // where the metric is recorded, so it must actually render the fraction. A summary
-// that omitted it would pass nothing for plan-reflect to observe.
+// that omitted it would pass nothing downstream to observe.
 describe('renderRunSummary', () => {
-  test('records the F4 wait-fraction as a percentage with the raw ratio', () => {
+  test('records the wait-fraction as a percentage with the raw ratio', () => {
     const s = renderRunSummary({ surfaceWaitMs: 300, runWallClockMs: 1000, waitFraction: 0.3 });
-    expect(s).toContain('F4 surface-wait fraction: 30.0%');
+    expect(s).toContain('surface-wait fraction: 30.0%');
     expect(s).toContain('300ms surface / 1000ms run');
   });
 });
@@ -120,12 +120,12 @@ describe('LocalHostRunner', () => {
     expect(surfaceState.closed).toBe(true);
   });
 
-  // WHY (Validation: F4 recorded for the run): the metric must be the metered surface
-  // wait over the run wall-clock, and exposed both as a number and in the summary.
-  // The fake advances the clock 10ms per surface crossing and the check adds explicit
-  // non-surface time, so the ratio is exact and asserts the instrumentation boundary
-  // (not the whole run) is what F4 measures.
-  test('records F4 as surface-wait over run wall-clock', async () => {
+  // WHY: the surface-wait metric must be the metered surface wait over the run
+  // wall-clock, and exposed both as a number and in the summary. The fake advances
+  // the clock 10ms per surface crossing and the check adds explicit non-surface time,
+  // so the ratio is exact and asserts the instrumentation boundary (not the whole
+  // run) is what the metric measures.
+  test('records surface-wait over run wall-clock', async () => {
     const clock = { t: 0 };
     const surfaceState = { closed: false, clock };
 

@@ -107,7 +107,8 @@ async function seedFixture(relayDir: string): Promise<void> {
 
 describe('webview read-time projection', () => {
   // WHY: the view is a read-time projection composed from per-node files, never a
-  // stored artifact (design §4, A6). This pins the exact composition — tree shape,
+  // stored artifact (there is no shared write target). This pins the exact
+  // composition — tree shape,
   // depths, pre-order run log, lifted provider, and that the orchestrator-visible
   // narrative does NOT ride into the supervision view — so a regression that
   // reshapes, reorders, or leaks fields fails here rather than silently.
@@ -207,7 +208,7 @@ describe('webview read-time projection', () => {
     }
   });
 
-  // WHY: I3 — the view writes nothing to `.relay/`. Composing the projection must
+  // WHY: the view writes nothing to `.relay/`. Composing the projection must
   // not open any file for writing. An open-for-write truncates and rewrites (via
   // the atomic-write rename), which changes the file's identity/mtime; snapshotting
   // every file's content and mtime before and after and asserting exact equality
@@ -291,9 +292,9 @@ describe('webview read-time projection', () => {
     }
   });
 
-  // WHY: Phase 3 — the F5 cost rollup is the operator's cost-per-outcome view, and
-  // it must be composed at read time from the per-call usage records (not a stored
-  // artifact) and must MATCH the `.relay/` rollup M4 writes. This seeds usage
+  // WHY: the cost rollup is the operator's cost-per-outcome view, and it must be
+  // composed at read time from the per-call usage records (not a stored artifact) and
+  // must MATCH the persisted `.relay/` rollup. This seeds usage
   // records, then asserts (a) each node carries its attributed burn, with an
   // unpriced call surfaced as a gap not folded into the total, (b) the run total
   // sums the priced calls, and (c) the numbers equal what `renderCostRollup` (the

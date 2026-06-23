@@ -1,6 +1,6 @@
-// The evidence-directory compactor dogfood (design §12 step 8 / D2, M7). Phase 1
-// exports the run seed (committed via intake in Phase 2) and the graded fixture with
-// its golden expectations; Phase 2 adds the compactor itself.
+// The evidence-directory compactor dogfood. One step exports the run seed (committed
+// via intake in a later step) and the graded fixture with its golden expectations; a
+// later step adds the compactor itself.
 export { COMPACTOR_SEED_MESSAGE, compactorSeed } from './seed';
 export { GOLDEN, buildCompactorFixture } from './fixture';
 export type { CompactorFixture } from './fixture';

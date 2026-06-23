@@ -21,7 +21,7 @@ function ctx(over: Partial<CriticContext> = {}): CriticContext {
 }
 
 // A node carrying a deliberately persuasive self-report + learnings — the narrative
-// the C7 projection must withhold from the critic.
+// the evidence-only projection must withhold from the critic.
 function nodeWithNarrative(check = 'true'): NodeRecord {
   return {
     id: 'leaf-1',
@@ -75,8 +75,9 @@ describe('parseCriticVerdict reads the model verdict deterministically', () => {
   });
 });
 
-// WHY: this is the C7 property re-run on the REAL critic path (the phase's headline
-// validation). A juicy self-report + learnings go into the node; the prompt the
+// WHY: this is the evidence-only property re-run on the REAL critic path (the
+// headline validation): orchestrator-visible narrative is never admissible to the
+// critic. A juicy self-report + learnings go into the node; the prompt the
 // real critic actually sends to the model is built from the projection only, so it
 // must contain NEITHER. If buildCriticPrompt ever reached past the projection, the
 // integrity leak reopens and this fails.
@@ -110,8 +111,8 @@ describe('the real critic prompt carries only the projection, never the narrativ
   });
 });
 
-// WHY: cheapest-first (§6.3) — a declared deterministic check that fails is ground
-// truth, and the critic must NOT pay for a model call to confirm a no. A loop that
+// WHY: cheapest-first — a declared deterministic check that fails is ground truth,
+// and the critic must NOT pay for a model call to confirm a no. A loop that
 // always spent the model would burn metered credit on settled failures.
 describe('the critic short-circuits on a failed deterministic check', () => {
   test('a failing command verdicts FAIL without invoking the model', async () => {
@@ -152,7 +153,7 @@ describe('the critic spawns the cross-provider model when deterministic checks p
     expect(verdict.pass).toBe(true);
     expect(verdict.provider).toBe('claude');
     expect(verdict.rationale).toContain('diff matches');
-    // Usage was captured for the recap (F5; node-attribution is Phase 6).
+    // Usage was captured for the recap (node-attribution is not yet wired).
     expect(usages).toHaveLength(1);
     expect(usages[0].provider).toBe('claude');
     expect(usages[0].outputTokens).toBe(4);
@@ -197,10 +198,10 @@ describe('the critic spawns the cross-provider model when deterministic checks p
   });
 });
 
-// WHY: Codex grants MCP via config, not a CLI flag (Phase 5). The critic — like the
-// executor — must route a granted server through `-c mcp_servers.*` so the agent can
-// connect to the spine-hosted server as a client, never silently drop the grant.
-describe('codex critic wires a granted MCP server through config (Phase 5)', () => {
+// WHY: Codex grants MCP via config, not a CLI flag. The critic — like the executor
+// — must route a granted server through `-c mcp_servers.*` so the agent can connect
+// to the spine-hosted server as a client, never silently drop the grant.
+describe('codex critic wires a granted MCP server through config', () => {
   test('emits `-c mcp_servers.*` overrides for the granted server', async () => {
     const node = nodeWithNarrative('true');
     const view = toCriticView(node, 'a diff');
@@ -218,7 +219,7 @@ describe('codex critic wires a granted MCP server through config (Phase 5)', () 
   });
 });
 
-// Gated real-CLI test (validation 1, headline): a real Codex critic grades a real
+// Gated real-CLI test (the headline validation): a real Codex critic grades a real
 // produced change on a different provider than the (notional Claude) author. Opt-in
 // via RELAY_E2E=1 — it hits the network, costs money, and is slow.
 describe.skipIf(!process.env.RELAY_E2E)('agentCritic end-to-end (real CLI)', () => {

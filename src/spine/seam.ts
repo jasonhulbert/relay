@@ -1,42 +1,44 @@
-// Seam predicates — F3 made code-checkable (design §3.8, A8, M10 Phase 2). A seam is
-// the typed contract the parent authors between two children of one decomposed layer
-// (A8); v0.1 ships two kinds whose match is decided by CODE, not a model (Rule 5):
+// Seam predicates — the seam-checkability forcing function made code-checkable. A seam
+// is the typed contract the parent authors between two children of one decomposed
+// layer; the seam vocabulary currently ships two kinds whose match is decided by CODE,
+// not a model (Rule 5):
 //
 //   - file-boundary: the two children write disjoint repo paths. The predicate
 //     reuses the footprint glob matcher (`footprintsDisjoint`) — the same
-//     disjointness that LICENSES their concurrency (A2) is what the seam asserts as
+//     disjointness that LICENSES their concurrency is what the seam asserts as
 //     their contract.
 //   - interface: the producer exports a named symbol/type, optionally matching a
 //     declared signature. The predicate does a SYNTACTIC AST lookup over the
 //     producer's source (`ts.createSourceFile` — no type-checker, no program), so it
 //     is deterministic and hermetic (Rule 5).
 //
-// A seam kind with no v0.1 predicate (`http`, `data-schema`; design §13) is NOT
-// checkable. F3's forcing function: an uncheckable seam between two siblings forces
-// them to serialize — the scheduler reads `seamIsCheckable` (the A1 safe ground
-// state), because a seam the parent cannot reduce to a code-checkable kind cannot
-// gate a parallel merge. The integration gate (Phase 3) RUNS these predicates against
-// the merged tree; this module only provides them and the checkability gate.
+// A seam kind with no code predicate yet (`http`, `data-schema`; deferred seam kinds)
+// is NOT checkable. The seam-checkability forcing function: an uncheckable seam
+// between two siblings forces them to serialize — the scheduler reads
+// `seamIsCheckable` (the safe ground state), because a seam the parent cannot reduce
+// to a code-checkable kind cannot gate a parallel merge. The integration gate RUNS
+// these predicates against the merged tree; this module only provides them and the
+// checkability gate.
 import ts from 'typescript';
 import type { FileBoundaryPayload, InterfacePayload, SeamKind } from '../relay-state/index';
 import { footprintsDisjoint } from './footprint';
 
-// Can this seam kind be verified by a v0.1 code predicate? Only the two kinds with
-// predicates below; the deferred kinds are not. This is the A2 condition-2 / F3 gate
-// the scheduler reads to decide parallel-vs-serial.
+// Can this seam kind be verified by a code predicate yet? Only the two kinds with
+// predicates below; the deferred kinds are not. This is the concurrency-law
+// condition-2 (seam-checkability) gate the scheduler reads to decide parallel-vs-serial.
 export function seamIsCheckable(kind: SeamKind): boolean {
   return kind === 'file-boundary' || kind === 'interface';
 }
 
 // The verdict of running a seam predicate: pass/fail plus a self-sufficient reason.
 // The reason is never silently swallowed — the integration gate records it so a
-// mismatch reads as a verifiable element of the layer's outcome (A8, Rule 11).
+// mismatch reads as a verifiable element of the layer's outcome (Rule 11).
 export interface SeamCheckResult {
   ok: boolean;
   reason: string;
 }
 
-// file-boundary (F3): the producer and consumer write disjoint repo paths. Reuses the
+// file-boundary: the producer and consumer write disjoint repo paths. Reuses the
 // footprint glob matcher so the seam's disjointness test is exactly the scheduler's.
 // Pass ⇒ the two outputs cannot collide on a concrete file.
 export function checkFileBoundary(payload: FileBoundaryPayload): SeamCheckResult {
@@ -52,7 +54,7 @@ export function checkFileBoundary(payload: FileBoundaryPayload): SeamCheckResult
       };
 }
 
-// interface (F3): the producer exports the named symbol, and — when the seam declares
+// interface: the producer exports the named symbol, and — when the seam declares
 // a signature — that symbol's declared signature matches. `source` is the producer
 // module's text (the integration gate reads `payload.module` from the merged tree and
 // hands it here; the predicate itself is pure over the text). Pass ⇒ the consumer's
@@ -77,7 +79,7 @@ export function checkInterface(payload: InterfacePayload, source: string): SeamC
 
 // The declared signature of an EXPORTED top-level `symbol` in `source`, or null if no
 // exported declaration of that name exists. Syntactic only (no type resolution).
-// Supported forms — the v0.1 subset, scoped and documented like the footprint glob
+// Supported forms — the current subset, scoped and documented like the footprint glob
 // matcher:
 //   - function declarations                 → name, type params, params, return type
 //                                              (the BODY is excluded — a seam pins the

@@ -1,15 +1,15 @@
-// The minimal dev run harness (design §4 operator-visibility; M4 Phase 2). It is
+// The minimal dev run harness (operator-visibility over the files-only state model). It is
 // the first path that runs the REAL orchestrator against a durable, inspectable
 // store instead of a throwaway temp dir: resolve the user-global `.relay/` for the
 // project, seed a root outcome, drive the real Claude executor (cheapest model by
 // default — the cost guardrail), commit the store so it is `git log`-able, and
 // print a recap that tells the operator exactly which files to read.
 //
-// Scope note (M4 staging): per-call `usage` is captured HERE by a thin recording
+// Scope note: per-call `usage` is captured HERE by a thin recording
 // wrapper so the recap can surface model/tokens/cost and the model default is
 // assertable. Threading `usage` through the orchestrator into the evidence store
 // with node-id attribution, the Codex price table, and the per-run rollups are
-// Phase 6 — this harness does not write usage records into `.relay/`.
+// not yet built — this harness does not write usage records into `.relay/`.
 import { resolve } from 'node:path';
 import { readRunUsage } from '../relay-state/index';
 import type { CallUsage } from '../relay-state/index';
@@ -26,7 +26,7 @@ import type { SeedOptions } from './seed';
 import { commitStore, ensureProjectStore } from './relay-home';
 import type { EnsureStoreOptions } from './relay-home';
 // The provider executor builder and the operator recap renderer are shared verbatim
-// with the `relay run` command (M6); they live in run-support so both real-run entry
+// with the `relay run` command; they live in run-support so both real-run entry
 // points construct providers identically and emit an identical recap.
 import { buildProviderExecutor, renderRecap } from './run-support';
 import type { Provider } from './run-support';
@@ -50,14 +50,14 @@ export interface DevRunOptions {
   // Per-role model override (the cost-guardrail knob). Omitted → the adapter's
   // cheapest default (`claude-haiku-4-5`).
   executorModel?: string;
-  // Which provider renders the independent critic's verdict (design §3.6). Defaults
+  // Which provider renders the independent critic's verdict. Defaults
   // to the NOT-the-author provider, so the critic is cross-provider by default.
   criticProvider?: Provider;
   // Per-role cost-guardrail knob for the critic. Omitted → the critic provider's
   // cheapest default.
   criticModel?: string;
   // Which provider renders the orchestrator's own decompose/leaf-vs-branch judgment
-  // (design §3.3, §3.4). Defaults to the author (primary) provider — unlike the
+  // (decompose/leaf-vs-branch). Defaults to the author (primary) provider — unlike the
   // critic, the brain is not required to be cross-provider.
   brainProvider?: Provider;
   // Per-role cost-guardrail knob for the brain. Omitted → the brain provider's
@@ -90,7 +90,7 @@ export interface DevRunResult {
   result: OrchestratorResult;
   // The provider the independent critic ran (different from the author by default).
   criticProvider: Provider;
-  // Node-attributed per-call usage records (F5), read back from the persisted
+  // Node-attributed per-call usage records, read back from the persisted
   // evidence store. Spans executor, critic, and brain calls; sorted by node/role/seq.
   usages: CallUsage[];
   // The rendered recap (also written to `log`).
@@ -113,7 +113,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   if (opts.home !== undefined) ensureOpts.home = opts.home;
   if (opts.now !== undefined) ensureOpts.now = opts.now;
   const store = await ensureProjectStore(opts.projectPath, ensureOpts);
-  // The `.relay/` root IS the keyed store dir (design §4 git-trackability).
+  // The `.relay/` root IS the keyed store dir (git-trackable files-only state).
   const relayDir = store.storeDir;
 
   const seedOpts: SeedOptions = { runId, outcome: opts.outcome };
@@ -133,7 +133,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     // Worktrees are executor sandboxes, kept OUTSIDE the git-tracked store.
     workRoot: store.workRoot,
     // The operator's resolved absolute project path: the executor sandbox is seeded
-    // from it on a real run, and the verified result lands back into it (Phase 2+).
+    // from it on a real run, and the verified result lands back into it (a later step).
     projectPath: store.projectPath,
   };
   // The swap-provider rung dispatches under the OTHER provider at its cheapest
@@ -142,11 +142,11 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   if (opts.executor === undefined) {
     runOpts.swapExecutor = buildProviderExecutor(otherProvider);
   }
-  // The real cross-provider critic gates done-ness (design §3.6). An explicit
+  // The real cross-provider critic gates done-ness. An explicit
   // injected critic wins; otherwise the real agent critic is wired only on a real
   // run (no injected executor), so a test injecting just an executor keeps the
   // orchestrator's hermetic default critic. Per-call usage is now persisted by the
-  // orchestrator (F5), node-attributed, and read back below for the recap — the
+  // orchestrator, node-attributed, and read back below for the recap — the
   // harness no longer captures it in-memory.
   if (opts.critic !== undefined) {
     runOpts.critic = opts.critic;
@@ -155,10 +155,10 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     if (opts.criticModel !== undefined) criticOpts.model = opts.criticModel;
     runOpts.critic = agentCritic(criticOpts);
   }
-  // The orchestrator's own decompose/leaf-vs-branch judgment (design §3.3, §3.4). An
+  // The orchestrator's own decompose/leaf-vs-branch judgment. An
   // injected brain wins; otherwise the real agent brain is wired only on a real run
   // (no injected executor), so a test injecting just an executor keeps the stub
-  // brain. Its usage is persisted by the orchestrator (F5) like the others.
+  // brain. Its usage is persisted by the orchestrator like the others.
   if (opts.brain !== undefined) {
     runOpts.brain = opts.brain;
   } else if (opts.executor === undefined) {
@@ -169,7 +169,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
 
   const result = await runOrchestrator(relayDir, 'root', runOpts);
 
-  // F5: the per-call usage records the orchestrator persisted, node-attributed, read
+  // The per-call usage records the orchestrator persisted, node-attributed, read
   // back from the store (the recap is a faithful view of what was persisted, not an
   // in-memory side-channel).
   const usages = await readRunUsage(relayDir, runId);
@@ -183,7 +183,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     usages,
   );
 
-  // Commit so the store is `git log`-able (design §4). Done after the recap reads
+  // Commit so the store is `git log`-able (files-only state model). Done after the recap reads
   // the store, but the recap content does not depend on the commit.
   const committed = await commitStore(relayDir, `relay run ${runId}: root ${result.rootStatus}`);
 

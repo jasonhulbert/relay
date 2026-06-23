@@ -1,11 +1,12 @@
-// `relay run`: the real composing run (design §3.11, M6 Phase 2). Unlike `dev-run`
+// See docs/relay-spec.md for the architecture this implements.
+// `relay run`: the real composing run. Unlike `dev-run`
 // (the hermetic harness that hand-seeds a single leaf and never decomposes), this
 // composes the already-built intake path into a real run: grill the human to a SEED
 // (`runIntake`), commit it as a CHILDLESS root (`commitRoot`) so the brain owns the
-// first decomposition at activation, drive the SAME orchestrator, and let the Plan 1
-// substrate land the verified result back as a reviewable `relay/<runId>` branch.
+// first decomposition at activation, drive the SAME orchestrator, and let the files-only
+// state substrate land the verified result back as a reviewable `relay/<runId>` branch.
 //
-// Intake stays execution-free (the C-invariant the module is built around): `runIntake`
+// Intake stays execution-free (the invariant the module is built around): `runIntake`
 // returns a seed and runs nothing, `commitRoot` writes `.relay/` and stops; activation
 // and decomposition are the orchestrator's job. This module only wires those stages in
 // order — it adds no execution capability of its own to intake.
@@ -41,9 +42,9 @@ import type { CommitRootOptions } from './intake/index';
 
 export interface RelayRunOptions {
   // The project the run is for; its absolute path keys the global store and seeds the
-  // executor sandboxes (Plan 1). The verified result lands back into it as a branch.
+  // executor sandboxes. The verified result lands back into it as a branch.
   projectPath: string;
-  // The intake collaborators (design §3.11, C3): the conversational agent that grills
+  // The intake collaborators: the conversational agent that grills
   // to a seed, and the human-answer source it grills through. Production wires
   // `agentInterviewer` + `stdinAsk`; tests inject scripted stand-ins so the whole run
   // is hermetic. These are the ONLY intake capabilities — there is deliberately no
@@ -59,7 +60,7 @@ export interface RelayRunOptions {
   // Per-role model overrides (the cost-guardrail knobs). Omitted → cheapest default.
   executorModel?: string;
   // Which provider renders the independent critic; defaults to the NOT-the-author one,
-  // so the critic is cross-provider by default (design §3.6).
+  // so the critic is cross-provider by default.
   criticProvider?: Provider;
   criticModel?: string;
   // Which provider renders the orchestrator's decompose judgment; defaults to the
@@ -102,7 +103,7 @@ export interface RelayRunResult {
   seed: IntakeSeed;
   // How many questions the human answered before the seed was approved.
   questionsAsked: number;
-  // Node-attributed per-call usage records (F5), read back from the persisted store.
+  // Node-attributed per-call usage records, read back from the persisted store.
   usages: CallUsage[];
   // The rendered recap (also written to `log`).
   recap: string;
@@ -119,7 +120,7 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
   const runId = opts.runId ?? 'run-1';
 
   // 1. Intake: grill the human to a seed. This runs nothing and touches no `.relay/`
-  //    — the conversation's only output is the seed (I1/I2). A non-converging
+  //    — the conversation's only output is the seed. A non-converging
   //    interview throws loudly here (Rule 11) rather than committing a partial root.
   const intakeOpts: IntakeOptions = { interviewer: opts.interviewer, ask: opts.ask };
   if (opts.opening !== undefined) intakeOpts.opening = opts.opening;
@@ -131,12 +132,12 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
   if (opts.home !== undefined) ensureOpts.home = opts.home;
   if (opts.now !== undefined) ensureOpts.now = opts.now;
   const store = await ensureProjectStore(opts.projectPath, ensureOpts);
-  // The `.relay/` root IS the keyed store dir (design §4 git-trackability).
+  // The `.relay/` root IS the keyed store dir (git-trackable files-only state).
   const relayDir = store.storeDir;
 
-  // 3. Commit the seed as a CHILDLESS root through the atomic intent journal (C8). No
-  //    binding decomposition is written — the brain owns the first layer at activation
-  //    (§3.3). This is the structural fix for "the multi-part outcome ran as one agent
+  // 3. Commit the seed as a CHILDLESS root through the atomic intent journal. No
+  //    binding decomposition is written — the brain owns the first layer at activation.
+  //    This is the structural fix for "the multi-part outcome ran as one agent
   //    turn": the root is a branch the orchestrator must decompose, not a pre-seeded leaf.
   const commitOpts: CommitRootOptions = { runId };
   if (opts.now !== undefined) commitOpts.createdAt = opts.now();
@@ -160,7 +161,7 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
     // Worktrees are executor sandboxes, kept OUTSIDE the git-tracked store.
     workRoot: store.workRoot,
     // The operator's resolved project path: the executor sandbox is seeded from it and
-    // the verified result lands back into it (Plan 1 apply-back, inside runOrchestrator).
+    // the verified result lands back into it (apply-back, inside runOrchestrator).
     projectPath: store.projectPath,
   };
   // The swap-provider rung dispatches under the OTHER provider at its cheapest default;
@@ -184,13 +185,13 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
   }
 
   // 5. Activate the orchestrator on the committed root. It rolls forward any pending
-  //    root commit, decomposes the childless branch (§3.3), drives the leaves, and (on
+  //    root commit, decomposes the childless branch, drives the leaves, and (on
   //    a done root with a clean git project) applies the result back as a branch — all
   //    reported through `result.applyBack`.
   const result = await runOrchestrator(relayDir, rootCommit.rootId, runOpts);
 
-  // 6. Read back the node-attributed per-call usage the orchestrator persisted (F5),
-  //    render the recap from the store, and commit so it is `git log`-able (design §4).
+  // 6. Read back the node-attributed per-call usage the orchestrator persisted,
+  //    render the recap from the store, and commit so it is `git log`-able.
   const usages = await readRunUsage(relayDir, runId);
   const recap = await renderRecap(
     relayDir,

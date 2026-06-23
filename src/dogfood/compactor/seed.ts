@@ -1,29 +1,29 @@
-// The evidence-directory compactor dogfood's run seed (design §12 step 8 / D2, M7
-// Phase 1). This is the FIRST real-work outcome the spine drives through its own
-// loop, chosen because it is pure core-logic — no external CLI, no UI — so it
-// isolates the loop from provider flakiness and is verified by command/test alone.
+// The evidence-directory compactor dogfood's run seed. This is the FIRST real-work
+// outcome the spine drives through its own loop, chosen because it is pure core-logic
+// — no external CLI, no UI — so it isolates the loop from provider flakiness and is
+// verified by command/test alone.
 //
-// Phase 1 only PRODUCES the seed and the fixture it grades against; Phase 2 commits
-// this seed via intake and runs it end-to-end (decompose → execute → critic → done).
-// The seed is authored here as the interviewer's final message — prose wrapping a
-// fenced ```json document — and compiled through the REAL intake path (`compileSeed`),
+// One step only PRODUCES the seed and the fixture it grades against; a later step
+// commits this seed via intake and runs it end-to-end (decompose → execute → critic →
+// done). The seed is authored here as the interviewer's final message — prose wrapping
+// a fenced ```json document — and compiled through the REAL intake path (`compileSeed`),
 // so "the outcome spec and grounding are committed via intake" is exercised on the
 // same code a live conversation would, not a hand-built object that skips intake's
-// own validation (grounding required per §6, etc.).
+// own validation (a check must carry verification grounding, etc.).
 import { compileSeed } from '../../intake/index';
 import type { IntakeSeed } from '../../intake/index';
 
-// The compactor outcome, stated as five grounded facets the critic grades against
-// (design D2): live-ref retention, orphan drop, retained-capture compression,
-// manifest write, and baseline-store exclusion (F2). Each verification is `test`
-// kind — the dogfood is golden/property tested against the Phase 1 fixture — and
-// each carries explicit grounding that cites that fixture, because §6 rejects a
-// verdict that cites no evidence and intake's compiler rejects an ungrounded check.
+// The compactor outcome, stated as five grounded facets the critic grades against:
+// live-ref retention, orphan drop, retained-capture compression, manifest write, and
+// baseline-store exclusion. Each verification is `test` kind — the dogfood is golden/
+// property tested against the fixture — and each carries explicit grounding that cites
+// that fixture, because verification grounding is required: a verdict that cites no
+// evidence is rejected, and intake's compiler rejects an ungrounded check.
 //
-// The `check` lines name the vitest selectors Phase 2's compactor tests will satisfy.
-// They do not run yet (the compactor is Phase 2); they are the verifiable contract
-// the run aims at, grounded in `GOLDEN` (see `fixture.ts`), which already enumerates
-// every live ref, every orphan, and every untouched baseline path.
+// The `check` lines name the vitest selectors the compactor tests will satisfy. They
+// are the verifiable contract the run aims at, grounded in `GOLDEN` (see `fixture.ts`),
+// which already enumerates every live ref, every orphan, and every untouched baseline
+// path.
 export const COMPACTOR_SEED_MESSAGE = [
   'I have enough to seed the evidence-compactor run. Here is the seed:',
   '',
@@ -61,7 +61,7 @@ export const COMPACTOR_SEED_MESSAGE = [
         {
           kind: 'test',
           grounding:
-            'GOLDEN.untouchedBaselinePaths enumerates the content-addressed baseline-store files (F2); the store must hash identically before and after a compaction run.',
+            'GOLDEN.untouchedBaselinePaths enumerates the content-addressed baseline-store files; the store must hash identically before and after a compaction run.',
           check:
             'vitest run dogfood/compactor -t "leaves the baseline store byte-for-byte unchanged"',
         },
@@ -73,7 +73,7 @@ export const COMPACTOR_SEED_MESSAGE = [
         notes: [
           'Find live refs by reading node files’ evidenceRefs through the relay-state schema, never by guessing filenames.',
           'A capture is orphaned iff no live ref names it; compress retained captures in place.',
-          'The baseline store is a sibling of .relay/, never under evidence/ — the scan must not reach it (F2).',
+          'The baseline store is a sibling of .relay/, never under evidence/ — the scan must not reach it.',
         ],
       },
     },
@@ -86,8 +86,8 @@ export const COMPACTOR_SEED_MESSAGE = [
 ].join('\n');
 
 // Compile the compactor seed through the real intake compiler. Deterministic (no
-// live model): exactly the parse+validate Phase 2 commits via `commitRoot`. Exported
-// so both Phase 1's "commits via intake" test and Phase 2's run use one source.
+// live model): exactly the parse+validate the run later commits via `commitRoot`.
+// Exported so both the "commits via intake" test and the end-to-end run use one source.
 export function compactorSeed(): IntakeSeed {
   return compileSeed(COMPACTOR_SEED_MESSAGE);
 }

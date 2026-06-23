@@ -277,7 +277,7 @@ describe('snapshot seed path (non-git workspace)', () => {
   });
 });
 
-// WHY: the integration gate verifies the WHOLE merged layer (A4) — but a project-
+// WHY: the integration gate verifies the WHOLE merged layer — but a project-
 // seeded leaf worktree holds the entire project, not just its own change. Composing
 // the layer by copying those worktrees over each other (the empty-path merge) would
 // let the last copy overwrite an earlier sibling's edited file with its own base copy,

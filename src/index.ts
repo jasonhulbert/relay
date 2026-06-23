@@ -5,7 +5,8 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { devRun, projectKey, relayHome } from './spine/index';
 import type { DevRunOptions, Provider } from './spine/index';
-// The intake collaborators (Plan 2): the real conversational interviewer and the
+// See docs/relay-spec.md for the architecture this implements.
+// The intake collaborators: the real conversational interviewer and the
 // stdin human-answer source the interactive `relay run` grills through. `relayRun`
 // composes intake -> commit a childless root -> decompose -> apply-back.
 import { agentInterviewer, stdinAsk } from './intake/index';
@@ -112,7 +113,7 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   // The harness already printed the recap; signal a non-`done` run as misuse so a
   // scripted caller (or the operator's shell) sees the failure (Rule 11).
   if (out.result.rootStatus !== 'done') return 1;
-  // Apply-back fail-loud (workspace-substrate §6): a dirty / non-git workspace or a
+  // Apply-back fail-loud: a dirty / non-git workspace or a
   // patch that did not apply produced NO branch — the verified result was delivered
   // as `result.patch` instead. The recap already names it; echo a loud one-liner to
   // stderr and exit non-zero so an operator (or scripted caller) cannot mistake the
@@ -128,11 +129,11 @@ async function devRunCommand(args: readonly string[]): Promise<number> {
   return 0;
 }
 
-// `relay run`: the real composing command (Plan 2). It grills intake to a seed (or,
+// `relay run`: the real composing command. It grills intake to a seed (or,
 // with --outcome, compiles one non-interactively), commits a CHILDLESS root, lets the
 // orchestrator decompose + execute it, and applies the verified result back as a
-// relay/<runId> branch via the Plan 1 substrate. Phase 1 parses the flags and confirms
-// the intake compiler is reachable from the CLI; the composition lands in Phase 2/3.
+// relay/<runId> branch via the files-only Markdown state substrate. This parses the
+// flags, confirms the intake compiler is reachable from the CLI, and composes the run.
 async function runCommand(args: readonly string[]): Promise<number> {
   const KNOWN_FLAGS = new Set([
     '--project',
@@ -182,7 +183,7 @@ async function runCommand(args: readonly string[]): Promise<number> {
   // through to `relayRun`'s orchestrator wiring below.
   const interviewerProvider: IntakeProvider = provider === 'codex' ? 'codex' : 'claude';
   // Non-interactive (`--outcome`): compile a grounded seed in ONE model call with no
-  // stdin (Plan 2 Phase 3). The one-shot interviewer is driven to emit a `seed` turn
+  // stdin. The one-shot interviewer is driven to emit a `seed` turn
   // immediately and `maxQuestions: 0` forbids a follow-up question; the seed validates
   // through the same compile path as the interactive `done` turn. A one-shot turn that
   // can't produce a valid seed (asks a question, or emits a malformed seed) fails loud
@@ -224,7 +225,7 @@ async function runCommand(args: readonly string[]): Promise<number> {
   // The recap is already printed. Signal a non-`done` run as misuse so a scripted
   // caller (or the operator's shell) sees the failure (Rule 11) — mirrors dev-run.
   if (out.result.rootStatus !== 'done') return 1;
-  // Apply-back fail-loud (workspace-substrate §6): a dirty / non-git workspace or a
+  // Apply-back fail-loud: a dirty / non-git workspace or a
   // patch that did not apply produced NO branch — the verified result was delivered
   // as `result.patch` instead. The recap already names it; echo a loud one-liner so
   // an operator cannot mistake the patch-only outcome for an applied branch.
@@ -249,8 +250,9 @@ async function exists(path: string): Promise<boolean> {
 }
 
 // `relay web`: serve the read-only render of the project's global `.relay/` store.
-// It RESOLVES the existing store (never creating one — the view writes nothing,
-// I3); a project with no store yet is a loud error, not an empty page. The server
+// It RESOLVES the existing store (never creating one — the read-only supervisor
+// view writes nothing); a project with no store yet is a loud error, not an empty
+// page. The server
 // recomposes the projection on every request, so it keeps running until the
 // operator interrupts it (Ctrl-C). Returns a promise that only settles on a bind
 // failure — while listening it stays pending so the process does not exit.

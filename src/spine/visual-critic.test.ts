@@ -11,7 +11,8 @@ import { parseVisualCheck, visualCritic } from './visual-critic';
 
 // A configurable in-memory Surface (the visual-critic.test.ts pattern): a scripted
 // snapshot tree and screenshot bytes, with `interact` recorded so a replay can be
-// asserted and optionally scripted to throw a typed failure (the V5 path). No browser.
+// asserted and optionally scripted to throw a typed failure (the drift re-dispatch
+// path). No browser.
 function fakeSurface(cfg: {
   tree?: string;
   shotData?: string;
@@ -45,9 +46,9 @@ function fakeSurface(cfg: {
   return { surface, interactions };
 }
 
-// Build the C7-restricted critic view for an outcome carrying one `visual` verification
+// Build the evidence-only critic view for an outcome carrying one `visual` verification
 // whose check is the serialized `VisualVerification` — exactly the on-disk encoding the
-// bridge reads back (M9 Phase 1).
+// bridge reads back.
 function visualView(verification: VisualVerification): CriticView {
   const node: NodeRecord = {
     id: 'leaf',
@@ -86,7 +87,7 @@ const structural = (expectSubtree: string[]): VisualVerification => ({
   expectSubtree,
 });
 
-// WHY (the M9 bridge is `JSON.parse(check) as VisualVerification`, re-guarded at the
+// WHY (the bridge is `JSON.parse(check) as VisualVerification`, re-guarded at the
 // trust boundary): the check is opaque text on disk by the time the critic reads it. A
 // malformed document must fail loud, not silently grade against a half-typed spec.
 describe('parseVisualCheck', () => {
@@ -106,7 +107,7 @@ describe('parseVisualCheck', () => {
   });
 });
 
-describe('visualCritic (M9 bridge)', () => {
+describe('visualCritic (the visual-critic bridge)', () => {
   async function ctx(): Promise<{
     relayDir: string;
     store: BaselineStore;
@@ -121,10 +122,10 @@ describe('visualCritic (M9 bridge)', () => {
   }
 
   // WHY (Validation: the visual outcome passes at structural granularity AND the first
-  // structural-or-better pass promotes a baseline, V6): a structural pass is the gate,
+  // structural-or-better pass promotes a baseline): a structural pass is the gate,
   // and because it is structural-or-better it must capture-and-promote the first
   // baseline — ref in `.relay/`, binary in the sibling store.
-  test('a structural pass grades pass and promotes the first baseline (V6)', async () => {
+  test('a structural pass grades pass and promotes the first baseline', async () => {
     const c = await ctx();
     try {
       const { surface, interactions } = fakeSurface({
@@ -145,12 +146,12 @@ describe('visualCritic (M9 bridge)', () => {
         { worktree: '/unused', mcpServers: [] },
       );
 
-      // The path was replayed (V1) before grading.
+      // The path was replayed before grading.
       expect(interactions).toEqual(PATH);
       expect(verdict.pass).toBe(true);
       expect(verdict.provider).toBe('visual-critic');
 
-      // V6: ref in `.relay/`, binary in the store, promoted at the structural rung.
+      // Ref in `.relay/`, binary in the store, promoted at the structural rung.
       const ref = await readBaselineRef(c.relayDir, 'drill-in-panel');
       expect(ref).not.toBeNull();
       expect(ref?.version).toBe(1);
@@ -162,8 +163,8 @@ describe('visualCritic (M9 bridge)', () => {
   });
 
   // WHY: a missing structural fact is a real fail — the panel did not render the
-  // evidence the outcome asserts. It must fail and NOT promote a baseline (V6 never
-  // freezes a UI that did not pass its gate).
+  // evidence the outcome asserts. It must fail and NOT promote a baseline (baseline
+  // promotion never freezes a UI that did not pass its gate).
   test('a structural miss fails and promotes no baseline', async () => {
     const c = await ctx();
     try {
@@ -187,7 +188,7 @@ describe('visualCritic (M9 bridge)', () => {
     }
   });
 
-  // WHY (V5: a failed replay is classified, no model): a step that fails against a
+  // WHY (drift re-dispatch: a failed replay is classified, no model): a step that fails against a
   // healthy app is a drifted path — re-dispatch — surfaced as a non-pass carrying the
   // classification, never a silent pass.
   test('a replay failure against a healthy app fails with its classification', async () => {
@@ -216,7 +217,7 @@ describe('visualCritic (M9 bridge)', () => {
   });
 
   // WHY: on a later run a known-good baseline already exists, so the bridge diffs
-  // against it instead of re-promoting (which V6 refuses) — an identical frame is
+  // against it instead of re-promoting (which baseline promotion refuses) — an identical frame is
   // within tolerance and passes, with no second baseline version written.
   test('a second pass diffs against the existing baseline instead of re-promoting', async () => {
     const c = await ctx();

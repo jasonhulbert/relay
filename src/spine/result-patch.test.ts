@@ -127,8 +127,8 @@ function projectEditingExecutor(): Executor {
   };
 }
 
-// A hermetic stub executor (no real project): fabricates a diff string like the M1–M3
-// spine tests, used to prove the empty path persists NO result.patch.
+// A hermetic stub executor (no real project): fabricates a diff string like the
+// hermetic spine tests, used to prove the empty path persists NO result.patch.
 function stubDiffExecutor(): Executor {
   return {
     capabilities: () => stubCapabilities,
@@ -146,10 +146,10 @@ function stubDiffExecutor(): Executor {
 }
 
 // WHY: `result.patch` is the run's canonical apply-back artifact and the re-derivable
-// record of what was applied (C8). If the single-leaf case diverged from the leaf's own
+// record of what was applied. If the single-leaf case diverged from the leaf's own
 // verified diff, or the multi-leaf case persisted a concat of evidence text instead of a
-// clean composed patch, Phase 6's apply-back would land something the critic never
-// certified. And if the hermetic path emitted a patch, every M1–M3 stub run would grow a
+// clean composed patch, apply-back would land something the critic never
+// certified. And if the hermetic path emitted a patch, every hermetic stub run would grow a
 // spurious artifact. All three are silent correctness failures this locks down.
 describe('result.patch — canonical verified result persisted at root done', () => {
   async function freshRelay(): Promise<{ base: string; relayDir: string; workRoot: string }> {
@@ -208,7 +208,7 @@ describe('result.patch — canonical verified result persisted at root done', ()
       expect(resultPatch).not.toBe(leafA);
 
       // And it is a real apply-back patch: it applies cleanly onto a fresh checkout of
-      // the operator base and yields both files (Phase 6 lands exactly this).
+      // the operator base and yields both files (apply-back lands exactly this).
       const verifyWt = join(workRoot, 'verify');
       const plan = await resolveSeedPlan(repo);
       if (plan.mode !== 'checkout' || plan.base !== head)

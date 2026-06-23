@@ -1,11 +1,11 @@
-// The tier-A LocalHostRunner (design §13, F4). v0.1 ships tier-A only: visual
-// checks run on the operator's logged-in macOS session — a real, headed browser the
-// operator can watch — not a headless CI container. That choice carries three host
-// concerns this runner owns:
+// The tier-A LocalHostRunner. Currently only tier-A ships: visual checks run on the
+// operator's logged-in macOS session — a real, headed browser the operator can
+// watch — not a headless CI container. Richer runner tiers are a deferred, measured
+// decision. That choice carries three host concerns this runner owns:
 //
 //   1. A HEADED surface. It builds `new WebSurface({ headless: false })`, pointed at
 //      the run's working dir so Playwright MCP's session output lands in the run
-//      scope rather than the process cwd (the plan's artifact-scoping note).
+//      scope rather than the process cwd (artifact scoping).
 //   2. `caffeinate`. A long visual run must not let the session sleep mid-check (a
 //      slept display stalls rendering and screenshots), so the runner holds a
 //      `caffeinate` assertion for the run's lifetime and releases it after.
@@ -14,11 +14,11 @@
 //      be granted programmatically, so the runner surfaces the grant instructions
 //      ONCE (marked by a per-user file) and stays quiet on later runs.
 //
-// F4 is instrumented here: the runner wraps the surface in a `MeteredSurface`, runs
-// the check, and records the surface session-wait as a fraction of run wall-clock in
-// the run summary (the graduation metric). Like Phase 1, this is a capability build
-// exercised against the fixture — it is not yet wired into the orchestrator loop
-// (M9 does that), matching the executor's threaded-but-unused pattern.
+// The surface-wait fraction is instrumented here: the runner wraps the surface in a
+// `MeteredSurface`, runs the check, and records the surface session-wait as a
+// fraction of run wall-clock in the run summary (the graduation metric). This is a
+// capability build exercised against the fixture — it is not yet wired into the
+// orchestrator loop, matching the executor's threaded-but-unused pattern.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { access, mkdir, writeFile } from 'node:fs/promises';
@@ -32,7 +32,8 @@ import type { Surface } from './types';
 
 // The work a visual check performs against the surface — drive it to a state and
 // read back what the check needs. The runner owns lifecycle (headed surface,
-// caffeinate, F4) around it; the check owns only what to do with the surface. Its
+// caffeinate, surface-wait metering) around it; the check owns only what to do with
+// the surface. Its
 // return value rides back in the run result.
 export type VisualCheck<T> = (surface: Surface) => Promise<T>;
 
@@ -135,20 +136,20 @@ export interface LocalHostRunnerOptions {
 export interface LocalHostRunResult<T> {
   // Whatever the visual check returned.
   value: T;
-  // F4 numerator: wall-clock spent inside Surface calls.
+  // Surface-wait numerator: wall-clock spent inside Surface calls.
   surfaceWaitMs: number;
-  // F4 denominator: total run wall-clock.
+  // Surface-wait denominator: total run wall-clock.
   runWallClockMs: number;
-  // F4: surface session-wait as a fraction of run wall-clock, in [0,1].
+  // Surface session-wait as a fraction of run wall-clock, in [0,1].
   waitFraction: number;
   // The one-time TCC grant notice if this run surfaced it, else null.
   tccNotice: string | null;
-  // The rendered run summary (also written to `log`), carrying the F4 metric.
+  // The rendered run summary (also written to `log`), carrying the surface-wait metric.
   summary: string;
 }
 
-// Render the run summary the F4 metric is recorded in (the plan's Validation: the
-// metric must be visible in the run summary). Wait-fraction is shown as a percentage
+// Render the run summary the surface-wait metric is recorded in: the metric must be
+// visible in the run summary. Wait-fraction is shown as a percentage
 // alongside the raw numerator/denominator so the ratio is auditable, not just
 // asserted.
 export function renderRunSummary(r: {
@@ -160,17 +161,17 @@ export function renderRunSummary(r: {
   return [
     '=== tier-A visual run summary ===',
     `runner: local-host (logged-in session, headed)`,
-    `F4 surface-wait fraction: ${pct}% ` +
+    `surface-wait fraction: ${pct}% ` +
       `(${r.surfaceWaitMs.toString()}ms surface / ${r.runWallClockMs.toString()}ms run)`,
   ].join('\n');
 }
 
-// Run one visual check on the tier-A session and record F4. Order matters: surface
-// the one-time TCC notice, then hold the caffeinate assertion for the whole check,
-// then run the check against a headed, metered surface, then ALWAYS release
-// caffeinate and close the surface (a `finally`, so a check that throws still tears
-// the session down and still releases the wake assertion). F4 = the metered surface
-// wait over the wall-clock measured around the check.
+// Run one visual check on the tier-A session and record the surface-wait metric.
+// Order matters: surface the one-time TCC notice, then hold the caffeinate assertion
+// for the whole check, then run the check against a headed, metered surface, then
+// ALWAYS release caffeinate and close the surface (a `finally`, so a check that
+// throws still tears the session down and still releases the wake assertion). The
+// metric = the metered surface wait over the wall-clock measured around the check.
 export class LocalHostRunner {
   readonly #opts: LocalHostRunnerOptions;
   readonly #now: Clock;

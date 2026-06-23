@@ -13,7 +13,8 @@ import {
 } from './contract';
 
 // WHY this matters: the parent gates its own done-ness on the child's contract
-// read back from the ledger (A7). If any field the writer emits is dropped or
+// read back from the ledger (the verified outcome contract). If any field the
+// writer emits is dropped or
 // mangled on read — especially `criticCertified` — the parent would decide
 // acceptance on a corrupted fact. The round-trip is the falsifiable guard.
 describe('outcome contract round-trip', () => {

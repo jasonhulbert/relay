@@ -1,4 +1,4 @@
-// Verified-outcome-contract reader/writer (A7, design §3.8, §9.2). Same codec as
+// Verified-outcome-contract reader/writer. Same codec as
 // node/manifest files: YAML front-matter is the authoritative record, the Markdown
 // body is a generated human-readable rendering. The contract is the artifact a
 // sub-orchestrator hands up to its parent across the process boundary; it is
@@ -17,7 +17,7 @@ function renderContractBody(c: OutcomeContract): string {
     `- Claimed outcome: ${c.claimedOutcome}`,
     `- Critic-certified: ${c.criticCertified ? 'yes' : 'no'}`,
     `- Verdict refs: ${c.verdictRefs.length.toString()}`,
-    `- Seam evidence: ${c.seamEvidence.length.toString()} (placeholder in M2)`,
+    `- Seam evidence: ${c.seamEvidence.length.toString()} (placeholder)`,
   ].join('\n');
 }
 

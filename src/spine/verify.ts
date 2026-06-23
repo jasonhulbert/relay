@@ -1,16 +1,16 @@
-// The deterministic verification kinds (design §6.3, cheapest-first). Each is a
-// CODE-checkable predicate the critic runs against the executor's produced change
-// — never a model judgment (Rule 5; F3 "code answers, not a model"). They are the
-// cheap grounding the independent agent critic (§6.1) stands on: a declared check
-// that fails is ground truth the verdict cannot argue past.
+// The deterministic verification kinds, cheapest-first. Each is a CODE-checkable
+// predicate the critic runs against the executor's produced change — never a model
+// judgment (Rule 5; an uncheckable seam forces serialization, so code answers, not
+// a model). They are the cheap grounding the independent agent critic stands on: a
+// declared check that fails is ground truth the verdict cannot argue past.
 //
-// Three kinds land here this milestone (the §6.3 ladder's first three):
+// Three kinds land here (the ladder's first three):
 //   - `command` (exit 0)   → run the check; pass iff it exits 0;
 //   - `test`               → same mechanism, a test command; pass iff it exits 0;
 //   - `artifact`           → a file/state assertion: the named path exists in the
 //                            produced change.
-// `structural`/`visual` (§6.3 #4–5) are later milestones; `agent-critic` (#6) is
-// the model stage in agent-critic.ts; `human` (#7) is the decision-inbox gate.
+// `structural`/`visual` are later steps; `agent-critic` is the model stage in
+// agent-critic.ts; `human` is the decision-inbox gate.
 //
 // Every check runs in the leaf's worktree — the produced change — so a `command`
 // like `npm test` or an `artifact` path is asserted against what the executor
@@ -21,7 +21,7 @@ import { isAbsolute, join } from 'node:path';
 import type { Verification } from '../relay-state/index';
 
 // The kinds this module evaluates deterministically. The remaining `VerificationKind`
-// values are settled elsewhere (agent-critic) or in a later milestone.
+// values are settled elsewhere (agent-critic) or in a later step.
 const DETERMINISTIC_KINDS = new Set<Verification['kind']>(['command', 'test', 'artifact']);
 
 export function isDeterministicKind(kind: Verification['kind']): boolean {
@@ -34,7 +34,7 @@ export interface VerificationResult {
   grounding: string;
   pass: boolean;
   // The concrete evidence the predicate observed — an exit code or a file fact —
-  // so a verdict can cite it (a verdict citing no evidence is rejected, §6.3).
+  // so a verdict can cite it (a verdict citing no evidence is rejected).
   detail: string;
 }
 

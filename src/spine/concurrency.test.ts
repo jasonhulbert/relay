@@ -75,8 +75,8 @@ function leavesWithFootprints(footprints: Footprint[]): Brain {
 }
 
 // A brain that decomposes into two disjoint-footprint leaves WITH an uncheckable
-// (http, no v0.1 predicate) seam between them — so the scheduler's footprint check
-// says "parallel" but the F3 forcing function must override it to serial.
+// (http, no code predicate yet) seam between them — so the scheduler's footprint check
+// says "parallel" but the seam-checkability forcing function must override it to serial.
 function twoLeavesWithUncheckableSeam(): Brain {
   return {
     decompose: () =>
@@ -97,7 +97,7 @@ function twoLeavesWithUncheckableSeam(): Brain {
               producer: 0,
               consumer: 1,
               payload: {},
-              intent: 'part 1 serves part 2 over http (no v0.1 predicate)',
+              intent: 'part 1 serves part 2 over http (no code predicate yet)',
             },
           ],
         },
@@ -135,7 +135,7 @@ function concurrencyProbe(): { executor: Executor; peak: () => number } {
 }
 
 // An executor whose reported write footprint is scripted per attempt: a `loud`
-// attempt reports a write OUTSIDE the leaf's declared footprint (the A3 loud
+// attempt reports a write OUTSIDE the leaf's declared footprint (the loud
 // violation), an `ok` attempt reports an in-footprint write. The final entry repeats.
 function footprintScriptedExecutor(script: ('loud' | 'ok')[]): Executor {
   let call = 0;
@@ -157,7 +157,7 @@ function footprintScriptedExecutor(script: ('loud' | 'ok')[]): Executor {
   };
 }
 
-describe('the scheduler runs disjoint siblings in parallel, serializes a shared resource (A2)', () => {
+describe('the scheduler runs disjoint siblings in parallel, serializes a shared resource', () => {
   // WHY (validation 1): the whole point of the phase. Two siblings the parent
   // declared to write disjoint paths must actually run at the same time — proven by
   // observing both dispatches open concurrently, not by inspecting the schedule.
@@ -181,9 +181,10 @@ describe('the scheduler runs disjoint siblings in parallel, serializes a shared 
     }
   });
 
-  // WHY (validation 3): A2's second condition. Two siblings with DISJOINT footprints
-  // — which the footprint check alone would parallelize — must still serialize when
-  // the seam between them is a kind with no v0.1 predicate (F3 forcing function). The
+  // WHY (validation 3): the concurrency law's second condition. Two siblings with
+  // DISJOINT footprints — which the footprint check alone would parallelize — must still
+  // serialize when the seam between them is a kind with no code predicate yet (the
+  // seam-checkability forcing function). The
   // probe must observe NO overlap, proving the uncheckable seam, not the footprints,
   // drove the decision. Without the forcing function this would read peak 2.
   test('an uncheckable seam between disjoint siblings forces serialization', async () => {
@@ -206,8 +207,8 @@ describe('the scheduler runs disjoint siblings in parallel, serializes a shared 
     }
   });
 
-  // WHY (validation 1, falsifiable half): a shared resource is exactly what A2
-  // forbids running concurrently. The same probe must observe NO overlap — the
+  // WHY (validation 1, falsifiable half): a shared resource is exactly what the
+  // concurrency law forbids running concurrently. The same probe must observe NO overlap — the
   // siblings serialized — while both still complete.
   test('a shared-resource pair serializes', async () => {
     const { base, relayDir, workRoot } = await freshRelay();
@@ -230,7 +231,7 @@ describe('the scheduler runs disjoint siblings in parallel, serializes a shared 
     }
   });
 
-  // WHY (validation 3): the tier-A session is a shared resource (design §7.3) — there
+  // WHY (validation 3): the tier-A session is a shared resource — there
   // is one logged-in headed session, so two visual leaves that both drive it cannot
   // run concurrently even though they write disjoint repo paths. The contention is a
   // NAMED resource in the footprint, not a write-glob collision, so this proves the
@@ -323,7 +324,7 @@ function compositionCritic(): CriticSpawn {
   };
 }
 
-describe('the integration gate verifies a concurrent layer before it may be done (A4)', () => {
+describe('the integration gate verifies a concurrent layer before it may be done', () => {
   // WHY (validation 1): the silent-conflict catch — the entire reason concurrency must
   // pay for a gate. Two leaves run in parallel, each forking from the same base, each
   // critic-passing its own diff in isolation; their writes merge cleanly onto disjoint
@@ -405,7 +406,7 @@ describe('the integration gate verifies a concurrent layer before it may be done
   });
 });
 
-describe('a loud footprint violation is thrown and absorbed by the ladder (A3)', () => {
+describe('a loud footprint violation is thrown and absorbed by the ladder', () => {
   // WHY (validation 2): the footprint is a hint, not a sandbox. A child that writes
   // outside its declared footprint must NOT crash the orchestrator and must NOT be
   // silently accepted — the violation is thrown, the ladder absorbs it as a failed

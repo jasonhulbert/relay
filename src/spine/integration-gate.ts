@@ -1,14 +1,14 @@
-// The branch-level integration gate — concurrency pays for it (design §3.8, A4, F3,
-// M10 Phase 3). Because parallel siblings each fork from the same pre-layer base and
-// never see one another, NO per-child critic can witness their combination (§3.8): a
-// child's critic graded its diff in isolation, blind to its sibling. So a branch that
+// The branch-level integration gate — concurrency pays for it. Because parallel
+// siblings each fork from the same pre-layer base and never see one another, NO
+// per-child critic can witness their combination: a child's critic graded its
+// diff in isolation, blind to its sibling. So a branch that
 // ran ANY children concurrently must, before it may be `done`, MERGE the completed
 // layer and verify the merged whole — recovering the cross-sibling verification that
 // serial execution got for free.
 //
-// The gate verifies composition in three DETERMINISTIC-FIRST layers (F3), each a
+// The gate verifies composition in three DETERMINISTIC-FIRST layers, each a
 // stricter, more expensive catch than the last, and stops at the first failure so the
-// cheap deterministic checks gate the model call (Rule 5):
+// cheap deterministic checks gate the model call:
 //
 //   1. footprint from the WAL (the loud-violation catch) — code. Over the children's
 //      ACTUAL writes (the intent-journal footprint, not the declared hint): each
@@ -26,7 +26,7 @@
 //      semantically incompatible, and anything a predicate cannot express).
 //
 // A failure at any layer is self-sufficient (named layer + reason) and never silently
-// swallowed (Rule 11): the gate returns it so the orchestrator surfaces a concurrent
+// swallowed: the gate returns it so the orchestrator surfaces a concurrent
 // layer that could not be composed, rather than marking it `done`.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -74,14 +74,14 @@ export interface GateInput {
   // child that reported none (the hermetic stub path) maps to an empty list.
   childWrites: Record<string, readonly string[]>;
   // The parent's own critic (the same spawn the loop uses), and the context it is
-  // granted — the merged worktree plus the granted MCP servers (§3.252, C9).
+  // granted — the merged worktree plus the granted MCP servers.
   critic: CriticSpawn;
   mcpServers: readonly McpServerConfig[];
-  // F5 usage sink for the gate's critic call, attributed by the caller to the parent.
+  // Per-call usage sink for the gate's critic call, attributed by the caller to the parent.
   onUsage?: (usage: CriticCallUsage) => void;
 }
 
-// Layer 1 — footprint from the WAL (A3 loud-violation catch, gate scope). Returns a
+// Layer 1 — footprint from the WAL (the loud-violation catch, gate scope). Returns a
 // failure reason, or null if the merged writes compose cleanly. Two ways to fail:
 //   - escape: a child's actual writes left its declared footprint. (A per-child
 //     dispatch check already catches this in-flight; re-checked here so the merged
@@ -118,7 +118,7 @@ function checkFootprints(
   return null;
 }
 
-// Layer 2 — each declared kind's seam predicate (code answers, Rule 5). Returns the
+// Layer 2 — each declared kind's seam predicate (code answers). Returns the
 // first failing seam's reason, or null if every checkable seam holds. An interface
 // seam needs the producer module's source from the merged tree; a seam that names no
 // module, or whose module cannot be read, fails loud (the gate cannot verify what it
@@ -127,7 +127,7 @@ async function checkSeams(layer: LayerManifest, mergedWorktree: string): Promise
   for (const seam of layer.seams) {
     // The `kind` switch both selects the predicate and narrows the typed payload. A
     // deferred (uncheckable) kind — `http`/`data-schema` — forced serialization
-    // upstream (`seamIsCheckable`, F3), so it should never reach a concurrent layer's
+    // upstream (`seamIsCheckable`), so it should never reach a concurrent layer's
     // gate; the default arm skips it defensively rather than assert a missing predicate.
     if (seam.kind === 'file-boundary') {
       const r = checkFileBoundary(seam.payload);
@@ -152,7 +152,7 @@ async function checkSeams(layer: LayerManifest, mergedWorktree: string): Promise
   return null;
 }
 
-// Run the integration gate on a merged concurrent layer (A4). Deterministic-first and
+// Run the integration gate on a merged concurrent layer. Deterministic-first and
 // short-circuiting: footprint (code), then seam predicates (code), then the parent's
 // own critic (model) — the cheap checks gate the metered model call. The first
 // failure is returned with its layer; if all three pass the result carries the critic
@@ -188,8 +188,9 @@ export async function runIntegrationGate(input: GateInput): Promise<GateResult> 
   }
 
   // Layer 3: the parent re-runs its own evidence-only critic on the merged whole. The
-  // C7 chokepoint still holds — the critic sees only the constructed projection (the
-  // parent's spec + the merged diff + evidence), never any child's self-report.
+  // evidence-only chokepoint still holds — the critic sees only the constructed
+  // projection (the parent's spec + the merged diff + evidence), never any child's
+  // self-report.
   const view = toCriticView(parentNode, mergedDiff);
   // Build the context without an explicit `undefined` onUsage (exactOptionalPropertyTypes).
   const ctx = onUsage

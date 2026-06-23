@@ -1,5 +1,5 @@
 // The trivial fixture page the visual subsystem is built and tested against before
-// the real panel (M9) exercises it (plan assumption). It is deliberately tiny but
+// the real panel exercises it. It is deliberately tiny but
 // covers the surface's whole contract: a stable heading and a labelled button for
 // the a11y snapshot (semantic read), a click that mutates visible text (so an
 // interaction has an observable, queryable effect), and enough structure to take a
@@ -13,11 +13,11 @@ import type { Server } from 'node:http';
 // snapshot assertions key on; clicking the button sets `#status` to a known string,
 // which `queryState` reads back to prove an interaction took effect.
 //
-// Two regions support the visual critic path (Phase 3): a stable target component
-// (`#panel`, the heading + status + button) the critic scopes its check to (V7), and
-// an UNRELATED self-updating region (`#clock`, a tick counter on a timer) that
-// changes every frame. A component-scoped check must ignore the ticking clock — that
-// is the V7 isolation the scoped snapshot/screenshot proves.
+// Two regions support the visual critic path: a stable target component
+// (`#panel`, the heading + status + button) the critic scopes its element-scoped
+// check to, and an UNRELATED self-updating region (`#clock`, a tick counter on a
+// timer) that changes every frame. A component-scoped check must ignore the ticking
+// clock — that is the element-scope isolation the scoped snapshot/screenshot proves.
 export const FIXTURE_HTML = `<!doctype html>
 <html lang="en">
   <head>

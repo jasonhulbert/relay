@@ -1,17 +1,17 @@
-// Root commit (design §3.11, §4, M6 Phase 2): turn the approved intake seed into the
-// `.relay/` root the orchestrator activates from. Approval is the commit point (I2) —
-// `runIntake` returns at the interviewer's `done` turn having run nothing, and this
-// performs the atomic intent-journal transaction (C8) that writes the durable root:
-// the manifest (outcome spec + grounded verifications + the non-binding sketch) and
-// the root branch node.
+// Root commit: turn the approved intake seed into the `.relay/` root the orchestrator
+// activates from. Approval is the commit point — `runIntake` returns at the
+// interviewer's `done` turn having run nothing, and this performs the atomic
+// intent-journal transaction that writes the durable root: the manifest (outcome spec
+// + grounded verifications + the non-binding sketch) and the root branch node.
 //
 // Intake stays execution-free: this writes `.relay/` files and STOPS. It dispatches
-// no executor and runs no loop — activation is the M2 orchestrator's job, which reads
+// no executor and runs no loop — activation is the orchestrator's job, which reads
 // this root and decomposes it. Crucially, NO binding decomposition is written here:
-// the root is a CHILDLESS BRANCH, so the brain owns the first layer at activation
-// (§3.3). The sketch rides in the manifest as non-binding orientation; its `Sketch`
-// shape (`{ notes }`) cannot encode children/footprints/seams, so "no binding
-// decomposition beyond the sketch" is structural here, not merely asserted.
+// the root is a CHILDLESS BRANCH, so the brain owns the first layer at activation,
+// decomposing one lazy layer at a time. The sketch rides in the manifest as
+// non-binding orientation; its `Sketch` shape (`{ notes }`) cannot encode
+// children/footprints/seams, so "no binding decomposition beyond the sketch" is
+// structural here, not merely asserted.
 import {
   commit,
   relativeManifestPath,
@@ -38,16 +38,16 @@ export interface RootCommitResult {
   rootId: string;
 }
 
-// Commit the approved seed as the `.relay/` root in one atomic transaction (C8). The
+// Commit the approved seed as the `.relay/` root in one atomic transaction. The
 // manifest and the root node land all-or-nothing through the intent journal: a crash
 // after the journal's commit point leaves a pending intent that the activating
 // orchestrator rolls forward (its journal region is the root id — the same region
 // `runOrchestrator` rolls forward at the start of a run), so rehydration never sees a
 // manifest without its root node or vice versa. This is why the root commit goes
 // through the journal where `seedFixture` (a test scaffold with nothing to be atomic
-// against) uses the plain writers: C8 requires the real entry path's root to be an
-// atomic, crash-recoverable transaction. Returns the ids so the caller can activate
-// the orchestrator immediately.
+// against) uses the plain writers: the real entry path's root must be an atomic,
+// crash-recoverable transaction. Returns the ids so the caller can activate the
+// orchestrator immediately.
 export async function commitRoot(
   relayDir: string,
   seed: IntakeSeed,
@@ -64,9 +64,10 @@ export async function commitRoot(
     sketch: seed.sketch,
     createdAt,
   };
-  // The root is a childless branch: an orchestrator binds only to a branch (C6) and
-  // decomposes it lazily at activation (§3.3). Committing no children — and no layer
-  // manifest — is what keeps intake from smuggling a binding plan into the root.
+  // The root is a childless branch: an orchestrator binds only to a branch it owns as
+  // sole writer, and decomposes it lazily at activation. Committing no children — and
+  // no layer manifest — is what keeps intake from smuggling a binding plan into the
+  // root.
   const root: NodeRecord = {
     id: rootId,
     parentId: null,
@@ -81,8 +82,8 @@ export async function commitRoot(
     blocked: null,
   };
 
-  // Region = the root id (C6): the region the activating orchestrator rolls forward,
-  // so an interrupted root commit is recovered the moment the run begins.
+  // Region = the root id: the ownership-partitioned region the activating orchestrator
+  // rolls forward, so an interrupted root commit is recovered the moment the run begins.
   const writes: IntentWrite[] = [
     { path: relativeManifestPath, content: serializeManifest(manifest) },
     { path: relativeNodePath(rootId), content: serializeNode(root) },
