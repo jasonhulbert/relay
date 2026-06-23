@@ -7,7 +7,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { projectRun } from './projection';
+import { projectRun, projectSupervisorNode } from './projection';
 import { renderErrorPage, renderNodePanel, renderRunPage } from './render';
 import type { NodeView } from './projection';
 
@@ -59,31 +59,37 @@ export function createWebViewServer(opts: WebViewServerOptions): Server {
     const url = req.url ?? '/';
     const path = url.split('?')[0];
 
-    // The evidence drill-in panel (M9): `/node/<id>` renders one node's evidence
-    // panel, `?capture=<n>` navigates its ordered captures — both plain GET, so the
-    // read-only contract is unbroken (I3). Like the run page, it recomposes the
-    // projection per request and fails loud on an incoherent tree; an unknown node id
-    // is a 404, the same as any unknown path.
+    // The per-node detail (M9 evidence panel + Sol 1 human-supervisor view):
+    // `/node/<id>` renders one node's evidence panel, `?capture=<n>` navigates its
+    // ordered captures, and below it the human-supervisor detail (self-report, evidence
+    // content, verdict, decompose footprints/seams/rationale) — all plain GET, so the
+    // read-only contract is unbroken (I3). Like the run page, it recomposes per request
+    // and fails loud on an incoherent tree. An unknown node id is a 404 (the same as any
+    // unknown path); a node that EXISTS but has a half-written evidence file still renders
+    // 200 with an inline "(artifact missing)" notice, never the error page (Rule 11).
     if (path.startsWith('/node/')) {
       const nodeId = decodeURIComponent(path.slice('/node/'.length));
       const capture = parseCaptureParam(url);
-      projectRun(opts.relayDir).then(
-        (projection) => {
+      projectRun(opts.relayDir)
+        .then((projection) => {
           const node = findNode(projection, nodeId);
           if (node === undefined) {
             res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
             res.end('not found\n');
-            return;
+            return undefined;
           }
-          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-          res.end(renderNodePanel(projection, node, capture));
-        },
-        (err: unknown) => {
+          // The node exists, so the supervisor read resolves (a missing evidence FILE is
+          // a typed marker the detail renders inline, not a throw — Phase 2).
+          return projectSupervisorNode(opts.relayDir, nodeId).then((supervisor) => {
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+            res.end(renderNodePanel(projection, node, capture, supervisor));
+          });
+        })
+        .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
           res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
           res.end(renderErrorPage(message));
-        },
-      );
+        });
       return;
     }
 

@@ -25,6 +25,7 @@ import {
   relativeCostRollupPath,
   relativeLayerPath,
   relativeNodePath,
+  relativeRationalePath,
   relativeUsagePath,
   relayPaths,
   readRunUsage,
@@ -480,6 +481,30 @@ function buildLayer(
   return { children, manifest: { parentId, runId, footprints, seams } };
 }
 
+// The brain's decompose rationale as orchestrator-only audit evidence (Sol 2, plan
+// 03). Returns the IntentWrite that puts the full rationale in the run's evidence
+// store — so it joins the SAME atomic transaction as the layer/children commit, and
+// rehydration never sees a committed layer without its rationale — and the
+// `rationale` evidence ref to attach to the decomposed branch node. The full text
+// is persisted for audit fidelity; the read-only human view bounds it at render
+// time. It is NEVER admissible to the critic (C7): no `rationale`-kind ref rides
+// the `CriticView`, which carries spec + diff + evidence refs only.
+function rationaleEvidence(
+  runId: string,
+  nodeId: string,
+  rationale: string,
+): { write: IntentWrite; ref: EvidenceRef } {
+  return {
+    write: { path: relativeRationalePath(runId, nodeId), content: rationale },
+    ref: evidenceRef(
+      runId,
+      `${nodeId}/decompose-rationale.md`,
+      'rationale',
+      'brain decompose rationale (orchestrator-only)',
+    ),
+  };
+}
+
 // A node that is terminal but NOT done — blocked (ladder exhaustion, §3.7) or
 // cancelled (human decision, §3.9). Either makes an ancestor unable to integrate a
 // complete layer, so the halt-and-surface gate treats them the same: the parent
@@ -933,7 +958,7 @@ async function dispatchLeaf(
     // the same MCP servers as the executor; it returns data and writes nothing —
     // the code below is the sole writer of `.relay/` (C2, §9.4).
     const brainUsages: ExecutorUsage[] = [];
-    const decomposition = await brain.decompose(
+    const { decomposition, rationale } = await brain.decompose(
       { spec: leaf.spec, context: { learnings: leaf.learnings } },
       { worktree: join(workRoot, leafId), mcpServers, onUsage: (u) => brainUsages.push(u) },
     );
@@ -942,6 +967,10 @@ async function dispatchLeaf(
       await persistUsage(relayDir, runId, leafId, 'brain', 0, u, priceTable, writes);
     }
     const { children, manifest } = buildLayer(leafId, runId, decomposition, [reflection]);
+    // The decompose rationale rides the SAME atomic intent as the layer/children, so
+    // rehydration sees the post-promotion branch WITH its rationale, or the pre-
+    // promotion leaf — never a layer missing its reasoning (Sol 2).
+    const rat = rationaleEvidence(runId, leafId, rationale);
     const branch: NodeRecord = {
       ...leaf,
       kind: 'branch',
@@ -950,19 +979,21 @@ async function dispatchLeaf(
       selfReport: null,
       learnings: [...leaf.learnings, reflection],
       verdict: null,
-      evidenceRefs: [],
+      evidenceRefs: [rat.ref],
       blocked: null,
     };
     const txn: IntentWrite[] = [
       { path: relativeNodePath(branch.id), content: serializeNode(branch) },
       ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
       { path: relativeLayerPath(branch.id), content: serializeLayer(manifest) },
+      rat.write,
     ];
     writes.add(relativeNodePath(branch.id));
     for (const c of children) {
       writes.add(relativeNodePath(c.id));
     }
     writes.add(relativeLayerPath(branch.id));
+    writes.add(rat.write.path);
     fault('before-promote');
     const intentId = await writeIntent(relayDir, region, txn);
     fault('promote-intent');
@@ -1113,7 +1144,7 @@ async function decomposeBranch(
   const worktree = join(grant.workRoot, root.id);
   await mkdir(worktree, { recursive: true });
   const brainUsages: ExecutorUsage[] = [];
-  const decomposition = await brain.decompose(
+  const { decomposition, rationale } = await brain.decompose(
     { spec: root.spec, context: { learnings: root.learnings } },
     { worktree, mcpServers: grant.mcpServers, onUsage: (u) => brainUsages.push(u) },
   );
@@ -1122,17 +1153,26 @@ async function decomposeBranch(
     await persistUsage(relayDir, runId, root.id, 'brain', 0, u, grant.priceTable, writes);
   }
   const { children, manifest } = buildLayer(root.id, runId, decomposition, root.learnings);
-  const decomposed: NodeRecord = { ...root, children: children.map((c) => c.id) };
+  // The decompose rationale rides the SAME atomic intent as the layer/children, so a
+  // rehydrated branch always carries the reasoning that produced its layer (Sol 2).
+  const rat = rationaleEvidence(runId, root.id, rationale);
+  const decomposed: NodeRecord = {
+    ...root,
+    children: children.map((c) => c.id),
+    evidenceRefs: [...root.evidenceRefs, rat.ref],
+  };
   const txn: IntentWrite[] = [
     { path: relativeNodePath(decomposed.id), content: serializeNode(decomposed) },
     ...children.map((c) => ({ path: relativeNodePath(c.id), content: serializeNode(c) })),
     { path: relativeLayerPath(decomposed.id), content: serializeLayer(manifest) },
+    rat.write,
   ];
   writes.add(relativeNodePath(decomposed.id));
   for (const c of children) {
     writes.add(relativeNodePath(c.id));
   }
   writes.add(relativeLayerPath(decomposed.id));
+  writes.add(rat.write.path);
   await commit(relayDir, region, txn);
   return decomposed;
 }

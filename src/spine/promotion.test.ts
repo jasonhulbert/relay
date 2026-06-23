@@ -197,6 +197,12 @@ describe('promotion is one atomic transaction (rehydration sees pre or post, nev
       expect(node.kind).toBe('leaf');
       // The re-decomposed children do not exist yet.
       await expect(readNode(relayDir, `${LEAF_ID}.c0`)).rejects.toThrow();
+      // Sol 2: the decompose rationale rides the SAME atomic intent as the layer, so a
+      // kill BEFORE the commit point leaves NEITHER — no rationale file, no ref.
+      expect(
+        await exists(join(relayDir, 'evidence', 'run-1', LEAF_ID, 'decompose-rationale.md')),
+      ).toBe(false);
+      expect(node.evidenceRefs.some((r) => r.kind === 'rationale')).toBe(false);
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -232,6 +238,17 @@ describe('promotion is one atomic transaction (rehydration sees pre or post, nev
         expect(child.parentId).toBe(LEAF_ID);
         expect(child.learnings).toContain(branch.learnings.at(-1));
       }
+      // Sol 2: a kill AFTER the commit point rolls forward to BOTH the layer and its
+      // rationale — the branch carries the `rationale` ref and the file is on disk.
+      // (Together with the before-commit test, this pins "both or neither".)
+      const ratRef = branch.evidenceRefs.find((r) => r.kind === 'rationale');
+      expect(ratRef?.path).toBe(`${LEAF_ID}/decompose-rationale.md`);
+      expect(
+        await readFile(
+          join(relayDir, 'evidence', 'run-1', LEAF_ID, 'decompose-rationale.md'),
+          'utf8',
+        ),
+      ).toContain('stub decomposition');
 
       // Roll-forward is idempotent and exhaustive: nothing left pending, and the
       // resulting state matches an uninterrupted promotion byte-for-byte.

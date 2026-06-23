@@ -68,6 +68,17 @@ export interface Decomposition {
   seams: SeamPlan[];
 }
 
+// What a decompose judgment yields: the parsed `Decomposition` the orchestrator
+// commits, AND the raw model rationale that produced it (Sol 2, plan 03). The
+// rationale was a hard loss before — discarded once parsed. It is orchestrator-
+// visible audit evidence (footprints/seams plus WHY the brain split this way) and
+// is NEVER admissible to the critic (C7). The parse still fails loud on malformed
+// JSON; a `DecomposeResult` only exists for a successfully parsed layer.
+export interface DecomposeResult {
+  decomposition: Decomposition;
+  rationale: string;
+}
+
 // The non-evidentiary context a brain judgment is granted (mirrors `CriticContext`,
 // §3.6): the worktree it may inspect, and the granted MCP servers it connects to as
 // a client. Deliberately carries NO `.relay/` handle — the brain cannot write the
@@ -91,7 +102,7 @@ export interface DecomposeRequest {
 }
 
 export interface Brain {
-  decompose(req: DecomposeRequest, ctx: BrainContext): Promise<Decomposition>;
+  decompose(req: DecomposeRequest, ctx: BrainContext): Promise<DecomposeResult>;
 }
 
 // A deterministic 2-way split mirroring the M1–M3 `stubDecompose`: two leaf
@@ -101,7 +112,7 @@ export interface Brain {
 // child records (the rehydration contract, §3.2); it is the default brain on the
 // spine's hermetic tests, replacing the stub decomposer.
 export const stubBrain: Brain = {
-  decompose(req: DecomposeRequest): Promise<Decomposition> {
+  decompose(req: DecomposeRequest): Promise<DecomposeResult> {
     const parentSpec = req.spec;
     const children: ChildPlan[] = [0, 1].map((i) => {
       const part = (i + 1).toString();
@@ -127,7 +138,10 @@ export const stubBrain: Brain = {
         intent: 'the two parts write disjoint paths and compose into the parent outcome',
       },
     ];
-    return Promise.resolve({ children, seams });
+    // A fixed synthetic rationale so a kill-and-rehydrate persists byte-identical
+    // audit evidence (the rehydration contract, §3.2) — the stub has no model prose.
+    const rationale = `stub decomposition of "${parentSpec.outcome}" into 2 disjoint leaf parts with one file-boundary seam.`;
+    return Promise.resolve({ decomposition: { children, seams }, rationale });
   },
 };
 
@@ -450,7 +464,7 @@ export function agentBrain(opts: AgentBrainOptions): Brain {
   const invoke = opts.invoke ?? defaultInvoke;
 
   return {
-    async decompose(req: DecomposeRequest, ctx: BrainContext): Promise<Decomposition> {
+    async decompose(req: DecomposeRequest, ctx: BrainContext): Promise<DecomposeResult> {
       const prompt = buildDecomposePrompt(req);
       const args = buildBrainArgs(provider, prompt, { model, mcpServers: ctx.mcpServers });
       const start = Date.now();
@@ -462,8 +476,10 @@ export function agentBrain(opts: AgentBrainOptions): Brain {
       opts.onUsage?.(usage);
       ctx.onUsage?.(usage);
       // Code reads the answer the model produced (Rule 5); a malformed judgment
-      // fails loud (Rule 11) rather than committing a half-typed layer.
-      return parseDecomposition(review);
+      // fails loud (Rule 11) rather than committing a half-typed layer. The raw
+      // `review` is the rationale persisted as orchestrator-only audit evidence
+      // (Sol 2) — it never reaches the critic (C7).
+      return { decomposition: parseDecomposition(review), rationale: review };
     },
   };
 }

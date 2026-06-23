@@ -38,6 +38,7 @@ export {
   relativeLayerPath,
   relativeUsagePath,
   relativeCostRollupPath,
+  relativeRationalePath,
 } from './paths';
 export type { RelayPaths } from './paths';
 export { atomicWriteFile, fsyncDir } from './io';

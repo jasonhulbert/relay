@@ -67,15 +67,18 @@ function twoLeafBrain(relayDir: string): {
       calls += 1;
       observed = (await readNode(relayDir, 'root')).children;
       return {
-        children: [1, 2].map((n) => ({
-          spec: {
-            outcome: `part ${n.toString()}`,
-            verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
-          },
-          kind: 'leaf' as const,
-          footprint: { writeGlobs: [`part-${n.toString()}/**`] },
-        })),
-        seams: [],
+        decomposition: {
+          children: [1, 2].map((n) => ({
+            spec: {
+              outcome: `part ${n.toString()}`,
+              verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
+            },
+            kind: 'leaf' as const,
+            footprint: { writeGlobs: [`part-${n.toString()}/**`] },
+          })),
+          seams: [],
+        },
+        rationale: 'two disjoint leaf parts, one marker file each',
       };
     },
   };

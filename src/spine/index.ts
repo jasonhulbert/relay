@@ -72,6 +72,7 @@ export type {
   BrainContext,
   DecomposeRequest,
   Decomposition,
+  DecomposeResult,
   ChildPlan,
   SeamPlan,
   AgentBrainOptions,

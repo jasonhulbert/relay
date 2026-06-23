@@ -86,15 +86,18 @@ function leavesWithFootprints(footprints: Footprint[]): Brain {
   return {
     decompose: () =>
       Promise.resolve({
-        children: footprints.map((footprint, i) => ({
-          spec: {
-            outcome: `part ${(i + 1).toString()}`,
-            verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
-          },
-          kind: 'leaf' as const,
-          footprint,
-        })),
-        seams: [],
+        decomposition: {
+          children: footprints.map((footprint, i) => ({
+            spec: {
+              outcome: `part ${(i + 1).toString()}`,
+              verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
+            },
+            kind: 'leaf' as const,
+            footprint,
+          })),
+          seams: [],
+        },
+        rationale: 'disjoint-footprint leaf parts',
       }),
   };
 }

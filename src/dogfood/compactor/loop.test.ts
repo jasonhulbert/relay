@@ -28,7 +28,7 @@ import { readNode } from '../../relay-state/index';
 import { commitRoot, compileSeed } from '../../intake/index';
 import { agentCritic, runOrchestrator, STUB_USAGE } from '../../spine/index';
 import type { Executor, ExecutorInput, ExecutorResult } from '../../spine/index';
-import type { Brain, DecomposeRequest, Decomposition } from '../../spine/index';
+import type { Brain, DecomposeRequest, DecomposeResult } from '../../spine/index';
 import { COMPACTOR_SEED_MESSAGE } from './seed';
 
 // The repo root, derived from this file's location (independent of cwd): the leaf
@@ -40,10 +40,13 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'
 // the root's exact verifications (the five compactor `test` checks), so the critic
 // grades that leaf against the committed spec. Deterministic, like `stubBrain`.
 const oneLeafBrain: Brain = {
-  decompose(req: DecomposeRequest): Promise<Decomposition> {
+  decompose(req: DecomposeRequest): Promise<DecomposeResult> {
     return Promise.resolve({
-      children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
-      seams: [],
+      decomposition: {
+        children: [{ spec: req.spec, kind: 'leaf', footprint: { writeGlobs: ['**'] } }],
+        seams: [],
+      },
+      rationale: 'single leaf carrying the root verifications (compactor dogfood)',
     });
   },
 };

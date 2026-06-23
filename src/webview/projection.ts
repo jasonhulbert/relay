@@ -8,18 +8,21 @@
 //
 // Reads go through the existing `.relay/` readers (readManifest/readNode) so the
 // codec stays single-sourced; this module only enumerates and stitches.
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   composeRunCost,
   readManifest,
   readNode,
   readRunUsage,
   relayPaths,
+  tryReadLayer,
 } from '../relay-state/index';
 import type {
   BlockedRecord,
   CriticVerdict,
   EvidenceRef,
+  LayerManifest,
   NodeCost,
   NodeKind,
   NodeRecord,
@@ -171,5 +174,96 @@ export async function projectRun(relayDir: string): Promise<RunProjection> {
     runLog,
     orphans,
     cost,
+  };
+}
+
+// One evidence ref paired with its on-disk content for the human-supervisor detail
+// view (Sol 1). `content` is the FULL artifact text (self-report, diff, verdict, or
+// decompose rationale); the read-time view bounds it at render (Phase 3), the disk
+// keeps it whole for audit. `missing` marks "ref present but file absent" — a normal
+// state (a blocked node has a diff/self-report but no verdict; an errored executor
+// may leave a ref's file unwritten), surfaced rather than thrown so the route never
+// 500s on a half-complete node (Rule 11).
+export interface EvidenceContent {
+  ref: EvidenceRef;
+  content: string | null;
+  missing: boolean;
+}
+
+// The human-supervisor detail of ONE node (Sol 1, plan 03). Deliberately SEPARATE
+// from the critic path: it lifts the orchestrator-visible narrative
+// (`selfReport`/`learnings`) off the `NodeRecord` and reads evidence-file content
+// directly. It NEVER constructs or consumes the critic projection — the audience
+// split is structural, not prompting (C7). The critic still sees evidence only,
+// through the branded chokepoint in relay-state; this is a different reader over the
+// same durable record for a different audience (the human). `layer` carries the
+// decompose JUDGMENT — footprints + seams — for a branch that decomposed (null for a
+// leaf or an undecomposed branch); the decompose rationale rides `evidence` as a
+// `kind: 'rationale'` entry.
+export interface SupervisorView {
+  id: string;
+  parentId: string | null;
+  kind: NodeKind;
+  status: NodeStatus;
+  outcome: string;
+  // Orchestrator-visible narrative — surfaced to the HUMAN supervisor, never the
+  // critic. This is exactly the field the critic projection withholds (C7).
+  selfReport: string | null;
+  learnings: string[];
+  verdict: CriticVerdict | null;
+  blocked: BlockedRecord | null;
+  evidence: EvidenceContent[];
+  layer: LayerManifest | null;
+}
+
+// Read one evidence ref's file content, resolving it under the run's evidence dir
+// (the ref `path` is relative to `evidenceDir(runId)`). A missing file yields a
+// typed `missing` marker — never an exception — so a half-complete node degrades
+// gracefully; any OTHER read error still fails loud (Rule 11).
+async function readEvidenceContent(
+  evidenceDir: string,
+  ref: EvidenceRef,
+): Promise<EvidenceContent> {
+  try {
+    return { ref, content: await readFile(join(evidenceDir, ref.path), 'utf8'), missing: false };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ref, content: null, missing: true };
+    }
+    throw err;
+  }
+}
+
+// Compose the human-supervisor detail for one node (Sol 1). Read-only: it reads the
+// node record, its evidence files, and (for a branch) its layer manifest, and writes
+// nothing (I3). It is structurally on the human side of the C7 split — it neither
+// builds nor spawns the critic projection. A missing evidence file is a `missing`
+// marker, not a throw; a missing NODE file still fails loud (the route maps that to
+// a not-found, Phase 3).
+export async function projectSupervisorNode(
+  relayDir: string,
+  nodeId: string,
+): Promise<SupervisorView> {
+  const manifest = await readManifest(relayDir);
+  const node = await readNode(relayDir, nodeId);
+  const evidenceDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+  const evidence = await Promise.all(
+    node.evidenceRefs.map((ref) => readEvidenceContent(evidenceDir, ref)),
+  );
+  // The decompose JUDGMENT lives in the layer manifest the branch committed; a leaf
+  // or an undecomposed branch has none (tryReadLayer returns null gracefully).
+  const layer = node.kind === 'branch' ? await tryReadLayer(relayDir, nodeId) : null;
+  return {
+    id: node.id,
+    parentId: node.parentId,
+    kind: node.kind,
+    status: node.status,
+    outcome: node.spec.outcome,
+    selfReport: node.selfReport,
+    learnings: node.learnings,
+    verdict: node.verdict,
+    blocked: node.blocked,
+    evidence,
+    layer,
   };
 }

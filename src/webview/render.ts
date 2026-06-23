@@ -11,8 +11,20 @@
 // whole-run total in the header, sourced from the projection's cost fields. The
 // evidence drill-in panel is M9, not this; evidence refs render as their summary +
 // path only.
-import type { CriticVerdict, EvidenceRef, NodeCost, RunCost } from '../relay-state/index';
-import type { NodeView, RunProjection, TreeNode } from './projection';
+import type {
+  CriticVerdict,
+  EvidenceRef,
+  LayerManifest,
+  NodeCost,
+  RunCost,
+} from '../relay-state/index';
+import type {
+  EvidenceContent,
+  NodeView,
+  RunProjection,
+  SupervisorView,
+  TreeNode,
+} from './projection';
 
 // Minimal HTML-attribute/text escaping. The projection's strings are operator
 // outcomes and model rationales — untrusted free text — so every interpolated
@@ -173,6 +185,17 @@ const STYLE = `
   .panel-nav a { color: #27a; text-decoration: none; }
   .panel-nav a:hover { text-decoration: underline; }
   .back { color: #27a; text-decoration: none; }
+  .supervisor { border: 1px solid #ddd; border-radius: 6px; padding: 1rem; margin-top: 1rem; max-width: 48rem; }
+  .supervisor h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+  .supervisor h3 { font-size: 0.85rem; text-transform: uppercase; color: #888; margin: 0.8rem 0 0.3rem; }
+  .supervisor h4 { font-size: 0.8rem; color: #888; margin: 0.4rem 0 0.2rem; }
+  .detail-block { margin: 0.4rem 0; }
+  .prose { white-space: pre-wrap; font-size: 0.85rem; color: #222; }
+  .prose-more { font-size: 0.75rem; color: #a60; margin-top: 0.3rem; }
+  .artifact { margin: 0.4rem 0; }
+  .artifact-head { font-size: 0.8rem; margin-bottom: 0.15rem; }
+  .artifact-missing { font-size: 0.85rem; color: #a60; font-style: italic; }
+  .seam-kind { font-weight: 600; }
   .orphans { margin-top: 2rem; border-top: 2px solid #c33; padding-top: 0.5rem; }
   .orphans h2 { font-size: 1rem; color: #c33; }
   .error { color: #a00; }
@@ -244,37 +267,24 @@ function panelCaptureHtml(ref: EvidenceRef, index: number, total: number): strin
   );
 }
 
-// The evidence drill-in panel for one node (M9, design §12 / D3): opening a node
-// renders its evidence and navigating advances through that node's ordered captures.
-// This is the bounded new feature on the M5 read-only view the second dogfood drives
-// through the full visual path — the host surface the visual outcome's semantic-action
-// path drives (V1) and its structural check grades, scoped to the `evidence-panel`
-// element (V7). Strictly a view (I3): it renders ONE capture index and links to the
-// next, navigation is plain GET on `?capture=<n>` (panelHref), and it writes nothing.
-// The `data-testid`s are the panel DOM contract the dogfood's PANEL_FIXTURE selectors
-// address, so the seed's path/scope/expectSubtree resolve against exactly this markup.
-// The header sits OUTSIDE the scoped panel so a check scoped to `evidence-panel`
-// ignores it — orientation only, never the capture facts (the V7 isolation point).
-export function renderNodePanel(
-  projection: RunProjection,
-  node: NodeView,
-  captureIndex: number,
-): string {
+// The evidence drill-in panel SECTION for one node (M9, design §12 / D3): one
+// `<section data-testid="evidence-panel">` rendering ONE capture index with prev/next
+// navigation. Kept as its own builder so the node page can compose it ahead of the
+// human-supervisor detail (Phase 3) without disturbing this exact markup — the
+// `data-testid`s are the panel DOM contract the dogfood's PANEL_FIXTURE selectors
+// address, and the dogfood scopes its structural grade to this single section by
+// matching its first `</section>`, so the supervisor detail MUST stay a sibling after
+// it, never nested within (V7 isolation).
+function nodePanelSection(node: NodeView, captureIndex: number): string {
   const refs = node.evidenceRefs;
   const total = refs.length;
-  const header =
-    `<h1>evidence · <code>${esc(node.id)}</code></h1>` +
-    `<div class="meta">run <code>${esc(projection.runId)}</code> · ` +
-    `<a class="back" href="/">← run</a></div>`;
-
   if (total === 0) {
-    const empty =
-      header +
+    return (
       `<section class="panel" data-testid="evidence-panel">` +
       `<div class="panel-node">node <code>${esc(node.id)}</code></div>` +
       `<div class="panel-empty">no evidence captures for this node</div>` +
-      `</section>`;
-    return page(`relay · ${node.id} · evidence`, empty);
+      `</section>`
+    );
   }
 
   // Clamp `?capture=` to a real index so an out-of-range request lands on the last
@@ -290,14 +300,169 @@ export function renderNodePanel(
       ? `<a class="panel-next" data-testid="evidence-next" href="${esc(panelHref(node.id, idx + 1))}">next →</a>`
       : '';
 
-  const body =
-    header +
+  return (
     `<section class="panel" data-testid="evidence-panel">` +
     `<div class="panel-node">node <code>${esc(node.id)}</code></div>` +
     panelCaptureHtml(ref, idx, total) +
     `<div class="panel-nav">${prev}${next}</div>` +
-    `</section>`;
-  return page(`relay · ${node.id} · evidence`, body);
+    `</section>`
+  );
+}
+
+// The per-node page (M9 evidence panel + Sol 1 human-supervisor detail). The evidence
+// drill-in panel renders ONE capture index and links to the next (navigation is plain
+// GET on `?capture=<n>`, I3); when a `supervisor` view is supplied (the server always
+// supplies it), the human-supervisor detail — self-report, evidence-file content,
+// critic verdict, and the decompose footprints/seams/rationale — renders as a SIBLING
+// section after the panel. That ordering is load-bearing: the dogfood scopes its
+// structural grade to the `evidence-panel` section alone, and the header + detail sit
+// outside it so neither can decide the verdict (V7 isolation point). The detail bounds
+// untrusted model prose at render (Phase 3); the full text stays on disk for audit.
+export function renderNodePanel(
+  projection: RunProjection,
+  node: NodeView,
+  captureIndex: number,
+  supervisor?: SupervisorView,
+): string {
+  const header =
+    `<h1>evidence · <code>${esc(node.id)}</code></h1>` +
+    `<div class="meta">run <code>${esc(projection.runId)}</code> · ` +
+    `<a class="back" href="/">← run</a></div>`;
+  const detail = supervisor === undefined ? '' : renderSupervisorDetail(supervisor);
+  return page(
+    `relay · ${node.id} · evidence`,
+    header + nodePanelSection(node, captureIndex) + detail,
+  );
+}
+
+// The render-time cap on an untrusted-prose block (Sol 1, Phase 3). The full text is
+// persisted on disk for audit fidelity; the view shows at most this many characters
+// and points at the on-disk path. Bounds self-report and decompose-rationale prose —
+// model-authored free text that can be arbitrarily long — so one node's page cannot be
+// blown up by a runaway report.
+const PROSE_CAP = 2000;
+
+// The on-disk path of an evidence ref (Sol 1): `evidence/<runId>/<ref.path>`, the
+// pointer the bounded view shows so an auditor can read the full artifact. The ref
+// carries its own `runId`, so the path is self-contained.
+function evidenceDiskPath(ref: EvidenceRef): string {
+  return `evidence/${ref.runId}/${ref.path}`;
+}
+
+// Render an untrusted-prose block bounded at `PROSE_CAP` (Sol 1, Phase 3). Always
+// escaped (the text is model-authored free text — an injection sink otherwise). When
+// it exceeds the cap, only the head is shown, followed by a "full text at <path>"
+// pointer to the on-disk artifact — fail-visible truncation, never a silent cut.
+function boundedProse(text: string, diskPath: string): string {
+  if (text.length <= PROSE_CAP) {
+    return `<div class="prose">${esc(text)}</div>`;
+  }
+  return (
+    `<div class="prose prose-truncated">${esc(text.slice(0, PROSE_CAP))}` +
+    `<span class="prose-ellipsis">…</span>` +
+    `<div class="prose-more">full text at <code>${esc(diskPath)}</code></div>` +
+    `</div>`
+  );
+}
+
+// One on-disk evidence artifact for the supervisor detail (Sol 1): its kind, its disk
+// path, and either its bounded content or — when the ref is present but the file is
+// absent (a blocked node has a diff/self-report but no verdict; an errored executor may
+// leave a ref's file unwritten) — an inline "(artifact missing)" notice. The notice is
+// the fail-VISIBLE degradation (Rule 11): the route renders the rest of the node rather
+// than 500-ing on one half-written file.
+function evidenceArtifactHtml(item: EvidenceContent): string {
+  const diskPath = evidenceDiskPath(item.ref);
+  const head =
+    `<div class="artifact-head"><span class="evidence-kind">${esc(item.ref.kind)}</span> ` +
+    `<code class="evidence-path">${esc(diskPath)}</code></div>`;
+  const body = item.missing
+    ? `<div class="artifact-missing">(artifact missing)</div>`
+    : boundedProse(item.content ?? '', diskPath);
+  return `<div class="artifact">${head}${body}</div>`;
+}
+
+// The decompose JUDGMENT — per-child write footprints and the seam graph between the
+// children — lifted off the branch's layer manifest (Sol 1). This is orchestrator-
+// visible reasoning the critic never receives; the human supervisor sees it here.
+function layerHtml(layer: LayerManifest): string {
+  const footprints = Object.entries(layer.footprints)
+    .map(
+      ([childId, fp]) =>
+        `<li><code>${esc(childId)}</code> → <code>${esc(fp.writeGlobs.join(', '))}</code></li>`,
+    )
+    .join('');
+  const seams =
+    layer.seams.length === 0
+      ? ''
+      : `<div class="seams"><h4>seams</h4><ul>${layer.seams
+          .map(
+            (s) =>
+              `<li><span class="seam-kind">${esc(s.kind)}</span> ` +
+              `<code>${esc(s.producer)}</code> → <code>${esc(s.consumer)}</code>: ${esc(s.intent)}</li>`,
+          )
+          .join('')}</ul></div>`;
+  return `<div class="footprints"><h4>footprints</h4><ul>${footprints}</ul></div>${seams}`;
+}
+
+// The human-supervisor detail for one node (Sol 1, plan 03 Phase 3). The OTHER side of
+// the C7 split: it surfaces the orchestrator-visible narrative (self-report, learnings)
+// and the decompose judgment (footprints/seams/rationale) the critic never sees, plus
+// the on-disk evidence content the auditor reviews. Untrusted model prose is bounded at
+// render (`boundedProse`); the full text stays on disk. It is a sibling `<section>`
+// AFTER the evidence panel — outside the dogfood's `evidence-panel` grade scope (V7).
+function renderSupervisorDetail(view: SupervisorView): string {
+  const blocks: string[] = [];
+
+  // Self-report narrative — surfaced to the HUMAN, never the critic (C7). Bounded; the
+  // pointer is the self-report.md artifact when present, else the node file where the
+  // record narrative is persisted.
+  if (view.selfReport !== null) {
+    const selfReportRef = view.evidence.find((e) => e.ref.kind === 'self-report')?.ref;
+    const diskPath = selfReportRef ? evidenceDiskPath(selfReportRef) : `nodes/${view.id}.md`;
+    blocks.push(
+      `<div class="detail-block"><h3>self-report</h3>${boundedProse(view.selfReport, diskPath)}</div>`,
+    );
+  }
+
+  if (view.learnings.length > 0) {
+    const items = view.learnings.map((l) => `<li>${esc(l)}</li>`).join('');
+    blocks.push(`<div class="detail-block"><h3>learnings</h3><ul>${items}</ul></div>`);
+  }
+
+  if (view.verdict !== null) {
+    blocks.push(
+      `<div class="detail-block"><h3>critic verdict</h3>${verdictHtml(view.verdict)}</div>`,
+    );
+  }
+
+  if (view.blocked !== null) {
+    blocks.push(
+      `<div class="detail-block"><h3>blocked</h3>` +
+        `<div class="blocked"><span class="blocked-reason">blocked: ${esc(view.blocked.reason)}</span> ` +
+        `<span class="blocked-human">${esc(view.blocked.humanFacing)}</span></div></div>`,
+    );
+  }
+
+  if (view.layer !== null) {
+    blocks.push(
+      `<div class="detail-block"><h3>decompose judgment</h3>${layerHtml(view.layer)}</div>`,
+    );
+  }
+
+  // The on-disk artifacts (diff, decompose rationale, verdict file, self-report file):
+  // each bounded, or an inline "(artifact missing)" notice when its file is absent.
+  if (view.evidence.length > 0) {
+    const artifacts = view.evidence.map(evidenceArtifactHtml).join('');
+    blocks.push(`<div class="detail-block"><h3>evidence artifacts</h3>${artifacts}</div>`);
+  }
+
+  return (
+    `<section class="supervisor" data-testid="supervisor-detail">` +
+    `<h2>supervisor detail</h2>` +
+    blocks.join('') +
+    `</section>`
+  );
 }
 
 // The error page. `projectRun` fails loud on an incoherent tree (missing root,
