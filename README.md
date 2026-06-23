@@ -1,5 +1,7 @@
 # Relay
 
+[![CI](https://github.com/jasonhulbert/relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jasonhulbert/relay/actions/workflows/ci.yml)
+
 ## What is Relay?
 
 Relay is a standalone, terminal-based, multi-provider loop generator and orchestrator for software work. You specify verifiable outcomes instead of authoring step-by-step plans, and capable models decide how to reach them just in time. The plan becomes a loop the system runs and verifies on its own, handing work to Claude Code and Codex as interchangeable executor backends. The target is macOS only, with Windows a later second backend behind an adapter contract. The scale target is explicit: multi-codebase changes and large data jobs, run by a deep tree of orchestrators.
