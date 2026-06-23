@@ -121,7 +121,8 @@ describe('branch-activation decomposition commits a real layer atomically (§3.1
                 },
               ],
             },
-            rationale: 'split into a data layer and a UI branch joined by the Widget interface seam',
+            rationale:
+              'split into a data layer and a UI branch joined by the Widget interface seam',
           }),
       };
 

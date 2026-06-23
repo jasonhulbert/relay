@@ -18,7 +18,13 @@ import type {
   NodeCost,
   RunCost,
 } from '../relay-state/index';
-import type { EvidenceContent, NodeView, RunProjection, SupervisorView, TreeNode } from './projection';
+import type {
+  EvidenceContent,
+  NodeView,
+  RunProjection,
+  SupervisorView,
+  TreeNode,
+} from './projection';
 
 // Minimal HTML-attribute/text escaping. The projection's strings are operator
 // outcomes and model rationales — untrusted free text — so every interpolated
@@ -439,7 +445,9 @@ function renderSupervisorDetail(view: SupervisorView): string {
   }
 
   if (view.layer !== null) {
-    blocks.push(`<div class="detail-block"><h3>decompose judgment</h3>${layerHtml(view.layer)}</div>`);
+    blocks.push(
+      `<div class="detail-block"><h3>decompose judgment</h3>${layerHtml(view.layer)}</div>`,
+    );
   }
 
   // The on-disk artifacts (diff, decompose rationale, verdict file, self-report file):

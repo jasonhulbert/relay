@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { runIntake, parseInterviewerTurn, agentInterviewer, buildInterviewerPrompt } from './session';
+import {
+  runIntake,
+  parseInterviewerTurn,
+  agentInterviewer,
+  buildInterviewerPrompt,
+} from './session';
 import type { AskHuman, Interviewer, InterviewerTurn, IntakeResult } from './session';
 import type { IntakeSeed } from './seed';
 
@@ -249,7 +254,11 @@ describe('agentInterviewer one-shot compiles a grounded seed without grilling', 
 
 describe('buildInterviewerPrompt one-shot directive', () => {
   test('one-shot forbids questions; the default still asks one per turn', () => {
-    const oneShot = buildInterviewerPrompt([{ role: 'human', text: 'ship the parser' }], undefined, true);
+    const oneShot = buildInterviewerPrompt(
+      [{ role: 'human', text: 'ship the parser' }],
+      undefined,
+      true,
+    );
     expect(oneShot).toMatch(/ONE-SHOT MODE/);
     expect(oneShot).toMatch(/ask NO questions/);
     const normal = buildInterviewerPrompt([], undefined, false);

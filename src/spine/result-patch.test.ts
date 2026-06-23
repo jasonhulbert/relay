@@ -135,7 +135,12 @@ function stubDiffExecutor(): Executor {
     async run({ worktree }): Promise<ExecutorResult> {
       await mkdir(worktree, { recursive: true });
       await writeFile(join(worktree, 'CHANGE.txt'), 'change\n');
-      return { diff: 'A CHANGE.txt\n+change', selfReport: 'stub', usage: STUB_USAGE, exitStatus: 0 };
+      return {
+        diff: 'A CHANGE.txt\n+change',
+        selfReport: 'stub',
+        usage: STUB_USAGE,
+        exitStatus: 0,
+      };
     },
   };
 }
@@ -206,7 +211,8 @@ describe('result.patch — canonical verified result persisted at root done', ()
       // the operator base and yields both files (Phase 6 lands exactly this).
       const verifyWt = join(workRoot, 'verify');
       const plan = await resolveSeedPlan(repo);
-      if (plan.mode !== 'checkout' || plan.base !== head) throw new Error('expected checkout at head');
+      if (plan.mode !== 'checkout' || plan.base !== head)
+        throw new Error('expected checkout at head');
       await seedWorktree(verifyWt, plan);
       const patchFile = join(base, 'result.patch.tmp');
       await writeFile(patchFile, resultPatch);

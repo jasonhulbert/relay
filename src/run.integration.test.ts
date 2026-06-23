@@ -71,9 +71,7 @@ function twoLeafBrain(relayDir: string): {
           children: [1, 2].map((n) => ({
             spec: {
               outcome: `part ${n.toString()}`,
-              verifications: [
-                { kind: 'command' as const, grounding: 'exit 0', check: 'true' },
-              ],
+              verifications: [{ kind: 'command' as const, grounding: 'exit 0', check: 'true' }],
             },
             kind: 'leaf' as const,
             footprint: { writeGlobs: [`part-${n.toString()}/**`] },
@@ -102,7 +100,13 @@ function recordingExecutor(): {
 } {
   const runs: Array<{ outcome: string; worktree: string; projectSeeded: boolean }> = [];
   const executor: Executor = {
-    capabilities: () => ({ provider: 'fake', json: true, resume: false, sandbox: true, mcp: false }),
+    capabilities: () => ({
+      provider: 'fake',
+      json: true,
+      resume: false,
+      sandbox: true,
+      mcp: false,
+    }),
     async run(input: ExecutorInput): Promise<ExecutorResult> {
       // Plan 1: each leaf worktree is a real checkout of the operator project, so the
       // operator's committed code is visible to the executor. A checkout seed leaves
@@ -212,7 +216,9 @@ describe('relay run (integration: multi-part intake → decompose → seeded lea
       // The operator's own working tree was never touched by either leaf.
       expect(await fileExists(join(project, 'part-1'))).toBe(false);
       expect(await fileExists(join(project, 'part-2'))).toBe(false);
-      expect((await execFileP('git', ['-C', project, 'status', '--porcelain'])).stdout.trim()).toBe('');
+      expect((await execFileP('git', ['-C', project, 'status', '--porcelain'])).stdout.trim()).toBe(
+        '',
+      );
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(project, { recursive: true, force: true });

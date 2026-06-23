@@ -241,10 +241,7 @@ export async function establishBaseline(
 // outcome may already be satisfied), so this is gradeable evidence, never an error.
 export async function captureDiff(worktree: string, base?: string): Promise<string> {
   await gitOrThrow(['add', '-A'], worktree);
-  return gitOrThrow(
-    ['-c', 'core.quotepath=false', 'diff', '--cached', base ?? 'HEAD'],
-    worktree,
-  );
+  return gitOrThrow(['-c', 'core.quotepath=false', 'diff', '--cached', base ?? 'HEAD'], worktree);
 }
 
 // Compose a concurrent layer's per-child diffs onto ONE fresh base tree — the

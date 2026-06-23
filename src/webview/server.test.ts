@@ -386,7 +386,12 @@ describe('webview HTTP server', () => {
       }),
     );
     await writeEvidence(relayDir, 'leaf', 'self-report.md', 'wrote the data module in full');
-    await writeEvidence(relayDir, 'leaf', 'diff.patch', 'A src/data/widget.ts\n+export const W = 1;');
+    await writeEvidence(
+      relayDir,
+      'leaf',
+      'diff.patch',
+      'A src/data/widget.ts\n+export const W = 1;',
+    );
     await writeEvidence(relayDir, 'leaf', 'verdict.md', '# critic verdict\n\n- Result: PASS\n');
   }
 

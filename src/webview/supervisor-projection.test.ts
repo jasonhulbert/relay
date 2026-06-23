@@ -152,7 +152,12 @@ describe('projectSupervisorNode surfaces the human-supervisor detail (Sol 1)', (
       );
       await writeEvidence(relayDir, 'root.c0', 'self-report.md', 'wrote the data module in full');
       await writeEvidence(relayDir, 'root.c0', 'diff.patch', 'A src/data/widget.ts\n+export ...');
-      await writeEvidence(relayDir, 'root.c0', 'verdict.md', '# critic verdict\n\n- Result: PASS\n');
+      await writeEvidence(
+        relayDir,
+        'root.c0',
+        'verdict.md',
+        '# critic verdict\n\n- Result: PASS\n',
+      );
 
       // Branch: narrative lifted, rationale content read, layer exposed.
       const branch = await projectSupervisorNode(relayDir, 'root');
