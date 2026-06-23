@@ -1,9 +1,9 @@
-// The WebSurface driver (design §13): the `Surface` contract implemented over a
+// The WebSurface driver: the `Surface` contract implemented over a
 // Playwright MCP server. The spine is the MCP HOST (see ../mcp/index.ts); here it
 // is also an MCP CLIENT, connecting to a Playwright MCP server it launches as one
 // long-lived shared process and driving its `browser_*` tools to reach, read, and
 // screenshot the app. The same server config the surface launches is the grant the
-// spine later routes into the critic so it can replay against the app (V1) — which
+// spine later routes into the critic so it can replay against the app — which
 // is why the launch spec is an `McpServerConfig`, the shape the grant bus already
 // speaks.
 //
@@ -27,14 +27,14 @@ import {
   type SurfaceCapabilities,
 } from './types';
 
-// Pinned at build time (the verified-tooling discipline, design constraint): the
+// Pinned at build time (the verified-tooling discipline): the
 // Playwright MCP package the surface launches via `npx`. A pin, not a floating
 // tag, so a surface run is reproducible.
 export const PLAYWRIGHT_MCP_SPEC = '@playwright/mcp@0.0.76';
 
 export interface WebSurfaceOptions {
   // Run the browser headless. Default true (CI/eval); a tier-A run on the logged-in
-  // session (Phase 2) flips this off.
+  // session flips this off.
   headless?: boolean;
   // Keep the browser profile in memory instead of a shared on-disk profile. Default
   // true: a persistent profile can only be used by one browser at a time, so the
@@ -46,7 +46,7 @@ export interface WebSurfaceOptions {
   viewportSize?: string;
   // Directory Playwright MCP writes its session output into (snapshots/screenshots,
   // the `.playwright-mcp/` tree). Defaults to the server's cwd; a tier-A run sets it
-  // to the run's working dir so those artifacts land in the run scope (Phase 2).
+  // to the run's working dir so those artifacts land in the run scope.
   outputDir?: string;
   // The `npx` binary; defaults to the one on PATH.
   npxBin?: string;
@@ -67,7 +67,7 @@ export function playwrightMcpServerConfig(opts: WebSurfaceOptions = {}): McpServ
   return { name: 'surface', command: opts.npxBin ?? 'npx', args };
 }
 
-// The WebSurface's static capabilities (V4): a11y snapshot (semantic-first) and
+// The WebSurface's static capabilities: a11y snapshot (semantic-first) and
 // pixel screenshot are both supported, as is resize.
 export function webSurfaceCapabilities(): SurfaceCapabilities {
   return { kind: 'web', semantic: true, screenshot: true, resize: true };

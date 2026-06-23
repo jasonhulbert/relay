@@ -41,7 +41,7 @@ function emptyDiffExecutor(calls: number[]): Executor {
 // "the executor did nothing" (a non-attempt). The executor path must NOT resolve that
 // ambiguity by auto-escalating an empty diff (which would burn the ladder on a leaf
 // that was actually already done, or auto-pass one that wasn't). Done-ness is the
-// critic's call (C7, §3.6): the empty diff is handed to the critic like any other
+// critic's call: the empty diff is handed to the critic like any other
 // evidence, and the critic's verdict — not the emptiness — decides. These two tests
 // pin both directions of that gate.
 describe('an empty diff is gated by the critic, not auto-escalated by the executor path', () => {

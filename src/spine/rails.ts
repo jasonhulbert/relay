@@ -1,22 +1,22 @@
 // Budget rails and action gates: the deterministic guardrails that bound the
-// escalation ladder (design §3.7, §3.9). They make no judgment — they cap blast
-// radius and refuse forbidden actions, in code (design §0 "determinism caps
-// blast radius without making the decisions"; Rule 5). Caps guarantee a failing
-// leaf STOPS; gates refuse actions the loop must never take autonomously.
+// escalation ladder. They make no judgment — they cap blast radius and refuse
+// forbidden actions, in code (determinism caps blast radius without making the
+// decisions; Rule 5). Caps guarantee a failing leaf STOPS; gates refuse actions
+// the loop must never take autonomously.
 
 // Cumulative budget a leaf has consumed across its escalation attempts.
 // Monotonic — each attempt only adds.
 export interface RailUsage {
   // Dispatch attempts spent so far (one per rung action taken).
   attempts: number;
-  // Provider tokens billed so far across all attempts (design §8).
+  // Provider tokens billed so far across all attempts.
   tokens: number;
   // Wall-clock elapsed since the first dispatch, in milliseconds.
   elapsedMs: number;
 }
 
 // The three budget caps. A leaf's ladder halts the moment any one is reached
-// (design §3.7: "the budget rails guarantee it stops").
+// (the budget rails guarantee it stops).
 export interface RailCaps {
   maxAttempts: number;
   maxTokens: number;
@@ -44,9 +44,9 @@ export function capReached(caps: RailCaps, usage: RailUsage): CapKind | null {
 }
 
 // A consequential action the loop is about to take, gated before execution.
-// Phase-1 kinds: a git write that could land on a protected branch, and a macOS
-// host system action (the tier-A runner's logged-in session, design §7.3). The
-// union is extensible as later milestones add gated action kinds.
+// Current kinds: a git write that could land on a protected branch, and a macOS
+// host system action (the tier-A runner's logged-in session). The union is
+// extensible as later steps add gated action kinds.
 export type GatedAction =
   | { kind: 'git-write'; branch: string }
   | { kind: 'macos-system'; action: string };
@@ -56,8 +56,8 @@ export type GatedAction =
 export interface GateConfig {
   // Branch names the loop must never write to autonomously (e.g. `main`).
   protectedBranches: string[];
-  // macOS host system actions are refused unless explicitly permitted; v0.1
-  // tier-A runs non-destructive on the logged-in session (design §7.3).
+  // macOS host system actions are refused unless explicitly permitted; tier-A
+  // currently runs non-destructive on the logged-in session.
   allowMacosSystemActions: boolean;
 }
 

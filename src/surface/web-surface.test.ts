@@ -46,7 +46,7 @@ describe('playwrightMcpServerConfig', () => {
     expect(cfg.args).toContain('1280x720');
   });
 
-  // WHY (Phase 2): Playwright MCP writes its session output to the process cwd by
+  // WHY: Playwright MCP writes its session output to the process cwd by
   // default; a tier-A run threads `--output-dir` so those artifacts land in the run
   // scope instead. If the flag dropped, run artifacts would scatter into cwd.
   test('threads an output dir as --output-dir for run-scoped session artifacts', () => {
@@ -59,7 +59,7 @@ describe('playwrightMcpServerConfig', () => {
 });
 
 // WHY (Validation): `capabilities()` must report the WebSurface's semantic AND
-// screenshot support, because the critic's match-granularity (V4) is selected from
+// screenshot support, because the critic's match granularity is selected from
 // it. A driver that under-reported would silently disable a granularity.
 describe('webSurfaceCapabilities', () => {
   test('reports semantic and screenshot support', () => {
@@ -71,8 +71,8 @@ describe('webSurfaceCapabilities', () => {
   });
 });
 
-// WHY: the snapshot is the semantic-first ground truth the critic replays against
-// (V1). An empty or error result must fail loud, never be read as a clean empty
+// WHY: the snapshot is the semantic-first ground truth the critic replays against.
+// An empty or error result must fail loud, never be read as a clean empty
 // page (Rule 11) — a silently-empty snapshot would grade every element as absent.
 describe('parseSnapshotResult', () => {
   test('extracts the accessibility tree from the text content', () => {
@@ -101,8 +101,8 @@ describe('parseSnapshotResult', () => {
   });
 });
 
-// WHY: the screenshot is the pixel fallback the baseline-diff granularity needs
-// (V4/V6). The bytes ride back as an image content block; a missing image must
+// WHY: the screenshot is the pixel fallback the baseline-diff granularity needs.
+// The bytes ride back as an image content block; a missing image must
 // throw, never yield an empty screenshot a baseline would then "match".
 describe('parseScreenshotResult', () => {
   test('extracts image bytes and mime type from the image content block', () => {
@@ -141,7 +141,7 @@ describe('parseQueryResult', () => {
   });
 });
 
-// WHY: interactions are semantic-first (V1) — they target a `ref` from a snapshot,
+// WHY: interactions are semantic-first — they target a `ref` from a snapshot,
 // not coordinates — and the executor's path is replayed verbatim by the critic, so
 // the action→tool mapping must be exact and stable. Optional fields must be OMITTED
 // when unset (not sent as undefined), so the call shape matches what the server

@@ -7,7 +7,7 @@ import { pendingIntents, readNode, tryReadContract } from '../relay-state/index'
 import { InjectedKill, runOrchestrator, seedHierarchy } from './index';
 import type { FaultPoint, SpawnChild } from './index';
 
-// The child sub-orchestrator runs in a fresh `node` process (C6). The source uses
+// The child sub-orchestrator runs in a fresh `node` process. The source uses
 // extensionless, bundler-resolved imports Node cannot run from raw `.ts`, so we
 // bundle the entry once (the same artifact shape the SEA binary will carry) and
 // point the parent's spawner at it.
@@ -79,8 +79,8 @@ async function collectRelay(relayDir: string): Promise<Record<string, string>> {
   return out;
 }
 
-describe('ownership-partitioned regions (A6, C6)', () => {
-  // WHY: the whole no-shared-write-target premise (C6/A6) is only real if two
+describe('ownership-partitioned regions', () => {
+  // WHY: the whole no-shared-write-target premise is only real if two
   // orchestrators can never write the same file. This pins the footprints: the
   // sub-orchestrator owns its own node + its leaf; the parent owns only its own
   // node. The instant the parent reaches into the child's region (or vice versa),
@@ -116,8 +116,8 @@ describe('ownership-partitioned regions (A6, C6)', () => {
     }
   });
 
-  // WHY: C6 says a parent spawns each child orchestrator as a *separate OS
-  // process* coordinating only through `.relay/`. This proves the real spawn
+  // WHY: a parent spawns each child orchestrator as a *separate OS process*
+  // coordinating only through `.relay/`. This proves the real spawn
   // path: a fresh `node` subprocess writes the child's region to disk, and the
   // parent reaches done from that committed state — with no lockfile, because
   // coordination is disjoint regions, not mutual exclusion.
@@ -141,7 +141,7 @@ describe('ownership-partitioned regions (A6, C6)', () => {
       );
       expect(diff).toContain('CHANGE.txt');
 
-      // No lockfile anywhere: no shared write target, no mutual exclusion (C6).
+      // No lockfile anywhere: no shared write target, no mutual exclusion.
       const files = await listFiles(relayDir);
       expect(files.filter((f) => /\.lock$|lockfile/i.test(f))).toEqual([]);
     } finally {
@@ -150,7 +150,7 @@ describe('ownership-partitioned regions (A6, C6)', () => {
   });
 });
 
-describe('verified outcome contract via the ledger (A7)', () => {
+describe('verified outcome contract via the ledger', () => {
   // WHY: the parent must reach `done` by reading the child's committed contract —
   // the structural critic-certified fact — not by trusting the child's process. A
   // real subprocess publishes its contract; the parent accepts from the ledger and
@@ -205,8 +205,8 @@ describe('verified outcome contract via the ledger (A7)', () => {
   });
 });
 
-// WHY: disposability is the backbone (§3.2), and M2 must hold it across the
-// process boundary. A kill at EITHER level — inside the child's leaf dispatch, or
+// WHY: disposability is the backbone (the rehydration contract), and it must hold
+// across the process boundary. A kill at EITHER level — inside the child's leaf dispatch, or
 // in the parent around its accept/done transition — must reconstitute from
 // `.relay/` alone to the SAME terminal state, with no torn records. The clean
 // two-process run is the byte-deterministic baseline every variant reproduces.

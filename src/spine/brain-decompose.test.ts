@@ -45,7 +45,7 @@ async function relayFiles(relayDir: string): Promise<string[]> {
   return out;
 }
 
-// Seed a CHILDLESS branch root so branch-activation decomposition (§3.10) fires —
+// Seed a CHILDLESS branch root so branch-activation decomposition fires —
 // the seed fixture hands the root a child, which would skip decomposition.
 async function seedChildlessBranch(relayDir: string, outcome: string): Promise<void> {
   const spec = {
@@ -80,7 +80,7 @@ async function seedChildlessBranch(relayDir: string, outcome: string): Promise<v
 // footprints AND seams, committed atomically. This also exercises leaf-vs-branch —
 // the brain classifies one child a branch — and that the orchestrator (code) is what
 // commits the model's judgment.
-describe('branch-activation decomposition commits a real layer atomically (§3.10)', () => {
+describe('branch-activation decomposition commits a real layer atomically', () => {
   test('children + footprints + seams land together, with leaf-vs-branch classes', async () => {
     const { base, relayDir, workRoot } = await freshRelay();
     try {
@@ -157,10 +157,10 @@ describe('branch-activation decomposition commits a real layer atomically (§3.1
       expect(res.ownedWrites).toContain('layers/root.md');
       expect(res.ownedWrites).toContain('nodes/root.c0.md');
 
-      // Sol 2: the brain's decompose rationale was persisted as node-attributed audit
+      // The brain's decompose rationale was persisted as node-attributed audit
       // evidence in the SAME commit as the layer — the decomposed branch carries a
       // `rationale` evidence ref into the on-disk file, and the file holds the raw
-      // reasoning. A wiring that discarded the rationale (the pre-Sol-2 loss), or wrote
+      // reasoning. A wiring that discarded the rationale, or wrote
       // it OUTSIDE the layer's atomic commit, fails here.
       const rationalePath = join(relayDir, 'evidence', 'run-1', 'root', 'decompose-rationale.md');
       expect(await readFile(rationalePath, 'utf8')).toContain('Widget interface seam');
@@ -178,10 +178,10 @@ describe('branch-activation decomposition commits a real layer atomically (§3.1
 // Validation 2 (headline): a tool-using judgment runs inside the code-owned loop,
 // and ONLY code writes `.relay/`. The brain is granted a worktree + MCP servers but
 // NO `.relay/` handle, so it is structurally incapable of writing the durable state
-// (C2, §9.4); here it performs a tool action in its sandbox worktree, and we assert
+// (code is the sole writer of `.relay/`); here it performs a tool action in its sandbox worktree, and we assert
 // every `.relay/` file is an orchestrator-owned record while the brain's artifact is
 // not under `.relay/`.
-describe('a tool-using brain judgment writes nothing to .relay/ (C2)', () => {
+describe('a tool-using brain judgment writes nothing to .relay/ (code is the sole writer)', () => {
   test('the judgment uses a tool in its worktree; code is the sole .relay/ writer', async () => {
     const { base, relayDir, workRoot } = await freshRelay();
     try {

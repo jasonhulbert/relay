@@ -99,7 +99,7 @@ describe('single-leaf loop reaches done end-to-end', () => {
   });
 });
 
-// WHY: disposability is the system's backbone (§3.2). A process killed mid-run
+// WHY: disposability is the system's backbone (the rehydration contract). A process killed mid-run
 // must be reconstitutable from `.relay/` alone, reaching the SAME terminal state
 // with no torn records. A thrown `InjectedKill` models the kill: `.relay/` is the
 // only durable state, so a thrown fault at a seam is indistinguishable from a

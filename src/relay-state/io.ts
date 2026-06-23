@@ -1,17 +1,18 @@
 // Filesystem primitives for `.relay/` writes. The filesystem gives one atomic
 // primitive — single-file rename — and the intent journal (journal.ts) lifts it
-// to all-or-nothing across the several files a transition touches (design §9.3).
-// This module provides that primitive: a crash during `atomicWriteFile` leaves
-// the target either fully at its old contents or fully at its new contents,
-// never torn — which is what keeps a rehydrating orchestrator from ever reading
-// a half-written record (the rehydration contract, §3.2).
+// to all-or-nothing across the several files a transition touches. This module
+// provides that primitive: a crash during `atomicWriteFile` leaves the target
+// either fully at its old contents or fully at its new contents, never torn —
+// which is what keeps a rehydrating orchestrator from ever reading a
+// half-written record (the rehydration contract: any instant of `.relay/` is
+// coherent enough to reconstitute the responsible orchestrator).
 import { mkdir, open, rename } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 // Durably persist directory metadata (the rename) by fsync-ing the directory.
 // Best-effort: not every platform permits fsync on a directory fd, and logic
-// correctness does not depend on it — only crash durability does (§4 caveat).
+// correctness does not depend on it — only crash durability does.
 export async function fsyncDir(dir: string): Promise<void> {
   let dh: FileHandle | undefined;
   try {

@@ -1,19 +1,19 @@
-// The orchestrator brain (design §3.3, §3.4): the model JUDGMENT the code-owned
+// The orchestrator brain: the model JUDGMENT the code-owned
 // state machine calls for when it decomposes a node one layer. Two judgments come
 // out of one call:
-//   - decompose (§3.3): the child outcomes, and — because "decomposing a layer is
+//   - decompose: the child outcomes, and — because "decomposing a layer is
 //     not only choosing children" — each child's resource FOOTPRINT and the SEAMS
-//     between them (§3.8);
-//   - leaf-vs-branch (§3.4): each child classified `leaf` (hand to one executor) or
+//     between them;
+//   - leaf-vs-branch: each child classified `leaf` (hand to one executor) or
 //     `branch` (still too big → a sub-orchestrator decomposes one more layer). This
 //     is the recursion's base case; it is judgment, allowed to be wrong, and the
-//     loop repairs a mis-size by promotion (§3.5).
+//     loop repairs a mis-size by promotion (discard the worktree, keep the lesson).
 //
 // The brain is an AGENT (a `claude -p` / `codex exec` shell-out) that connects to
 // the spine's granted MCP servers as a client and uses tools freely to inform the
 // judgment — but it WRITES NOTHING durable. It returns structured data; the
 // orchestrator parses it (Rule 5: the model judges, code reads the answer) and is
-// the sole writer of `.relay/` (C2). Its `BrainContext` carries a worktree to
+// the sole writer of `.relay/`. Its `BrainContext` carries a worktree to
 // inspect and the granted servers — never the `.relay/` dir — so it is structurally
 // incapable of writing the durable state, exactly like the executor and critic.
 import { spawn } from 'node:child_process';
@@ -35,7 +35,7 @@ export type BrainProvider = 'claude' | 'codex';
 
 // One child of a decomposed layer: its outcome spec, its leaf-vs-branch class, and
 // its resource footprint. The footprint and class are short-horizon predictions
-// pinned at decomposition (§3.3/§3.4), allowed to be wrong and corrected by the
+// pinned at decomposition, allowed to be wrong and corrected by the
 // loop.
 export interface ChildPlan {
   spec: OutcomeSpec;
@@ -69,35 +69,34 @@ export interface Decomposition {
 }
 
 // What a decompose judgment yields: the parsed `Decomposition` the orchestrator
-// commits, AND the raw model rationale that produced it (Sol 2, plan 03). The
+// commits, AND the raw model rationale that produced it. The
 // rationale was a hard loss before — discarded once parsed. It is orchestrator-
 // visible audit evidence (footprints/seams plus WHY the brain split this way) and
-// is NEVER admissible to the critic (C7). The parse still fails loud on malformed
+// is NEVER admissible to the evidence-only critic. The parse still fails loud on malformed
 // JSON; a `DecomposeResult` only exists for a successfully parsed layer.
 export interface DecomposeResult {
   decomposition: Decomposition;
   rationale: string;
 }
 
-// The non-evidentiary context a brain judgment is granted (mirrors `CriticContext`,
-// §3.6): the worktree it may inspect, and the granted MCP servers it connects to as
+// The non-evidentiary context a brain judgment is granted (mirrors `CriticContext`):
+// the worktree it may inspect, and the granted MCP servers it connects to as
 // a client. Deliberately carries NO `.relay/` handle — the brain cannot write the
 // durable state.
 export interface BrainContext {
   worktree: string;
   mcpServers: readonly McpServerConfig[];
-  // Optional F5 usage sink: the orchestrator supplies it at the call site (where it
+  // Optional per-call usage sink: the orchestrator supplies it at the call site (where it
   // knows the node being decomposed) so the brain's decompose-judgment usage is
-  // persisted node-attributed (design §8). Absent on the stub path / direct calls.
+  // persisted node-attributed. Absent on the stub path / direct calls.
   onUsage?: (usage: ExecutorUsage) => void;
 }
 
 export interface DecomposeRequest {
-  // The node being decomposed one layer (§3.3).
+  // The node being decomposed one layer.
   spec: OutcomeSpec;
   // The learnings accumulated reaching this node — including a promoted leaf's
-  // keep-lesson reflection, so the re-decomposition does not relearn why it failed
-  // (§3.5).
+  // keep-lesson reflection, so the re-decomposition does not relearn why it failed.
   context: { learnings: readonly string[] };
 }
 
@@ -105,11 +104,11 @@ export interface Brain {
   decompose(req: DecomposeRequest, ctx: BrainContext): Promise<DecomposeResult>;
 }
 
-// A deterministic 2-way split mirroring the M1–M3 `stubDecompose`: two leaf
+// A deterministic 2-way split mirroring the earlier hermetic `stubDecompose`: two leaf
 // children, each inheriting the parent's verifications (so a driven child grades
 // against the same checks), with disjoint write footprints and one file-boundary
 // seam between them. Pure and fixed so a kill-and-rehydrate reproduces identical
-// child records (the rehydration contract, §3.2); it is the default brain on the
+// child records (the rehydration contract); it is the default brain on the
 // spine's hermetic tests, replacing the stub decomposer.
 export const stubBrain: Brain = {
   decompose(req: DecomposeRequest): Promise<DecomposeResult> {
@@ -139,7 +138,7 @@ export const stubBrain: Brain = {
       },
     ];
     // A fixed synthetic rationale so a kill-and-rehydrate persists byte-identical
-    // audit evidence (the rehydration contract, §3.2) — the stub has no model prose.
+    // audit evidence (the rehydration contract) — the stub has no model prose.
     const rationale = `stub decomposition of "${parentSpec.outcome}" into 2 disjoint leaf parts with one file-boundary seam.`;
     return Promise.resolve({ decomposition: { children, seams }, rationale });
   },
@@ -160,7 +159,7 @@ export interface AgentBrainOptions {
   // Which provider renders the judgment. The orchestrator's own judgment runs on
   // the author provider by default; the harness resolves that choice.
   provider: BrainProvider;
-  // Per-role cost-guardrail knob (design §8): omitted pins the provider's cheapest
+  // Per-role cost-guardrail knob: omitted pins the provider's cheapest
   // model, mirroring the executor and critic adapters.
   model?: string;
   // The provider binary; defaults to the one on PATH.
@@ -168,13 +167,13 @@ export interface AgentBrainOptions {
   // Injectable CLI runner so the brain is exercisable without the real model
   // (hermetic tests). Defaults to spawning `bin` with the built argv.
   invoke?: (call: BrainInvocation) => Promise<BrainInvocationResult>;
-  // Observe the judgment call's usage (F5); the harness records it into the same
+  // Observe the judgment call's usage; the harness records it into the same
   // per-call sink as the executor/critic so the recap surfaces it.
   onUsage?: (usage: ExecutorUsage) => void;
 }
 
-// Render the decompose prompt. The model is asked to decompose ONE layer (lazy,
-// §3.3), classify each child, pin footprints + seams, and return a single fenced
+// Render the decompose prompt. The model is asked to decompose ONE layer (lazily,
+// one layer at a time), classify each child, pin footprints + seams, and return a single fenced
 // JSON document the spine parses deterministically.
 export function buildDecomposePrompt(req: DecomposeRequest): string {
   const lines: string[] = [
@@ -365,7 +364,7 @@ export function parseDecomposition(text: string): Decomposition {
       intent: typeof s.intent === 'string' ? s.intent : '',
     };
     const payload = asRecord(s.payload) ?? {};
-    // The two code-checkable kinds (M10) carry a typed payload — fail loud (Rule 11)
+    // The two code-checkable kinds carry a typed payload — fail loud (Rule 11)
     // on a malformed one rather than commit a seam its predicate cannot read; the
     // deferred kinds keep the free-form payload until their predicates land.
     switch (kind) {
@@ -472,13 +471,13 @@ export function agentBrain(opts: AgentBrainOptions): Brain {
       const wallClockMs = Date.now() - start;
       const { review, usage } = parseProviderStream(provider, stdout, model, wallClockMs);
       // Both write-only sinks: construction-time observer (direct calls) and the
-      // orchestrator's node-attributed F5 sink (real runs). See agent-critic.ts.
+      // orchestrator's node-attributed usage sink (real runs). See agent-critic.ts.
       opts.onUsage?.(usage);
       ctx.onUsage?.(usage);
       // Code reads the answer the model produced (Rule 5); a malformed judgment
       // fails loud (Rule 11) rather than committing a half-typed layer. The raw
       // `review` is the rationale persisted as orchestrator-only audit evidence
-      // (Sol 2) — it never reaches the critic (C7).
+      // — it never reaches the evidence-only critic.
       return { decomposition: parseDecomposition(review), rationale: review };
     },
   };

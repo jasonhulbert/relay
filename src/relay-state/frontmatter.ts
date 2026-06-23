@@ -1,5 +1,5 @@
-// Markdown + YAML front-matter codec for `.relay/` records (design §4: files-only
-// Markdown, diffable and human-readable). The front-matter block is the
+// Markdown + YAML front-matter codec for `.relay/` records: files-only Markdown,
+// diffable and human-readable. The front-matter block is the
 // authoritative machine record; the Markdown body is a generated human-readable
 // rendering and is NOT parsed back, so it can hold a friendly summary without
 // risking round-trip fidelity.

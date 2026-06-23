@@ -1,7 +1,7 @@
-// The evidence-compactor dogfood fixture (design D2, M7 Phase 1): a byte-deterministic
-// `.relay/` store plus a sibling content-addressed baseline store, and `GOLDEN` — the
-// golden expectations the compactor is graded against. Phase 2's compactor runs over a
-// freshly built copy of this fixture and asserts against `GOLDEN`.
+// The evidence-compactor dogfood fixture: a byte-deterministic `.relay/` store plus a
+// sibling content-addressed baseline store, and `GOLDEN` — the golden expectations the
+// compactor is graded against. The compactor runs over a freshly built copy of this
+// fixture and asserts against `GOLDEN`.
 //
 // The fixture is built the same way the rest of the suite builds state: a programmatic
 // writer into a caller-supplied dir (cf. `seedFixture`), with fixed content and
@@ -14,8 +14,8 @@
 // named by no live ref — exactly what the rehydration contract discards), and a
 // baseline store that lives OUTSIDE `.relay/` so a scan of `.relay/` cannot reach it.
 // Per-call usage/cost records are out of scope here: how the compactor treats those
-// (F5 says they are prunable after rollup) is a Phase 2 design choice, not something
-// Phase 1 should pre-decide into the fixture.
+// (per-call usage attribution makes them prunable after rollup) is a compactor design
+// choice, not something the fixture should pre-decide.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -25,9 +25,9 @@ import type { CallUsage, EvidenceRef, NodeRecord, RootManifest } from '../../rel
 const RUN_ID = 'run-1';
 const CREATED_AT = '2026-06-19T00:00:00.000Z';
 
-// A live capture's content is made repetitive so Phase 2's compression check is
-// meaningful: a retained capture must be measurably smaller after compaction, which
-// requires it to be compressible in the first place.
+// A live capture's content is made repetitive so the compression check is meaningful:
+// a retained capture must be measurably smaller after compaction, which requires it to
+// be compressible in the first place.
 function captureBody(label: string): string {
   return `# ${label}\n\n${`relay evidence capture line for ${label}.\n`.repeat(40)}`;
 }
@@ -52,8 +52,8 @@ const LIVE: { node: string; path: string; kind: EvidenceRef['kind']; summary: st
 const ORPHANS: string[] = ['leaf-a/transcript-attempt-0.md', 'orphans/cancelled-leaf-c-diff.md'];
 
 // The fixture baseline store's logical entries. Content-addressed: the on-disk path is
-// derived from the content hash (F2), so the store is genuinely content-addressed
-// rather than carrying invented filenames. The compactor must leave every one of these
+// derived from the content hash, so the store is genuinely content-addressed rather
+// than carrying invented filenames. The compactor must leave every one of these
 // byte-for-byte unchanged.
 const BASELINE_OBJECTS: { label: string; content: string }[] = [
   { label: 'home-view baseline', content: 'PNGDATA:home-view:v1:opaque-binary-stand-in\n' },
@@ -62,17 +62,17 @@ const BASELINE_OBJECTS: { label: string; content: string }[] = [
 
 function baselineObjectPath(content: string): string {
   // Content-addressed: `objects/<sha256>`; binaries never live in files-only `.relay/`,
-  // only this sibling store (F2). The `.bin` suffix marks it opaque, not Markdown.
+  // only this sibling store. The `.bin` suffix marks it opaque, not Markdown.
   const hash = createHash('sha256').update(content).digest('hex');
   return `objects/${hash}.bin`;
 }
 
-// F5 per-call usage/cost telemetry that lives UNDER the evidence dir but is NOT a
-// capture (Phase 2 decision): one live node's executor usage record and the run-level
-// cost rollup. Phase 1 left these out; Phase 2 adds them to PIN the decision that the
-// compactor PRESERVES F5 telemetry (governed by F5's prune-after-rollup rule) rather
-// than mistaking it for an orphan. `usage/` records and `cost.md` are excluded from the
-// compactor's capture scan, so they must be byte-for-byte unchanged after a run.
+// Per-call usage/cost telemetry that lives UNDER the evidence dir but is NOT a capture:
+// one live node's executor usage record and the run-level cost rollup. They PIN the
+// decision that the compactor PRESERVES usage/cost telemetry (governed by its own
+// prune-after-rollup rule) rather than mistaking it for an orphan. `usage/` records and
+// `cost.md` are excluded from the compactor's capture scan, so they must be
+// byte-for-byte unchanged after a run.
 const USAGE_RECORD: CallUsage = {
   runId: RUN_ID,
   nodeId: 'leaf-a',
@@ -89,13 +89,13 @@ const USAGE_RECORD: CallUsage = {
 };
 // Evidence-dir-relative path the usage writer lands the record at.
 const USAGE_REL = `${USAGE_RECORD.nodeId}/usage/${USAGE_RECORD.role}-${USAGE_RECORD.seq.toString()}.md`;
-// The run-level cost rollup (design §8), a read-time projection over per-call records.
-// A fixed stand-in body is enough: the compactor must leave it untouched, not parse it.
+// The run-level cost rollup, a read-time projection over per-call records. A fixed
+// stand-in body is enough: the compactor must leave it untouched, not parse it.
 const COST_ROLLUP_REL = 'cost.md';
 const COST_ROLLUP_BODY = `# cost rollup (${RUN_ID})\n\n- run total: $0.001200\n`;
 
-// Golden expectations: the single enumeration Phase 2 grades the compactor against and
-// the explicit answer to "which refs are live, which are orphaned, and which
+// Golden expectations: the single enumeration the compactor is graded against and the
+// explicit answer to "which refs are live, which are orphaned, and which
 // baseline-store paths must be untouched." Live refs and orphans are disjoint by
 // construction; retained-for-compression is exactly the live set (a live capture is
 // retained, and retained captures are compressed).
@@ -109,8 +109,8 @@ export const GOLDEN = {
   retainedForCompression: LIVE.map((c) => c.path),
   // Baseline-store files (relative to the baseline store dir) that must be untouched.
   untouchedBaselinePaths: BASELINE_OBJECTS.map((o) => baselineObjectPath(o.content)),
-  // F5 telemetry under the evidence dir the compactor must PRESERVE byte-for-byte
-  // (Phase 2 decision): per-call usage records and the cost rollup, not captures.
+  // Usage/cost telemetry under the evidence dir the compactor must PRESERVE byte-for-
+  // byte: per-call usage records and the cost rollup, not captures.
   preservedTelemetry: [COST_ROLLUP_REL, USAGE_REL],
 } as const;
 
@@ -151,7 +151,7 @@ function node(
 // Build the fixture into `baseDir`: a `.relay/` store with live-ref-bearing node files
 // and an evidence dir holding both live and orphaned captures, plus a sibling
 // content-addressed baseline store. Deterministic — fixed content and timestamps — so
-// Phase 2 can rebuild a clean copy per run and compare exactly.
+// the compactor can rebuild a clean copy per run and compare exactly.
 export async function buildCompactorFixture(baseDir: string): Promise<CompactorFixture> {
   const relayDir = join(baseDir, '.relay');
   const baselineStoreDir = join(baseDir, 'baselines');
@@ -198,14 +198,14 @@ export async function buildCompactorFixture(baseDir: string): Promise<CompactorF
     await writeFile(abs, captureBody(path), 'utf8');
   }
 
-  // Materialize the sibling content-addressed baseline store (F2).
+  // Materialize the sibling content-addressed baseline store.
   for (const obj of BASELINE_OBJECTS) {
     const abs = join(baselineStoreDir, baselineObjectPath(obj.content));
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, obj.content, 'utf8');
   }
 
-  // F5 telemetry the compactor must preserve: a per-call usage record (written through
+  // Usage/cost telemetry the compactor must preserve: a per-call usage record (written through
   // the real usage serializer, so it carries the on-disk shape the compactor's scan
   // must skip) and the run-level cost rollup.
   await writeUsage(relayDir, USAGE_RECORD);

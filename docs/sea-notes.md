@@ -1,10 +1,10 @@
-# Node SEA viability notes (M0 smoke test)
+# Node SEA viability notes (an early smoke test)
 
 Status: **viable** on this machine. A single self-contained binary built from a
 CJS entry runs and prints `hello` with `node` absent from `PATH`.
 
 This is a viability smoke test only. Real single-binary packaging of the Relay
-spine is a deferred effort; nothing in M0 depends on the binary.
+spine is a deferred effort; nothing the spine does today depends on the binary.
 
 ## Environment that worked
 

@@ -104,8 +104,8 @@ describe('webview HTTP server', () => {
   // WHY: the deliverable is a server that serves the tree with correct per-node
   // statuses. This pins that each node's status renders bound to that node, that
   // the served page is exactly the projection's render (so the server adds no
-  // divergence), and — the C7 line — that the orchestrator-only self-report never
-  // reaches the page even though it is on disk.
+  // divergence), and — the evidence-only critic line — that the orchestrator-only
+  // self-report never reaches the page even though it is on disk.
   test('renders a fixture run with correct per-node statuses', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
     const relayDir = join(base, '.relay');
@@ -127,15 +127,16 @@ describe('webview HTTP server', () => {
       // surface, not a second composition.
       expect(html).toBe(renderRunPage(await projectRun(relayDir)));
 
-      // C7: the orchestrator-visible narrative is on disk but not in the view.
+      // The evidence-only critic split: the orchestrator-visible narrative is on disk
+      // but not in the view.
       expect(html).not.toContain('I did the thing');
     } finally {
       await rm(base, { recursive: true, force: true });
     }
   });
 
-  // WHY: the view is composed at read time from the per-node files, never cached
-  // (A6, design §4). Mutating a node file on disk and re-fetching must reflect the
+  // WHY: the view is composed at read time from the per-node files, never cached.
+  // Mutating a node file on disk and re-fetching must reflect the
   // change with no restart — proving the page is recomposed per request, not served
   // from a snapshot taken at startup.
   test('reflects a mutated node file on refresh (read-time recomposition)', async () => {
@@ -163,7 +164,7 @@ describe('webview HTTP server', () => {
     }
   });
 
-  // WHY: I3 — the view writes nothing. Serving several requests against the store
+  // WHY: the view writes nothing. Serving several requests against the store
   // must leave every file's content and mtime untouched; an open-for-write would
   // change them via the atomic-write rename.
   test('serving writes nothing to the store', async () => {
@@ -202,7 +203,7 @@ describe('webview HTTP server', () => {
 
   // WHY: `projectRun` fails loud on an incoherent tree (here, a dangling child
   // ref). The server must surface that as an explicit error page with a 5xx, not a
-  // blank or partial tree (Rule 11, Phase 1 notes).
+  // blank or partial tree (Rule 11).
   test('serves an error page (500) when the projection fails loud', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
     const relayDir = join(base, '.relay');
@@ -227,7 +228,7 @@ describe('webview HTTP server', () => {
     }
   });
 
-  // WHY: I3 — the surface is read-only. A write method is refused outright rather
+  // WHY: the surface is read-only. A write method is refused outright rather
   // than silently ignored, so the read-only contract is observable, not just
   // implicit in there being no write code.
   test('refuses non-GET methods', async () => {
@@ -296,9 +297,10 @@ describe('webview HTTP server', () => {
     );
   }
 
-  // WHY (Validation: the panel renders a node's evidence over a plain GET, I3): the
-  // `/node/<id>` route with `?capture=<n>` must serve the requested capture's panel —
-  // navigation is GET, so this is the whole drive path the dogfood replays.
+  // WHY (Validation: the panel renders a node's evidence over a plain GET, writing
+  // nothing): the `/node/<id>` route with `?capture=<n>` must serve the requested
+  // capture's panel — navigation is GET, so this is the whole drive path the dogfood
+  // replays.
   test('serves the drill-in panel for a node, navigating captures by GET', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
     const relayDir = join(base, '.relay');
@@ -351,7 +353,7 @@ describe('webview HTTP server', () => {
   }
 
   // A done leaf whose evidence files (self-report, diff, verdict) are materialized on
-  // disk — the shape the human-supervisor detail reads CONTENT from (Sol 1, Phase 3).
+  // disk — the shape the human-supervisor detail reads CONTENT from.
   async function seedWithEvidenceFiles(relayDir: string): Promise<void> {
     await writeManifest(relayDir, {
       runId: 'run-1',
@@ -399,7 +401,8 @@ describe('webview HTTP server', () => {
   // rationale): the `/node/<id>` page is the human supervisor's window into a node. This
   // drives the REAL HTTP path (projectRun + projectSupervisorNode → renderNodePanel) and
   // pins that the orchestrator-visible narrative AND the on-disk evidence content reach
-  // the served page — the OTHER side of the C7 split the run page deliberately withholds.
+  // the served page — the OTHER side of the evidence-only-critic split the run page
+  // deliberately withholds.
   test('the per-node route serves the human-supervisor detail from disk', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-webview-srv-'));
     const relayDir = join(base, '.relay');
@@ -410,7 +413,7 @@ describe('webview HTTP server', () => {
       const res = await fetch(`${url}/node/leaf`);
       expect(res.status).toBe(200);
       const html = await res.text();
-      // The evidence panel (M9) is still present — the detail is appended, not replacing.
+      // The evidence panel is still present — the detail is appended, not replacing.
       expect(html).toContain('data-testid="evidence-panel"');
       expect(html).toContain('data-testid="supervisor-detail"');
       // Narrative (record) and evidence-file CONTENT (disk) both surface.
@@ -423,7 +426,7 @@ describe('webview HTTP server', () => {
     }
   });
 
-  // WHY (Rule 11, the Phase 3 headline): a node that EXISTS but whose verdict.md was
+  // WHY (Rule 11, the headline for serving on-disk evidence): a node that EXISTS but whose verdict.md was
   // never written (a blocked node has a self-report but no verdict) must still serve 200
   // with an inline "(artifact missing)" notice — NOT the 500 error page. A route that
   // read evidence files eagerly without the typed marker would 500 the whole page on one

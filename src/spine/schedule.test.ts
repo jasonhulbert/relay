@@ -7,8 +7,8 @@ function layerOf(footprints: Record<string, Footprint>, seams: SeamContract[] = 
   return { parentId: 'root', runId: 'run-1', footprints, seams };
 }
 
-describe('buildSchedule — the concurrency law made operational (A2)', () => {
-  // WHY: this is the headline of the phase. Two siblings the parent declared to
+describe('buildSchedule — the concurrency law made operational', () => {
+  // WHY: this is the headline. Two siblings the parent declared to
   // touch disjoint resources are the ONLY case parallelism is licensed, and they
   // must collapse into a single concurrent stage. If this regressed to serial, the
   // whole feature would be inert; if a conflicting pair leaked into one stage, it
@@ -23,8 +23,8 @@ describe('buildSchedule — the concurrency law made operational (A2)', () => {
     });
   });
 
-  // WHY: the falsifiable safety direction. A shared resource is exactly what A2
-  // forbids running concurrently; it must split into serial stages so each child
+  // WHY: the falsifiable safety direction. A shared resource is exactly what the
+  // concurrency law forbids running concurrently; it must split into serial stages so each child
   // runs against the other's already-integrated result.
   test('a shared resource serializes into separate stages', () => {
     const layer = layerOf({
@@ -36,7 +36,7 @@ describe('buildSchedule — the concurrency law made operational (A2)', () => {
     });
   });
 
-  // WHY: serial-by-default (A1) is the safe ground state. A hand-seeded branch has
+  // WHY: serial-by-default is the safe ground state. A hand-seeded branch has
   // no layer manifest, so the scheduler has no proof of disjointness and must NOT
   // optimistically parallelize — every child is its own stage, exactly the
   // pre-concurrency behavior the existing rehydration baselines depend on.
@@ -46,8 +46,8 @@ describe('buildSchedule — the concurrency law made operational (A2)', () => {
     });
   });
 
-  // WHY: a footprint that cannot be read cannot be proven disjoint, so the A1 bias
-  // serializes it rather than guessing.
+  // WHY: a footprint that cannot be read cannot be proven disjoint, so the
+  // serial-by-default bias serializes it rather than guessing.
   test('a child with no footprint entry serializes', () => {
     const layer = layerOf({ 'root.c0': { writeGlobs: ['part-1/**'] } });
     expect(buildSchedule(['root.c0', 'root.c1'], layer)).toEqual({
@@ -84,13 +84,14 @@ describe('mayRunConcurrently', () => {
   });
 });
 
-// WHY (validation 3): A2 has two conditions, and footprint disjointness is only the
-// first. A seam the parent could not reduce to a code-checkable kind (http/data-schema
-// — no v0.1 predicate) cannot gate the pair's parallel merge, so it must force
-// serialization EVEN when their footprints are disjoint. A checkable seam between the
-// same disjoint pair leaves them parallel. This is the F3 forcing function in the
-// scheduler; without it, two siblings would merge across an unverifiable seam.
-describe('an uncheckable seam forces serialization (A2 condition 2 / F3)', () => {
+// WHY (validation 3): the concurrency law has two conditions, and footprint
+// disjointness is only the first. A seam the parent could not reduce to a code-checkable
+// kind (http/data-schema — no code predicate yet) cannot gate the pair's parallel merge,
+// so it must force serialization EVEN when their footprints are disjoint. A checkable seam
+// between the same disjoint pair leaves them parallel. This is the seam-checkability
+// forcing function in the scheduler; without it, two siblings would merge across an
+// unverifiable seam.
+describe('an uncheckable seam forces serialization (concurrency-law condition 2)', () => {
   const disjoint = {
     a: { writeGlobs: ['src/a/**'] },
     b: { writeGlobs: ['src/b/**'] },

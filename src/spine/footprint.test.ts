@@ -6,7 +6,7 @@ import {
   globsIntersect,
 } from './footprint';
 
-// WHY: footprint disjointness is what LICENSES parallelism (A2). If `globsIntersect`
+// WHY: footprint disjointness is what LICENSES parallelism. If `globsIntersect`
 // were wrong, the scheduler would either serialize independent work (slow but safe)
 // or — the dangerous direction — run conflicting siblings in parallel. These pin the
 // exact glob semantics the scheduling decision rests on, so a change to the matcher
@@ -36,7 +36,7 @@ describe('globsIntersect — two globs share a concrete path', () => {
   });
 });
 
-describe('footprintsDisjoint — the A2 condition-1 predicate', () => {
+describe('footprintsDisjoint — the concurrency-law condition-1 predicate', () => {
   test('disjoint when no glob pair can intersect', () => {
     expect(footprintsDisjoint({ writeGlobs: ['part-1/**'] }, { writeGlobs: ['part-2/**'] })).toBe(
       true,
@@ -59,7 +59,7 @@ describe('footprintsDisjoint — the A2 condition-1 predicate', () => {
   });
 
   test('a shared named resource is NOT disjoint even when the writes never collide', () => {
-    // The tier-A session is a shared resource (§7.3): two leaves that both hold it
+    // The tier-A session is a shared resource: two leaves that both hold it
     // contend even with disjoint write globs, so the scheduler must serialize them.
     expect(
       footprintsDisjoint(
@@ -79,7 +79,7 @@ describe('footprintsDisjoint — the A2 condition-1 predicate', () => {
   });
 });
 
-describe('footprintEscapes — the A3 loud-violation detector', () => {
+describe('footprintEscapes — the loud-violation detector', () => {
   test('flags writes outside the declared globs, passes those inside', () => {
     const declared = { writeGlobs: ['allowed/**'] };
     expect(footprintEscapes(declared, ['allowed/x.ts', 'allowed/deep/y.ts'])).toEqual([]);
@@ -90,7 +90,7 @@ describe('footprintEscapes — the A3 loud-violation detector', () => {
 
   test('a write under a footprint that declared nothing escapes', () => {
     // "Declared to write nothing, but wrote something" is itself the loud violation
-    // — the footprint is a hint the execution contradicted (A3).
+    // — the footprint is a hint the execution contradicted.
     expect(footprintEscapes({ writeGlobs: [] }, ['CHANGE.txt'])).toEqual(['CHANGE.txt']);
   });
 });
@@ -103,7 +103,7 @@ describe('FootprintViolation', () => {
     expect(v.escapes).toEqual(['forbidden/x.ts']);
     expect(v.message).toContain('leaf-1');
     expect(v.message).toContain('forbidden/x.ts');
-    // The recorded narrative says it was absorbed by the ladder (A3), so a reader of
+    // The recorded narrative says it was absorbed by the ladder, so a reader of
     // the attempt evidence sees both the violation and how it was handled.
     expect(v.report()).toContain('escalation ladder');
   });

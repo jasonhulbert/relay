@@ -6,14 +6,14 @@ import type { CriticContext, CriticSpawn, CriticView } from './projection';
 import type { CriticVerdict, NodeRecord } from './types';
 
 // The non-evidentiary context every critic-spawn is granted alongside the view;
-// nothing in it is graded, so it cannot reopen the C7 leak.
+// nothing in it is graded, so it cannot reopen the narrative leak.
 const CTX: CriticContext = { worktree: '/tmp/wt', mcpServers: [] };
 
 // Field names that carry the orchestrator-visible narrative. None may appear in
-// the critic-visible projection (design §3.6, §4).
+// the critic-visible projection.
 const NARRATIVE_KEYS = ['selfReport', 'learnings', 'narrative', 'self_report'];
 
-describe('critic-visible projection (C7)', () => {
+describe('critic-visible projection (evidence-only critic)', () => {
   // WHY: the critic's verdict is only trustworthy if it never sees the executor's
   // self-report. The chokepoint must build a view that *structurally* omits the
   // narrative — so this test fails the instant a narrative field is added to the

@@ -3,8 +3,8 @@ import { WebSurface } from './web-surface';
 import { startFixture } from './fixture';
 import type { StartedFixture } from './fixture';
 
-// The Phase 1 Validation, run for real: the WebSurface drives the fixture page and
-// returns an accessibility snapshot plus a screenshot, and the rest of the contract
+// The surface-contract validation, run for real: the WebSurface drives the fixture
+// page and returns an accessibility snapshot plus a screenshot, and the rest of the contract
 // (resize / interact / queryState) round-trips against a live browser.
 //
 // GATED. The codebase keeps `npm test` hermetic — no test spawns a real external

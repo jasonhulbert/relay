@@ -1,8 +1,8 @@
-// Layer-manifest reader/writer (design §4, §3.8). Same codec as node/contract/
+// Layer-manifest reader/writer. Same codec as node/contract/
 // manifest files: YAML front-matter is the authoritative record, the Markdown body
 // is a generated human-readable rendering. The manifest is the child-manifest of
 // the one layer a branch decomposed — each child's resource footprint and the seam
-// graph between the children — and the orchestrator is its sole writer (C2). It is
+// graph between the children — and the orchestrator is its sole writer. It is
 // committed in the same atomic transaction as the children it describes.
 import { readFile } from 'node:fs/promises';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter';

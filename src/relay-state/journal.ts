@@ -1,4 +1,4 @@
-// Per-region write-ahead intent journal (C8, design §4, §9.3). The filesystem
+// Per-region write-ahead intent journal. The filesystem
 // gives one atomic primitive — single-file rename (io.ts) — and this journal
 // lifts it to all-or-nothing across the several files a structural transition
 // touches (promotion, done/blocked transitions, cancellations, draining a human
@@ -15,8 +15,8 @@
 // before doing anything else: because the intent carries full target contents,
 // re-applying is safe to repeat. The journal is per-region so an orchestrator
 // bound to a node-id finds exactly its region's pending intent under
-// `journal/<region>/`. This upholds the rehydration contract (§3.2): any instant
-// of `.relay/` is coherent enough to reconstitute the responsible orchestrator.
+// `journal/<region>/`. This upholds the rehydration contract: any instant of
+// `.relay/` is coherent enough to reconstitute the responsible orchestrator.
 import { readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { atomicWriteFile, fsyncDir } from './io';

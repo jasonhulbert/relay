@@ -1,4 +1,4 @@
-// F5 cost derivation and rollup (design §8). Tokens are ground truth; dollars are
+// Per-call cost derivation and rollup. Tokens are ground truth; dollars are
 // either DIRECT (the provider reports the call's cost — Claude `total_cost_usd`) or
 // DERIVED from a local, editable price table (Codex reports tokens, not dollars).
 // This is deterministic code, not a model judgment (Rule 5): given a usage record
@@ -7,7 +7,7 @@
 // The price table is the single editable knob for the table-driven providers. It is
 // pinned at build time from the account's published rates and is meant to be edited
 // in one place when rates change — there is no billing API and no new credential
-// path (the M4 constraint). A model with no row is reported `unpriced` rather than
+// path. A model with no row is reported `unpriced` rather than
 // crashing a completed run; the rollup surfaces the gap loudly (Rule 11) so a
 // missing rate is visible, not silently counted as $0.
 import { composeRunCost } from '../relay-state/index';
@@ -29,7 +29,7 @@ export type PriceTable = Record<string, ModelPrice>;
 // driven providers need rows here — Claude calls carry their own `total_cost_usd`
 // and are priced `direct`, never from this table. `gpt-5.4-mini` is the Codex
 // executor/critic/brain cheapest default (the cost guardrail), so it is the row a
-// default v0.1 run actually exercises.
+// default run currently exercises.
 export const DEFAULT_PRICE_TABLE: PriceTable = {
   'gpt-5.4-mini': {
     inputPerMTok: 0.25,
@@ -66,7 +66,7 @@ function fmtUsd(cost: number | null): string {
   return cost === null ? 'n/a (unpriced)' : `$${cost.toFixed(6)}`;
 }
 
-// Render the per-run cost rollup (Markdown, F5). Two sections: per-node (per-outcome)
+// Render the per-run cost rollup (Markdown). Two sections: per-node (per-outcome)
 // attribution — each node's calls summed, by role — and the run total. Composed from
 // the structured `composeRunCost` projection of the persisted per-call records, the
 // SAME projection the operator web view renders, so the Markdown and the view can

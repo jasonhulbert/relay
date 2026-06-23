@@ -1,4 +1,4 @@
-// The human decision inbox (I4, design §3.11). A human-owned region under
+// The human decision inbox. A human-owned region under
 // `.relay/inbox/` that the orchestrator only READS and drains at activation: the
 // human writes one Markdown decision file per request, the orchestrator applies
 // each pending decision as an atomic transition within its own node region, and

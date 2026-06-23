@@ -18,7 +18,7 @@ const LEAF_ID = 'leaf-1';
 // A cap tight enough that persistent failure exhausts the ladder mid-walk instead
 // of reaching the `promote` rung: three attempts walk retry + swap-provider, then
 // the attempt cap halts before raise-tier/promote. (Default caps are generous so
-// the same failure would promote, not block — design §3.7/§3.9.)
+// the same failure would promote, not block.)
 const TIGHT_CAPS: RailCaps = {
   maxAttempts: 3,
   maxTokens: Number.MAX_SAFE_INTEGER,
@@ -155,7 +155,7 @@ describe('ladder exhaustion writes a self-sufficient blocked record', () => {
   });
 });
 
-// WHY: doneness-failure must reach root with no route-around (design §3.7). If a
+// WHY: doneness-failure must reach root with no route-around. If a
 // branch could go `done` (or just sit `pending`) above a blocked child, the
 // failure would be silently swallowed and a parent could integrate a subtree that
 // never succeeded. The branch must instead HALT and surface the blocked fact

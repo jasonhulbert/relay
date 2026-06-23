@@ -47,8 +47,8 @@ function codexCriticStream(verdict: 'PASS' | 'FAIL'): string {
   ].join('\n');
 }
 
-// WHY: this is the phase's headline — done-ness must be decided by an INDEPENDENT
-// critic on a DIFFERENT provider than the author (design §3.6). It runs the REAL
+// WHY: this is the headline property — done-ness must be decided by an INDEPENDENT
+// critic on a DIFFERENT provider than the author. It runs the REAL
 // agentCritic through the REAL orchestrator dispatch path; only the model spawn is
 // faked. If the wiring ever graded with the author's provider — or skipped the
 // critic — the verdict provider would not differ and this fails.

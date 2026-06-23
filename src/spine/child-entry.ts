@@ -1,4 +1,4 @@
-// Entry point for a spawned sub-orchestrator process (C6, design §9.2). The
+// Entry point for a spawned sub-orchestrator process. The
 // parent runs `node <thisBundle> <relayDir> <nodeId>`; this binds the orchestrator
 // to that node-id, drives its subtree, writes its region to `.relay/`, and exits
 // 0 on success / non-zero on failure. The parent reads the outcome from `.relay/`
@@ -29,7 +29,7 @@ async function main(): Promise<number> {
 
   // Under the withhold fault the child exits 0 and even shouts success on stdout —
   // the parent must still treat it as not-done, because it reads the (absent)
-  // contract from the ledger, never this stream (A7).
+  // contract from the ledger, never this stream (it trusts the structural ledger fact).
   if (injection?.contractFault === 'skip') {
     process.stdout.write(`CONTRACT certified=true status=${result.rootStatus}\n`);
   }

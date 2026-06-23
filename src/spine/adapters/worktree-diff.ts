@@ -1,10 +1,9 @@
-// Capturing the executor's `produced_changes` as a unified diff (design §5). A
-// real provider CLI edits files in its sandbox worktree; the spine reads back the
-// change with git rather than trusting the model to report its own diff. This is
-// provider-agnostic on purpose: the Claude adapter (Phase 1) and the Codex
-// adapter (Phase 2) both establish a baseline before dispatch and capture the
-// diff after, so the critic grades the same kind of evidence regardless of who
-// authored it.
+// Capturing the executor's `produced_changes` as a unified diff. A real provider
+// CLI edits files in its sandbox worktree; the spine reads back the change with git
+// rather than trusting the model to report its own diff. This is provider-agnostic
+// on purpose: the Claude adapter and the Codex adapter both establish a baseline
+// before dispatch and capture the diff after, so the critic grades the same kind of
+// evidence regardless of who authored it.
 //
 // As of the workspace-substrate work the sandbox is no longer always an empty
 // greenfield dir. When the run executes against a clean operator git repo, each
@@ -245,7 +244,7 @@ export async function captureDiff(worktree: string, base?: string): Promise<stri
 }
 
 // Compose a concurrent layer's per-child diffs onto ONE fresh base tree — the
-// integration gate's merged worktree (§3.8, A4) for a PROJECT-SEEDED run. On the
+// integration gate's merged worktree for a PROJECT-SEEDED run. On the
 // checkout/snapshot paths each leaf worktree holds the WHOLE project, so the empty
 // path's "copy every child worktree into one dir" would stack full trees and let the
 // last copy clobber an earlier sibling's edit to a shared base file. Instead rebuild
@@ -277,7 +276,7 @@ export async function composeMergeTree(
 }
 
 // The outcome of landing a run's verified `result.patch` back into the operator
-// repo (workspace-substrate §6). `branch` is the success path: a reviewable
+// repo (the workspace substrate). `branch` is the success path: a reviewable
 // `relay/<runId>` branch off the per-run base now exists, working tree untouched.
 // `patch-only` is the fail-loud path — there was no clean operator base to fork from
 // (a dirty or non-git workspace) or the patch did not apply (`conflict`), so NO
@@ -294,7 +293,7 @@ export type ApplyBackOutcome =
     };
 
 // Land the verified `result.patch` as a reviewable `relay/<runId>` branch in the
-// operator repo WITHOUT touching its working tree or HEAD (workspace-substrate §6).
+// operator repo WITHOUT touching its working tree or HEAD (the workspace substrate).
 // Only the `checkout` path can produce a branch: it has a committed operator base the
 // branch forks from, and `result.patch` is already a diff against exactly that base.
 // The `snapshot` paths (dirty / non-git) have no such base, so the result stays a

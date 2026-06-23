@@ -1,4 +1,4 @@
-// Node-file reader/writer (design §4). The record's authoritative form is the
+// Node-file reader/writer. The record's authoritative form is the
 // YAML front-matter; the Markdown body is a generated human-readable rendering.
 import { readFile } from 'node:fs/promises';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter';

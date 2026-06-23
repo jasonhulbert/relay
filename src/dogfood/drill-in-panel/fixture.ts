@@ -1,22 +1,21 @@
-// The evidence drill-in panel dogfood fixture (design §12 / D3, M9 Phase 1): a
-// byte-deterministic `.relay/` store whose target node carries an ordered set of
-// evidence captures, plus `PANEL_FIXTURE` — the declared deterministic grounding the
-// visual outcome grades against (V3: a visual outcome declares a deterministic fixture
-// by default). Phase 2 builds the panel and replays the seed's semantic-action path
-// over a freshly built copy of this fixture.
+// The evidence drill-in panel dogfood fixture: a byte-deterministic `.relay/` store whose
+// target node carries an ordered set of evidence captures, plus `PANEL_FIXTURE` — the
+// declared deterministic grounding the visual outcome grades against (a visual outcome
+// declares a deterministic fixture by default). A later step builds the panel and replays
+// the seed's semantic-action path over a freshly built copy of this fixture.
 //
 // The fixture is built the same way the rest of the suite builds state: a programmatic
 // writer into a caller-supplied dir (cf. `buildCompactorFixture`), with fixed content
 // and timestamps so two builds are identical. The `.relay/` records are written through
 // the real relay-state serializers, so the target node carries exactly the
 // `evidenceRefs` shape the web view's projection already lifts — the fixture cannot
-// drift from the on-disk contract the read-only view renders (M5, I3).
+// drift from the on-disk contract the read-only view renders.
 //
 // What the fixture deliberately models: a single done leaf (`sample-leaf`) with THREE
 // ordered captures of distinct kinds (diff → self-report → verdict), so the panel has a
 // node to open, evidence to render, and more than one capture to navigate between. The
-// view writes nothing (I3): navigation is plain GET between server-rendered panel
-// states, so the fixture needs no app-side mutable state.
+// view writes nothing: navigation is plain GET between server-rendered panel states, so
+// the fixture needs no app-side mutable state.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { writeManifest, writeNode } from '../../relay-state/index';
@@ -49,30 +48,30 @@ const CAPTURES = [
   },
 ] satisfies { path: string; kind: EvidenceRef['kind']; summary: string }[];
 
-// The deterministic grounding the visual outcome declares (V3) and the single source of
-// truth both the seed and Phase 2's panel read from. It pins the seeded data (the run /
+// The deterministic grounding the visual outcome declares and the single source of
+// truth both the seed and the panel read from. It pins the seeded data (the run /
 // target node / ordered captures), the route the panel is reached at, the frame size a
 // deterministic capture is taken at, and the DOM contract the semantic-action path
-// addresses — the `data-testid`s Phase 2's panel must honor, so the seed's path/scope
+// addresses — the `data-testid`s the panel must honor, so the seed's path/scope
 // resolve against the real panel exactly as the compactor seed's `check` selectors
 // pinned that dogfood's test names.
 export const PANEL_FIXTURE = {
   runId: RUN_ID,
   rootId: ROOT_ID,
   targetNodeId: TARGET_NODE_ID,
-  // The read-only web view (M5) is the host surface. The panel extends it: the run page
+  // The read-only web view is the host surface. The panel extends it: the run page
   // `/` lists nodes with an open-evidence control, and `/node/<id>` is the drill-in
-  // panel for one node, navigating captures by `?capture=<n>` — all plain GET (I3).
+  // panel for one node, navigating captures by `?capture=<n>` — all plain GET.
   hostRoute: '/',
   panelRouteFor: (nodeId: string, capture = 0): string =>
     capture === 0 ? `/node/${nodeId}` : `/node/${nodeId}?capture=${capture.toString()}`,
-  // A pinned frame so a screenshot/baseline-diff rung (Phase 2/V6) is deterministic.
+  // A pinned frame so a screenshot/baseline-diff rung is deterministic.
   frame: { width: 1024, height: 768 },
   captures: CAPTURES,
   // The drill-in panel's DOM contract: the test ids the seed's semantic-action path
-  // clicks and the structural check scopes to (V7). Phase 2 renders these.
+  // clicks and the structural check scopes to. The panel renders these.
   selectors: {
-    // The scoped panel container the structural rung asserts against (V7).
+    // The scoped panel container the structural rung asserts against.
     panel: '[data-testid="evidence-panel"]',
     // The run-page control that opens the target node's drill-in panel.
     openEvidence: `[data-testid="open-evidence-${TARGET_NODE_ID}"]`,
@@ -124,8 +123,8 @@ function node(
 // Build the fixture into `baseDir`: a `.relay/` store with a done root branch over one
 // done leaf (`sample-leaf`) that carries the ordered captures, and the capture files
 // materialized under the run's evidence dir. Deterministic — fixed content and
-// timestamps — so Phase 2 can rebuild a clean copy per run and grade the panel against
-// `PANEL_FIXTURE`.
+// timestamps — so the loop run can rebuild a clean copy per run and grade the panel
+// against `PANEL_FIXTURE`.
 export async function buildDrillInPanelFixture(baseDir: string): Promise<DrillInPanelFixture> {
   const relayDir = join(baseDir, '.relay');
   const evidenceDir = join(relayDir, 'evidence', RUN_ID);

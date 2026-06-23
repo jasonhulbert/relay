@@ -22,7 +22,7 @@ function fakeSurface(tick: () => void): Surface {
   };
 }
 
-// WHY (F4): the wait-fraction is the graduation metric; it must be a real ratio in
+// WHY: the wait-fraction is the graduation metric; it must be a real ratio in
 // [0,1], never a divide-by-zero or an impossible >100% from clock skew. These pin
 // the guards so a degenerate clock can't silently poison the metric.
 describe('waitFraction', () => {
@@ -44,7 +44,7 @@ describe('waitFraction', () => {
   });
 });
 
-// WHY (F4 instrumentation): F4 is instrumented at the Surface call boundary — the
+// WHY: the surface-wait metric is instrumented at the Surface call boundary — the
 // MeteredSurface must add EVERY crossing's duration into the meter, including
 // teardown, and must keep the wrapped surface's results intact (it is a transparent
 // decorator). If it dropped a call's time or mangled a result, the metric and the

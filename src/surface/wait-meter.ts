@@ -1,14 +1,14 @@
-// F4 instrumentation (design §13, F4): the graduation metric for the tier-A runner
-// is the visual-verification session-wait as a fraction of run wall-clock. "Session
-// wait" is the time spent blocked inside the Surface's MCP calls — driving a real
-// browser is slow, and F4 tells the operator how much of a run that visual session
-// costs, the signal for graduating off tier-A.
+// Surface-wait instrumentation: the graduation metric for the tier-A runner is the
+// visual-verification session-wait as a fraction of run wall-clock. "Session wait" is
+// the time spent blocked inside the Surface's MCP calls — driving a real browser is
+// slow, and the surface-wait fraction tells the operator how much of a run that
+// visual session costs, the signal for graduating off tier-A.
 //
-// Instrumented at the Surface call boundary (the plan's note): `MeteredSurface`
-// wraps any `Surface`, times every method, and accumulates the total into a shared
-// `WaitMeter`. The runner measures run wall-clock around the whole check and divides.
-// A wrapper, not a change to `WebSurface`, so F4 works for every driver and the
-// driver stays a pure I/O seam.
+// Instrumented at the Surface call boundary: `MeteredSurface` wraps any `Surface`,
+// times every method, and accumulates the total into a shared `WaitMeter`. The runner
+// measures run wall-clock around the whole check and divides. A wrapper, not a change
+// to `WebSurface`, so the metric works for every driver and the driver stays a pure
+// I/O seam.
 import type {
   AccessibilitySnapshot,
   Interaction,
@@ -24,7 +24,8 @@ import type {
 export type Clock = () => number;
 
 // Accumulates the wall-clock spent inside Surface calls. One meter per run; the
-// `MeteredSurface` adds each timed call into it. `waitMs` is the numerator of F4.
+// `MeteredSurface` adds each timed call into it. `waitMs` is the surface-wait
+// numerator.
 export class WaitMeter {
   #waitMs = 0;
 
@@ -37,7 +38,7 @@ export class WaitMeter {
   }
 }
 
-// The fraction of run wall-clock spent waiting inside Surface calls (F4). Guarded so
+// The fraction of run wall-clock spent waiting inside Surface calls. Guarded so
 // a zero-or-negative wall-clock (a clock that did not advance) yields 0 rather than a
 // divide-by-zero, and clamped to [0,1] so a metering/clock skew never reports an
 // impossible >100% wait. Pure, so the metric is pinned by a unit test.
@@ -49,12 +50,12 @@ export function waitFraction(surfaceWaitMs: number, runWallClockMs: number): num
   return f;
 }
 
-// Wrap a `Surface` so every call's duration is added to the meter (F4). Capability
+// Wrap a `Surface` so every call's duration is added to the meter. Capability
 // reads are static and free, so `capabilities()` is passed through untimed; every
 // method that crosses the MCP boundary — including `close` teardown — is timed,
 // because all of it is wall-clock the run spends on the visual session. The timing
-// is in a `finally` so a thrown driver failure (which the V5 classifier reads,
-// Phase 3) still counts its wait and still propagates.
+// is in a `finally` so a thrown driver failure (which the drift re-dispatch
+// classifier reads, once that is wired up) still counts its wait and still propagates.
 export class MeteredSurface implements Surface {
   readonly #inner: Surface;
   readonly #meter: WaitMeter;

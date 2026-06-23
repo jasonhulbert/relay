@@ -1,10 +1,10 @@
-// Structured cost rollup composed from the per-call usage records (F5, design §8,
-// §4). The per-call `CallUsage` records are ground truth; this is their read-time
+// Structured cost rollup composed from the per-call usage records. The per-call
+// `CallUsage` records are ground truth; this is their read-time
 // projection into per-node (per-outcome) and per-run dollar sums. It writes
 // nothing — it is a pure function of the records, deterministic code rather than a
 // model judgment (Rule 5).
 //
-// This is the SINGLE source for the summing semantics: the F5 Markdown rollup the
+// This is the SINGLE source for the summing semantics: the Markdown cost rollup the
 // orchestrator persists (`renderCostRollup`, spine/cost.ts) and the operator web
 // view (`projectRun`, webview/projection.ts) both compose from this, so the two can
 // never silently disagree on a node's burn or the run total.

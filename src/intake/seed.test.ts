@@ -24,7 +24,7 @@ const TRANSCRIPT_FIXTURE = [
 
 // Validation 1 (the compile half): a structured seed — outcome spec + GROUNDED
 // verifications + a non-binding sketch — is produced from a transcript fixture. This
-// is the falsifiable core of Phase 1's first criterion, exercised without a live
+// is the falsifiable core of intake's first criterion, exercised without a live
 // model.
 describe('compileSeed distills a structured seed from a transcript fixture', () => {
   test('extracts the outcome, every grounded verification, and the sketch', () => {
@@ -32,7 +32,7 @@ describe('compileSeed distills a structured seed from a transcript fixture', () 
 
     expect(seed.spec.outcome).toBe('the CLI exits 0 and prints the parsed config as JSON');
     // Every verification carries explicit grounding — that is the "verification
-    // grounding" deliverable, and §6 rejects an ungrounded check.
+    // grounding" deliverable, and an ungrounded check is rejected.
     expect(seed.spec.verifications).toHaveLength(2);
     expect(seed.spec.verifications[0]).toEqual({
       kind: 'command',
@@ -79,7 +79,7 @@ describe('compileSeed rejects a malformed seed loudly', () => {
     expect(() => compileSeed(doc)).toThrow(/verifications/);
   });
 
-  test('a verification missing grounding is rejected (§6)', () => {
+  test('a verification missing grounding is rejected', () => {
     const doc = JSON.stringify({
       outcome: 'x',
       verifications: [{ kind: 'command', grounding: '', check: 'true' }],
@@ -102,11 +102,11 @@ describe('compileSeed rejects a malformed seed loudly', () => {
   });
 });
 
-// A `visual` outcome (design §13) carries a structured replay spec in `check`, not a
-// shell line: the match-granularity it grades at (V4) and the semantic-action path the
-// critic replays (V1). Intake REQUIRES both — a visual outcome missing either is
-// unjudgeable, exactly what §6/Rule 11 reject — so each is validated at compile time,
-// where the seed is produced, not deferred to an opaque crash at run time.
+// A `visual` outcome carries a structured replay spec in `check`, not a shell line:
+// the match-granularity it grades at and the semantic-action path the critic replays.
+// Intake REQUIRES both — a visual outcome missing either is unjudgeable, exactly what
+// the required-grounding rule and Rule 11 reject — so each is validated at compile
+// time, where the seed is produced, not deferred to an opaque crash at run time.
 describe('compileSeed validates a visual verification’s match-granularity and path', () => {
   // A well-formed visual check: a structural-granularity spec with a one-step path.
   const visualCheck = JSON.stringify({
@@ -124,7 +124,7 @@ describe('compileSeed validates a visual verification’s match-granularity and 
   test('accepts a visual check carrying a match-granularity and a semantic-action path', () => {
     const seed = compileSeed(seedWith(visualCheck));
     expect(seed.spec.verifications[0].kind).toBe('visual');
-    // The structured spec round-trips through `check` for the Phase 2 critic to replay.
+    // The structured spec round-trips through `check` for the visual critic to replay.
     const spec = JSON.parse(seed.spec.verifications[0].check) as {
       granularity: string;
       path: unknown[];
@@ -133,7 +133,7 @@ describe('compileSeed validates a visual verification’s match-granularity and 
     expect(spec.path).toHaveLength(1);
   });
 
-  test('rejects a visual check with no match-granularity (V4)', () => {
+  test('rejects a visual check with no match-granularity', () => {
     const check = JSON.stringify({ path: [{ kind: 'click', ref: 'x' }] });
     expect(() => compileSeed(seedWith(check))).toThrow(/match-granularity/);
   });
@@ -143,7 +143,7 @@ describe('compileSeed validates a visual verification’s match-granularity and 
     expect(() => compileSeed(seedWith(check))).toThrow(/match-granularity/);
   });
 
-  test('rejects a visual check with an empty semantic-action path (V1)', () => {
+  test('rejects a visual check with an empty semantic-action path', () => {
     const check = JSON.stringify({ granularity: 'structural', path: [] });
     expect(() => compileSeed(seedWith(check))).toThrow(/path/);
   });

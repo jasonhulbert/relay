@@ -86,7 +86,7 @@ describe('stubBrain', () => {
     expect(d.children[0].footprint.writeGlobs).not.toEqual(d.children[1].footprint.writeGlobs);
     expect(d.seams).toHaveLength(1);
     expect(d.seams[0]).toMatchObject({ kind: 'file-boundary', producer: 0, consumer: 1 });
-    // The rationale is carried alongside (Sol 2) — persisted as audit evidence, never
+    // The rationale is carried alongside — persisted as audit evidence, never
     // discarded; here it names the outcome it split.
     expect(rationale).toContain(req.spec.outcome);
   });
@@ -95,7 +95,7 @@ describe('stubBrain', () => {
     const a = await stubBrain.decompose(req, ctx);
     const b = await stubBrain.decompose(req, ctx);
     // The whole result — decomposition AND rationale — is byte-identical, so a
-    // kill-and-rehydrate persists identical audit evidence (§3.2).
+    // kill-and-rehydrate persists identical audit evidence (the rehydration contract).
     expect(a).toEqual(b);
   });
 });
@@ -191,7 +191,7 @@ describe('buildDecomposePrompt', () => {
 
 // WHY: end-to-end through the adapter (hermetic) — a granted brain dispatches with
 // the routed grant, parses the model's decomposition, classifies leaf-vs-branch, and
-// reports its own usage (F5). It writes nothing durable; the orchestrator commits.
+// reports its own per-call usage. It writes nothing durable; the orchestrator commits.
 describe('agentBrain', () => {
   test('parses the model decomposition and records the judgment usage', async () => {
     const usages: ExecutorUsage[] = [];
@@ -213,12 +213,12 @@ describe('agentBrain', () => {
     // The leaf-vs-branch classification survived the round trip.
     expect(d.children.map((c) => c.kind)).toEqual(['leaf', 'branch']);
     expect(d.seams).toHaveLength(1);
-    // The raw model review is carried out as the rationale (Sol 2), not discarded
+    // The raw model review is carried out as the rationale, not discarded
     // once parsed — it still contains the fenced JSON the parser read.
     expect(rationale).toContain('```json');
     // The spine routed the grant into the agent's argv.
     expect(seenArgs).toContain('--mcp-config');
-    // The judgment's own usage was surfaced for the recap (F5).
+    // The judgment's own usage was surfaced for the recap.
     expect(usages).toHaveLength(1);
     expect(usages[0].provider).toBe('claude');
     expect(usages[0].model).toBe('claude-haiku-4-5');

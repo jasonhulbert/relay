@@ -1,5 +1,5 @@
-// Shared run scaffolding for the two real-run entry points (M4 dev-run harness and
-// the M6 `relay run` command). Both resolve a project store, drive the SAME
+// Shared run scaffolding for the two real-run entry points (the dev-run harness and
+// the `relay run` command). Both resolve a project store, drive the SAME
 // orchestrator, and print the SAME operator recap; only their seeding differs
 // (dev-run hand-seeds a single leaf; `relay run` compiles + commits an intake seed).
 // To keep the two command bodies distinct (the hermetic harness must not couple to
@@ -37,7 +37,7 @@ function formatUsd(cost: number | null): string {
   return cost === null ? 'n/a (unpriced)' : `$${cost.toFixed(6)}`;
 }
 
-// Render the apply-back section of the recap (workspace-substrate §6). On the
+// Render the apply-back section of the recap. On the
 // success path it names the reviewable `relay/<runId>` branch and the exact commands
 // to review and merge it (the operator's working tree was never touched). On the
 // fail-loud path (dirty / non-git workspace, or a patch that did not apply) it prints
@@ -49,7 +49,7 @@ function applyBackLines(projectPath: string, applyBack: OrchestratorResult['appl
   if (applyBack.kind === 'branch') {
     return [
       '',
-      'apply-back (workspace-substrate §6):',
+      'apply-back:',
       `  branch: ${applyBack.branch}   (operator repo; working tree untouched)`,
       `  review: git -C ${projectPath} diff ${applyBack.base}..${applyBack.branch}`,
       `  merge:  git -C ${projectPath} merge ${applyBack.branch}`,
@@ -93,7 +93,7 @@ export async function renderRecap(
     const node = await readNode(storeDir, id);
     lines.push(`  ${id} [${node.kind}] -> ${node.status}`);
     if (node.verdict) {
-      // The independent critic's verdict (design §3.6): who graded it (a different
+      // The independent critic's verdict: who graded it (a different
       // provider than the author by default) and the result it certified.
       lines.push(`    critic [${node.verdict.provider}] -> ${node.verdict.pass ? 'PASS' : 'FAIL'}`);
     }
@@ -124,7 +124,7 @@ export async function renderRecap(
 
   lines.push(...applyBackLines(projectPath, result.applyBack));
 
-  lines.push('', 'per-call usage (node-attributed; F5):');
+  lines.push('', 'per-call usage (node-attributed):');
   if (usages.length === 0) {
     lines.push('  (no model calls)');
   }

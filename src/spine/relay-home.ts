@@ -1,5 +1,5 @@
-// The user-global relay store resolver (design §4; the global-root constraint in
-// the M4 plan). A real run's `.relay/` root is NOT a temp dir — it lives at a
+// The user-global relay store resolver (the files-only Markdown state model; the
+// global-root constraint). A real run's `.relay/` root is NOT a temp dir — it lives at a
 // stable, per-project, `git init`'d path under `~/.relay/` so the operator can
 // inspect and `git log` it across runs. Tests still use throwaway temp dirs and
 // pass `home` to retarget this resolver.
@@ -94,7 +94,7 @@ function runGit(args: string[], cwd: string): Promise<number> {
 export interface ProjectStore {
   key: string;
   // The `.relay/` root for this project — the dir passed to `runOrchestrator`. It
-  // IS the git repo root (design §4 git-trackability).
+  // IS the git repo root (git-trackability).
   storeDir: string;
   // Executor sandbox root, OUTSIDE the store so worktrees never enter the git
   // record. Project-scoped so two projects' same-named leaves do not collide.
@@ -134,7 +134,7 @@ export async function ensureProjectStore(
   const created = !(await exists(storeDir));
   await mkdir(storeDir, { recursive: true });
 
-  // git init only when the store is not already a repo (preserves design §4
+  // git init only when the store is not already a repo (preserves
   // git-trackability without clobbering an existing history).
   if (opts.gitInit !== false && !(await exists(join(storeDir, '.git')))) {
     const code = await runGit(['init', '--quiet'], storeDir);
@@ -156,7 +156,7 @@ export async function ensureProjectStore(
   return { key, storeDir, workRoot, projectPath: abs, created };
 }
 
-// Commit the current `.relay/` state so the store is `git log`-able (design §4).
+// Commit the current `.relay/` state so the store is `git log`-able.
 // Stages everything and commits; a no-op commit (nothing changed) is tolerated so
 // a re-run over an unchanged store does not fail the harness. Returns true if a
 // commit was actually recorded.

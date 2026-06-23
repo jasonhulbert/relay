@@ -49,7 +49,7 @@ function scriptedAsk(answers: string[]): { ask: AskHuman; asked: string[] } {
 // grounding + sketch) from a transcript fixture — the Q&A the script drives IS that
 // fixture. Validation 2 rides along: the session terminates at the seed and returns
 // it, never continuing into execution.
-describe('runIntake grills the human and yields a structured seed (M6 Phase 1)', () => {
+describe('runIntake grills the human and yields a structured seed', () => {
   test('two questions then a seed: the run seed is produced from the Q&A fixture', async () => {
     const { interviewer, calls } = scriptedInterviewer([
       { done: false, question: 'What does "done" mean for this run?' },
@@ -77,7 +77,7 @@ describe('runIntake grills the human and yields a structured seed (M6 Phase 1)',
       { role: 'human', text: 'a smoke command' },
     ]);
 
-    // Terminates rather than continuing into execution (I1/I2): the loop stopped the
+    // Terminates rather than continuing into execution: the loop stopped the
     // instant the seed arrived — the interviewer was called exactly 3 times (q, q,
     // seed) and the human was not asked again after approval. The session's only
     // collaborators are the interviewer and `ask`; it has no executor to run, so the
@@ -97,7 +97,7 @@ describe('runIntake grills the human and yields a structured seed (M6 Phase 1)',
     expect(result.transcript).toEqual([{ role: 'human', text: 'I want a config parser' }]);
   });
 
-  // Bounded component (C3): an interview that never converges must terminate loudly,
+  // Bounded component: an interview that never converges must terminate loudly,
   // not grill forever or silently truncate to an empty seed (Rule 11).
   test('it fails loud when the interview exceeds the question cap', async () => {
     const everAsking: Interviewer = {
@@ -154,7 +154,7 @@ function fenced(turn: object): string {
 
 // The real `agentInterviewer`, driven through `runIntake` with an injected CLI runner:
 // it shells out per turn, parses the provider stream into a turn, and the loop drives
-// it to a seed — proving the provider-agnostic shell-out path (C3) wires end-to-end.
+// it to a seed — proving the provider-agnostic shell-out path wires end-to-end.
 describe('agentInterviewer parses a provider stream into turns', () => {
   test('a question stream then a seed stream drive the loop to a seed', async () => {
     const streams = [
@@ -186,7 +186,7 @@ describe('agentInterviewer parses a provider stream into turns', () => {
   });
 });
 
-// The non-interactive `relay run --outcome` path (Plan 2 Phase 3): the one-shot
+// The non-interactive `relay run --outcome` path: the one-shot
 // interviewer is driven to compile a grounded seed in a SINGLE turn with no human
 // questions. WHY this matters: a scriptable run must (1) compile a real, grounded seed
 // — not a degenerate always-pass one — so the critic gate stays meaningful, and (2)

@@ -1,28 +1,29 @@
-// The visual critic path (design §7.4–7.5, V1/V4/V5/V7). This is the verification
+// The visual critic path. This is the verification
 // side of the Surface seam: given a visual outcome's declared verification, the
 // critic REPLAYS the executor-emitted semantic-action path against a Surface and
 // grades the state it reaches — it never asks the executor to drive the app and hand
 // back a screenshot (that would put the author of the change inside the evidence
-// loop the independent critic exists to keep it out of, §3.6).
+// loop the independent, evidence-only critic exists to keep it out of).
 //
 // Four design pins live here:
-//   - V1 replay: the critic drives the executor's `Interaction[]` path itself via
+//   - replay: the critic drives the executor's `Interaction[]` path itself via
 //     `surface.interact(...)`, then captures its own evidence.
-//   - V4 match-granularity: the verification declares intent / structural /
-//     baseline-diff; grading is dispatched on it. v0.1 implements intent (judged)
-//     and structural (semantic-subtree assertions); baseline-diff is the Phase 4
+//   - match-granularity: the verification declares intent / structural /
+//     baseline-diff; grading is dispatched on it. The critic implements intent
+//     (judged) and structural (semantic-subtree assertions); baseline-diff is the
 //     baseline pipeline's to own.
-//   - V5 structural failure classification: a failed replay is classified
+//   - structural failure classification: a failed replay is classified
 //     retry / real-fail / re-dispatch from the Surface's typed failure plus a
 //     liveness probe — NO model call.
-//   - V7 semantic element-scoping: when the verification names an element, snapshot/
+//   - semantic element-scoping: when the verification names an element, snapshot/
 //     screenshot are scoped to that ref, so an unrelated changing region in the same
 //     frame cannot cause a false verdict.
 //
-// The `VisualVerification` is the *critic-visible* declaration (V1/V2): it carries
+// The `VisualVerification` is the *critic-visible* declaration: it carries
 // the path, granularity, scope, and a semantic expectation — and NO narrative.
-// Because the path is semantic and field-isolated, it passes the C7 projection
-// property test (re-checked in this module's test): no self-report rides in on it.
+// Because the path is semantic and field-isolated, it passes the projection
+// property test (re-checked in this module's test) that keeps orchestrator narrative
+// inadmissible to the critic: no self-report rides in on it.
 import {
   SurfaceCallError,
   type AccessibilitySnapshot,
@@ -31,16 +32,16 @@ import {
   type Surface,
 } from './types';
 
-// The match granularity a visual outcome declares (V4, design §7.5):
+// The match granularity a visual outcome declares:
 //   - intent       — multimodal judgment that the capture satisfies the described
 //                    intent; tolerant of incidental pixel variation (the default).
 //   - structural   — assertions over the named element's semantic subtree (text,
 //                    role, state); component-scoped by nature.
 //   - baseline-diff — pixel comparison against a stored reference; owned by the
-//                    Phase 4 baseline pipeline.
+//                    baseline pipeline.
 export type MatchGranularity = 'intent' | 'structural' | 'baseline-diff';
 
-// The element a check is scoped to (V7). `ref` is the opaque semantic id parsed from
+// The element a check is scoped to. `ref` is the opaque semantic id parsed from
 // the a11y tree (see `parseRefs`); `element` is the human-readable description the
 // driver records for its interaction-permission log.
 export interface ElementScope {
@@ -48,11 +49,11 @@ export interface ElementScope {
   element?: string;
 }
 
-// The critic-visible visual verification (V1/V2). A discriminated union on
+// The critic-visible visual verification. A discriminated union on
 // granularity so each rung carries exactly the expectation it grades against and
-// nothing else — there is structurally no narrative field to leak (C7). `path` is
+// nothing else — there is structurally no narrative field to leak. `path` is
 // the executor-emitted semantic-action path the critic replays; `scope` is the
-// optional V7 element the check is isolated to.
+// optional element the check is isolated to.
 export type VisualVerification =
   | {
       granularity: 'intent';
@@ -73,7 +74,7 @@ export type VisualVerification =
       granularity: 'baseline-diff';
       path: Interaction[];
       scope?: ElementScope;
-      // Perceptual-diff tolerance; the diff itself is the Phase 4 pipeline's.
+      // Perceptual-diff tolerance; the diff itself is the baseline pipeline's.
       tolerance?: number;
     };
 
@@ -87,19 +88,19 @@ export interface IntentEvidence {
 
 // A single grade. Mirrors the shape of a `CriticVerdict`'s core (pass + rationale)
 // without coupling to relay-state — the spine maps this into the durable verdict
-// when it wires the visual critic into the loop (M9).
+// when it later wires the visual critic into the loop.
 export interface VisualGrade {
   pass: boolean;
   rationale: string;
 }
 
-// The intent-granularity judge seam (V4 rung 1). Multimodal judgment is the one
+// The intent-granularity judge seam (the first match-granularity rung). Multimodal judgment is the one
 // place a model is admissible on this path; it is injected so the deterministic
 // fixture tests grade without a real model, exactly as the spine injects a scripted
 // critic. Structural and baseline-diff grading never reach it.
 export type IntentJudge = (evidence: IntentEvidence) => Promise<VisualGrade>;
 
-// The baseline-diff grader seam (V4 rung 3, the Phase 4 baseline pipeline). Like
+// The baseline-diff grader seam (the strictest match-granularity rung, the baseline pipeline). Like
 // `IntentJudge`, it is injected so this module stays free of the store/diff/decision
 // machinery: `src/surface/baseline.ts` implements it (capture → content-address →
 // promote-first or diff-vs-baseline → within-tolerance pass / persistent-mismatch
@@ -111,8 +112,8 @@ export type BaselineGrader = (
   verification: Extract<VisualVerification, { granularity: 'baseline-diff' }>,
 ) => Promise<VisualGrade>;
 
-// How a failed replay is classified (V5, design §7.4) — the visual-kind
-// specialization of the unified failure rule (§3.9). The loop, not a judgment call,
+// How a failed replay is classified — the visual-kind
+// specialization of the unified failure rule. The loop, not a judgment call,
 // decides what an unreachable state means:
 //   - retry       — a transient mode (step-timeout, navigation error); bounded
 //                   retry of the replay.
@@ -130,7 +131,7 @@ export type VisualVerdict =
   | { outcome: 'graded'; grade: VisualGrade }
   | { outcome: 'replay-failed'; classification: ReplayClassification; error: SurfaceCallError };
 
-// Parse the opaque semantic refs out of an a11y snapshot tree (V7). Playwright MCP
+// Parse the opaque semantic refs out of an a11y snapshot tree. Playwright MCP
 // serializes refs as `[ref=eNN]` tokens in the tree text; they are opaque at the
 // Surface layer (the contract treats the tree as text), so the critic parses them
 // here, where it needs to address an element. Returns refs in document order,
@@ -150,9 +151,9 @@ export function parseRefs(tree: string): string[] {
   return refs;
 }
 
-// Replay the executor-emitted semantic-action path (V1). Drives each interaction
+// Replay the executor-emitted semantic-action path. Drives each interaction
 // through the Surface in order; the first step that throws a typed `SurfaceCallError`
-// propagates so the caller can classify it (V5). A non-Surface error is a bug, not a
+// propagates so the caller can classify it. A non-Surface error is a bug, not a
 // reachability fact, so it propagates unwrapped too.
 export async function replayPath(surface: Surface, path: Interaction[]): Promise<void> {
   for (const action of path) {
@@ -160,7 +161,7 @@ export async function replayPath(surface: Surface, path: Interaction[]): Promise
   }
 }
 
-// True when a Surface failure is a transient reachability mode (V5 retry bucket):
+// True when a Surface failure is a transient reachability mode (the retry bucket):
 // a step timeout or a navigation error. Matched on the typed `detail` the driver
 // carried, lower-cased — never on the whole formatted message. Conservative: only
 // these named modes are transient; everything else falls through to the liveness
@@ -172,9 +173,9 @@ function isTransient(error: SurfaceCallError): boolean {
   );
 }
 
-// Classify a failed replay structurally (V5) — NO model call. Transient modes are
+// Classify a failed replay structurally — NO model call. Transient modes are
 // read off the typed error; otherwise the app's liveness is probed with a trivial
-// `query_state` (the design's "process alive AND query_state returns" test): if the
+// `query_state` (the "process alive AND query_state returns" test): if the
 // probe throws, the app is dead → real-fail; if it answers, the app is healthy and
 // the step drifted → re-dispatch. The probe is the only extra Surface call; no model
 // is ever consulted.
@@ -194,10 +195,10 @@ export async function classifyReplayFailure(
   return 're-dispatch';
 }
 
-// Grade the structural rung (V4 rung 2): every declared substring must be present in
+// Grade the structural rung: every declared substring must be present in
 // the scoped a11y subtree. Component-scoped by nature — the snapshot is taken at the
 // verification's `scope.ref`, so an unrelated region in the same frame is not even in
-// the tree being asserted (V7).
+// the tree being asserted.
 function gradeStructural(tree: string, expectSubtree: string[]): VisualGrade {
   const missing = expectSubtree.filter((s) => !tree.includes(s));
   if (missing.length === 0) {
@@ -216,8 +217,8 @@ function gradeStructural(tree: string, expectSubtree: string[]): VisualGrade {
 
 // Replay the declared path and grade the state it reaches (the visual critic path,
 // end to end: replay → scope → capture → grade). On a typed Surface failure during
-// replay, returns the V5 classification instead of a grade. The intent rung needs
-// the injected `judge`; structural needs none; baseline-diff defers to Phase 4.
+// replay, returns the failure classification instead of a grade. The intent rung needs
+// the injected `judge`; structural needs none; baseline-diff defers to the baseline pipeline.
 export async function replayAndGrade(
   surface: Surface,
   verification: VisualVerification,
@@ -233,7 +234,7 @@ export async function replayAndGrade(
     throw err;
   }
 
-  // V7: scope every capture to the named element when the verification declares one,
+  // Scope every capture to the named element when the verification declares one,
   // so grading ignores the rest of the frame.
   const scopeArg = verification.scope ? { ref: verification.scope.ref } : undefined;
 
@@ -258,8 +259,8 @@ export async function replayAndGrade(
       return { outcome: 'graded', grade };
     }
     case 'baseline-diff': {
-      // Capture → content-address → promote-first or diff-vs-baseline is the Phase 4
-      // (V6/F2) baseline pipeline, injected as `baseline` exactly as `judge` injects
+      // Capture → content-address → promote-first or diff-vs-baseline is the
+      // baseline pipeline, injected as `baseline` exactly as `judge` injects
       // the intent rung. The grader re-captures internally for the temporal flake
       // budget, so it takes the Surface rather than a single pre-captured frame.
       const grader = opts.baseline;

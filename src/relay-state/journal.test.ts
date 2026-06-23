@@ -26,7 +26,7 @@ async function readRel(relayDir: string, rel: string): Promise<string | null> {
 const NODE_A_POST = '---\nid: a\nkind: leaf\nbody: |\n  line\n  ---\n  end\n---\n\n# node a\n';
 const MANIFEST_POST = '---\nrunId: r1\nrootId: a\n---\n\n# manifest\n';
 
-describe('intent journal — atomicity and roll-forward (C8)', () => {
+describe('intent journal — atomicity and roll-forward', () => {
   // WHY: a structural transition spans several files; rehydration must never see
   // a half-applied one. The commit point is the durable intent, so before it the
   // pre-state stands and after it the post-state is recoverable.

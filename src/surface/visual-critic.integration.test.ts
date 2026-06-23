@@ -5,12 +5,12 @@ import type { StartedFixture } from './fixture';
 import { classifyReplayFailure, replayAndGrade } from './visual-critic';
 import { SurfaceCallError, type Interaction, type Surface } from './types';
 
-// The Phase 3 Validation, run for real against the fixture page over a live browser:
-//   - the critic REPLAYS a declared semantic-action path and grades it (V1, V4);
-//   - a component-scoped check ignores the fixture's ticking clock (V7);
-//   - a drifted step against the healthy app classifies as re-dispatch (V5).
+// The visual-critic validation, run for real against the fixture page over a live browser:
+//   - the critic REPLAYS a declared semantic-action path and grades it at match-granularity;
+//   - a component-scoped check ignores the fixture's ticking clock;
+//   - a drifted step against the healthy app classifies as re-dispatch.
 //
-// GATED, like the Phase 1/2 surface integration tests: `npm test` stays hermetic, so
+// GATED, like the other surface integration tests: `npm test` stays hermetic, so
 // this is opt-in and skipped otherwise. It spawns a real `npx @playwright/mcp` +
 // browser (headless here — no logged-in session needed for the critic path itself):
 //   RELAY_VISUAL_CRITIC_INTEGRATION=1 npx vitest run src/surface/visual-critic.integration.test.ts
@@ -19,7 +19,7 @@ const integration = RUN_INTEGRATION ? describe : describe.skip;
 
 // Find the opaque ref on the a11y-tree line that names `label`. The fixture marks the
 // panel and clock with `aria-label`, so each shows up as a labelled node carrying a
-// `[ref=eNN]` the critic scopes to (V7).
+// `[ref=eNN]` the critic scopes to.
 function refForLabel(tree: string, label: string): string {
   const line = tree.split('\n').find((l) => l.includes(`"${label}"`) && /\[ref=/.test(l));
   const m = line ? /\[ref=([^\]]+)\]/.exec(line) : null;
@@ -50,7 +50,7 @@ integration('visual critic path against the fixture (live browser)', () => {
     await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
   });
 
-  test('replays a path and grades it structural, scoped to the panel (V1, V4, V7)', async () => {
+  test('replays a path and grades it structural, scoped to the panel', async () => {
     const tree = (await surface.snapshot()).tree;
     const panelRef = refForLabel(tree, 'panel');
     const buttonRef = refForButton(tree, 'Run check');
@@ -69,7 +69,7 @@ integration('visual critic path against the fixture (live browser)', () => {
     }
   }, 180_000);
 
-  test('a panel-scoped snapshot is stable while the unrelated clock ticks (V7)', async () => {
+  test('a panel-scoped snapshot is stable while the unrelated clock ticks', async () => {
     const tree = (await surface.snapshot()).tree;
     const panelRef = refForLabel(tree, 'panel');
 
@@ -86,7 +86,7 @@ integration('visual critic path against the fixture (live browser)', () => {
     expect(wholeB).not.toBe(wholeA);
   }, 180_000);
 
-  test('a drifted step against the healthy app classifies as re-dispatch (V5)', async () => {
+  test('a drifted step against the healthy app classifies as re-dispatch', async () => {
     let thrown: unknown = null;
     try {
       await surface.interact({ kind: 'click', ref: 'e-does-not-exist', element: 'ghost' });

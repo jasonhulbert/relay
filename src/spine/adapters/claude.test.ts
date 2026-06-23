@@ -44,11 +44,12 @@ const SAMPLE_STREAM = [
   }),
 ].join('\n');
 
-// WHY: F5 and the C7 split both ride on this parse. The orchestrator must get the
-// model's COMPACT final summary as the self-report — not the transcript that
-// precedes it — and faithful per-call token/cost numbers, or cost attribution
-// (Phase 5) is built on fiction. A parser that returned a transcript line, or
-// dropped a token bucket, would defeat both. These pin exactly that.
+// WHY: per-call usage attribution and the evidence-only-critic split both ride on
+// this parse. The orchestrator must get the model's COMPACT final summary as the
+// self-report — not the transcript that precedes it — and faithful per-call
+// token/cost numbers, or cost attribution is built on fiction. A parser that
+// returned a transcript line, or dropped a token bucket, would defeat both. These
+// pin exactly that.
 describe('parseClaudeStream', () => {
   test('extracts the compact self-report, model, tokens, and direct cost', () => {
     const p = parseClaudeStream(SAMPLE_STREAM);
@@ -104,7 +105,7 @@ describe('buildExecutorPrompt', () => {
   });
 });
 
-// WHY: the cost guardrail (M4 Phase 2) is "cheapest model unless overridden." The
+// WHY: the cost guardrail is "cheapest model unless overridden." The
 // `--model` flag must ALWAYS be present (never the CLI's pricier default), pinned
 // to DEFAULT_CLAUDE_MODEL by default and to the override when one is given — that
 // single knob is what bounds dev/eval spend.
@@ -130,7 +131,7 @@ describe('buildClaudeArgs cost guardrail', () => {
     expect(overridden[overridden.indexOf('--model') + 1]).toBe('claude-opus-4-8');
   });
 
-  // WHY: workspace-substrate §7 closes the unconfined-write escape. The former
+  // WHY: the workspace substrate closes the unconfined-write escape. The former
   // `--permission-mode bypassPermissions` skipped ALL permission checks, so an outcome
   // naming an absolute path could write outside the worktree sandbox. The argv must now
   // carry the worktree-scoped `acceptEdits` posture (symmetric to Codex's

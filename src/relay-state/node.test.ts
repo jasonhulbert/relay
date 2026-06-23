@@ -8,7 +8,7 @@ import { arbNodeRecord } from './arbitraries';
 import { deserializeNode, readNode, serializeNode, writeNode } from './node';
 import type { NodeRecord } from './types';
 
-// WHY this matters: the rehydration contract (design §3.2) requires a fresh
+// WHY this matters: the rehydration contract requires a fresh
 // orchestrator reconstituted from `.relay/` to be *indistinguishable* from the
 // one it replaces — same subtree, statuses, learnings, history. Any field the
 // writer drops or the reader mangles is a silent divergence the loop would build

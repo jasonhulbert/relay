@@ -1,5 +1,5 @@
-// On-disk `.relay/` layout (docs/relay-state-layout.md, design §4). All path
-// construction goes through here so the layout has a single source of truth.
+// On-disk `.relay/` layout (docs/relay-state-layout.md). All path construction
+// goes through here so the layout has a single source of truth.
 import { join } from 'node:path';
 
 // Ids become path segments (node files, journal regions), so they must be
@@ -41,7 +41,7 @@ export function relayPaths(relayDir: string) {
       return join(relayDir, 'evidence', runId);
     },
     // Per-call usage records live under the node they served, inside the run's
-    // evidence store (F5; raw per-call cost records, design §4).
+    // evidence store: the raw per-call cost records the rollup is composed from.
     usageDir: (runId: string, nodeId: string): string => {
       assertSafeId(runId);
       assertSafeId(nodeId);
@@ -53,22 +53,22 @@ export function relayPaths(relayDir: string) {
       assertSafeId(role);
       return join(relayDir, 'evidence', runId, nodeId, 'usage', `${role}-${seq.toString()}.md`);
     },
-    // The brain's decompose rationale, attributed to the branch it decomposed
-    // (Sol 2, plan 03). Full audit text on disk; the node carries a `rationale`
-    // evidence ref into it. Written in the SAME atomic intent as the layer commit.
+    // The brain's decompose rationale, attributed to the branch it decomposed.
+    // Full audit text on disk; the node carries a `rationale` evidence ref into
+    // it. Written in the SAME atomic intent as the layer commit.
     rationaleFile: (runId: string, nodeId: string): string => {
       assertSafeId(runId);
       assertSafeId(nodeId);
       return join(relayDir, 'evidence', runId, nodeId, 'decompose-rationale.md');
     },
     // The per-run cost rollup: a read-time projection composed from the per-call
-    // records, written once by the top-level run (F5, design §8).
+    // records, written once by the top-level run.
     costRollup: (runId: string): string => {
       assertSafeId(runId);
       return join(relayDir, 'evidence', runId, 'cost.md');
     },
     inboxDir: join(relayDir, 'inbox'),
-    // The baseline-ref region (F2): files-only Markdown refs into the durable
+    // The baseline-ref region: files-only Markdown refs into the durable
     // content-addressed baseline store. Only the ref (hash/outcome/granularity/
     // version/tolerance) lives here — never the binary, which is a SIBLING store
     // outside `.relay/`. Outside `evidence/`, so the compactor never reaches it.

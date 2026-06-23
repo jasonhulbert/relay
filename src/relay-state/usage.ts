@@ -1,8 +1,8 @@
-// Per-call usage record reader/writer (F5, design §8, §4). Same codec as the other
+// Per-call usage record reader/writer. Same codec as the other
 // `.relay/` records: YAML front-matter is the authoritative machine record, the
 // Markdown body is a generated human-readable rendering. A usage record is a RAW
 // per-call cost record in the run's evidence store, attributed to the node the call
-// served; the orchestrator is its sole writer (C2). The per-run rollup is composed
+// served; the orchestrator is its sole writer. The per-run rollup is composed
 // from these records at read time (renderCostRollup, spine/cost.ts) — the records
 // are the ground truth, the rollup a projection.
 import { readFile, readdir } from 'node:fs/promises';

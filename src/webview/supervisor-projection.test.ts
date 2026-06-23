@@ -69,14 +69,14 @@ async function writeEvidence(
   await atomicWriteFile(join(relayPaths(relayDir).evidenceDir(RUN_ID), nodeId, file), content);
 }
 
-// WHY: the human-supervisor view is the OTHER side of the C7 split — it must surface
-// the orchestrator-visible narrative AND the on-disk evidence content the operator
-// audits, while the critic still sees evidence only. This pins that the reader lifts
-// the self-report off the record, reads each evidence file's content, and exposes the
-// decompose JUDGMENT (footprints + seams + rationale) for a decomposed branch. A
-// reader that dropped the narrative (mistaking the human view for the critic view) or
-// failed to read the layer would fail here.
-describe('projectSupervisorNode surfaces the human-supervisor detail (Sol 1)', () => {
+// WHY: the human-supervisor view is the OTHER side of the evidence-only-critic split —
+// it must surface the orchestrator-visible narrative AND the on-disk evidence content
+// the operator audits, while the critic still sees evidence only. This pins that the
+// reader lifts the self-report off the record, reads each evidence file's content, and
+// exposes the decompose JUDGMENT (footprints + seams + rationale) for a decomposed
+// branch. A reader that dropped the narrative (mistaking the human view for the critic
+// view) or failed to read the layer would fail here.
+describe('projectSupervisorNode surfaces the human-supervisor detail', () => {
   test('a decomposed branch exposes narrative, evidence content, and footprints/seams', async () => {
     const base = await mkdtemp(join(tmpdir(), 'relay-supervisor-'));
     const relayDir = join(base, '.relay');
@@ -223,11 +223,11 @@ describe('projectSupervisorNode surfaces the human-supervisor detail (Sol 1)', (
     }
   });
 
-  // WHY: the audience split is STRUCTURAL, not prompting (C7). The supervisor reader
-  // is on the human side and must never construct or consume the critic projection —
-  // a single import of `toCriticView`/`runCritic`/`CriticView` into this module would
-  // be the leak. This grep encodes that boundary at the source level.
-  test('the supervisor projection module never touches the critic view (C7)', async () => {
+  // WHY: the audience split is STRUCTURAL, not prompting. The supervisor reader is on
+  // the human side and must never construct or consume the critic projection — a single
+  // import of `toCriticView`/`runCritic`/`CriticView` into this module would be the
+  // leak. This grep encodes that boundary at the source level.
+  test('the supervisor projection module never touches the critic view', async () => {
     const src = await readFile(new URL('./projection.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/toCriticView/);
     expect(src).not.toMatch(/runCritic/);

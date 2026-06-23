@@ -58,7 +58,7 @@ async function gitLogLines(storeDir: string): Promise<string[]> {
   return stdout.trim().split('\n').filter(Boolean);
 }
 
-// WHY: this is the Phase 2 contract end-to-end on a hermetic executor — a real run
+// WHY: this is the operator-visibility contract end-to-end on a hermetic executor — a real run
 // must leave an inspectable, git-log-able store at the SAME resolved path across
 // runs, capture per-call usage, and emit a recap that actually points at the
 // persisted evidence. A harness that printed a recap whose pointers missed the
@@ -83,7 +83,7 @@ describe('devRun (hermetic executor)', () => {
       expect(res.result.rootStatus).toBe('done');
       expect(res.result.leafStatuses['leaf-1']).toBe('done');
 
-      // Usage captured for the recap (node attribution is Phase 6).
+      // Usage captured for the recap (node attribution is not yet built).
       expect(res.usages).toHaveLength(1);
       expect(res.usages[0]?.model).toBe('fake-cheap');
 
@@ -261,7 +261,7 @@ describe('devRun (hermetic executor)', () => {
     }
   });
 
-  // WHY: the independent critic must be cross-provider by default (design §3.6).
+  // WHY: the independent critic must be cross-provider by default.
   // With a Claude author the harness must select a Codex critic and surface it in
   // the recap, so an operator can see who graded done-ness. The real agentCritic is
   // driven with a faked model invoke so the assertion stays hermetic.

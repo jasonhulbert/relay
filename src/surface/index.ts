@@ -1,6 +1,6 @@
-// The Surface subsystem (M8 Phase 1, design §13): one Surface contract and the
-// WebSurface driver over a Playwright/CDP MCP. Later phases add the tier-A runner
-// (Phase 2), the visual critic path (Phase 3), and the baseline pipeline (Phase 4)
+// The Surface subsystem: one Surface contract and the
+// WebSurface driver over a Playwright/CDP MCP. Later work adds the tier-A runner,
+// the visual critic path, and the baseline pipeline
 // on top of this seam.
 export type {
   Surface,

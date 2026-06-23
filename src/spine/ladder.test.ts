@@ -12,7 +12,7 @@ import type { AttemptSignal, LadderStep, RailCaps, Rung } from './index';
 
 // A bare critic-visible projection over a throwaway node — the scripted critic
 // ignores it, but routing through `toCriticView` keeps the verdict on the real
-// C7 path rather than a hand-built object.
+// evidence-only critic path rather than a hand-built object.
 function critiqueView() {
   const node: NodeRecord = {
     id: 'leaf-x',
@@ -59,8 +59,8 @@ async function walkLadder(
 
 // WHY: this is the phase's reason to exist — the loop must answer FAIL, not only
 // PASS. A leaf whose critic never accepts it must escalate through the rungs in
-// the design's order and then STOP, because the budget rails — not a judgment —
-// guarantee termination (§3.7, §3.9). A controller that reordered the rungs, or
+// the ladder's order and then STOP, because the budget rails — not a judgment —
+// guarantee termination. A controller that reordered the rungs, or
 // failed to stop at a cap, would burn unbounded metered credit; this test fails
 // in exactly those cases.
 describe('escalation ladder under injected persistent failure', () => {
@@ -73,9 +73,9 @@ describe('escalation ladder under injected persistent failure', () => {
 
     const { rungs, final, spent } = await walkLadder(critic, caps);
 
-    // Rung sequence, in the design's order.
+    // Rung sequence, in the canonical order.
     expect(rungs).toEqual(['retry', 'swap-provider', 'raise-tier', 'promote']);
-    // The audit trail the (Phase 3) blocked record reads matches what was walked.
+    // The audit trail the blocked record reads matches what was walked.
     expect(spent).toEqual(rungs);
     // And it stopped — on a budget cap, not by running forever.
     expect(final).toEqual({ kind: 'exhausted', reason: { kind: 'cap', cap: 'attempt' } });
@@ -131,7 +131,7 @@ describe('each budget rail independently halts the ladder', () => {
 
 // WHY: a too-big judgment is a different failure than a flaky one — re-running
 // the same leaf is wasted spend, so the ladder skips the lower rungs and goes
-// straight to promote (§3.9). Fail-then-succeed proves the ladder is not a
+// straight to promote. Fail-then-succeed proves the ladder is not a
 // one-way street: a passing attempt ends it cleanly with no rung spent.
 describe('ladder signals beyond persistent failure', () => {
   test('a too-big signal jumps straight to promote', () => {

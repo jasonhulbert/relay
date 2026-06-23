@@ -1,27 +1,26 @@
-// The run seed the intake compiler produces (design §3.11, M6 Phase 1): the
-// structured object a bounded conversation distills out of grilling the human.
-// Phase 1 only PRODUCES it (in memory); Phase 2 commits it as the `.relay/` root.
+// The run seed the intake compiler produces: the structured object a bounded
+// conversation distills out of grilling the human. Intake only PRODUCES it (in
+// memory); committing it as the `.relay/` root is a separate step.
 //
-// A seed is exactly three things, matching the design's "outcome spec + verification
-// grounding + a non-binding high-level sketch":
+// A seed is exactly three things — an outcome spec, verification grounding, and a
+// non-binding high-level sketch:
 //   - the verifiable outcome the run aims at (`spec.outcome`);
 //   - how it will be judged, each check carrying explicit grounding
-//     (`spec.verifications`, §6 — a verdict citing no grounding is rejected);
+//     (`spec.verifications` — a verdict citing no grounding is rejected);
 //   - a NON-binding sketch (`sketch`) — high-level orientation only.
 //
-// The `spec` is an `OutcomeSpec`, so it maps 1:1 onto `RootManifest.spec` when Phase
-// 2 commits the root. The sketch is deliberately a separate, structurally minimal
+// The `spec` is an `OutcomeSpec`, so it maps 1:1 onto `RootManifest.spec` when the
+// root is committed. The sketch is deliberately a separate, structurally minimal
 // type (see `Sketch`) so intake cannot smuggle a binding plan into the seed.
 import type { OutcomeSpec, Verification, Sketch } from '../relay-state/index';
 
-// The non-binding high-level sketch the interviewer captures (design §3.3, I2). Its
-// durable home is the relay-state record schema — the committed root carries it in
-// the manifest (Phase 2) — so the type is defined there and re-exported here; intake
-// remains its producer.
+// The non-binding high-level sketch the interviewer captures. Its durable home is
+// the relay-state record schema — the committed root carries it in the manifest — so
+// the type is defined there and re-exported here; intake remains its producer.
 export type { Sketch };
 
 // The full run seed: the outcome spec (with grounded verifications) and the
-// non-binding sketch. This is the conversation's ONLY output (I1/I2).
+// non-binding sketch. This is the conversation's ONLY output.
 export interface IntakeSeed {
   spec: OutcomeSpec;
   sketch: Sketch;
@@ -31,22 +30,22 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
-// The match granularities a visual outcome may declare (design §7.5, V4). Mirrored
-// here as runtime values because intake validates the seed without depending on the
+// The match granularities a visual outcome may declare. Mirrored here as runtime
+// values because intake validates the seed without depending on the
 // surface module (whose `MatchGranularity` is a compile-time type only); the small
 // duplication is the same kind the file already tolerates for `asRecord` and is
 // pinned by `intake-rejects-an-unknown-granularity` in the test.
 const VISUAL_GRANULARITIES = ['intent', 'structural', 'baseline-diff'] as const;
 
 // Validate a `visual`-kind verification's `check`. A visual check is NOT a shell line
-// but a structured replay spec (design §13, V1/V4/V7): the executor-emitted
-// semantic-action path the critic replays plus the match-granularity it grades at. It
-// rides as a JSON document in `check` so the durable `Verification` shape is untouched
-// — "the runnable check" for a visual kind is this spec — and the visual critic (M9
-// Phase 2) parses it back into a `VisualVerification`. Intake REQUIRES both fields:
-// a visual outcome with no granularity is unjudgeable and one with no path replays
-// nothing, exactly what §6/Rule 11 reject — so a missing field fails loud here, where
-// the seed is compiled, rather than surfacing as an opaque crash at run time.
+// but a structured replay spec: the executor-emitted semantic-action path the critic
+// replays plus the match-granularity it grades at. It rides as a JSON document in
+// `check` so the durable `Verification` shape is untouched — "the runnable check" for
+// a visual kind is this spec — and the visual critic parses it back into a
+// `VisualVerification`. Intake REQUIRES both fields: a visual outcome with no
+// granularity is unjudgeable and one with no path replays nothing, exactly what the
+// required-grounding rule and Rule 11 reject — so a missing field fails loud here,
+// where the seed is compiled, rather than surfacing as an opaque crash at run time.
 function validateVisualCheck(check: string): void {
   let doc: unknown;
   try {
@@ -65,13 +64,11 @@ function validateVisualCheck(check: string): void {
     throw new Error(
       `intake seed \`visual\` verification missing match-granularity (one of ${VISUAL_GRANULARITIES.join(
         '/',
-      )}) (V4)`,
+      )})`,
     );
   }
   if (!Array.isArray(spec.path) || spec.path.length === 0) {
-    throw new Error(
-      'intake seed `visual` verification missing a non-empty semantic-action `path` (V1)',
-    );
+    throw new Error('intake seed `visual` verification missing a non-empty semantic-action `path`');
   }
   if (
     spec.path.some((step) => asRecord(step) === null || typeof asRecord(step)?.kind !== 'string')
@@ -101,8 +98,8 @@ function extractJson(text: string): string {
 // Parse + validate the seed's verifications. Unlike the brain's decomposition parse,
 // grounding is REQUIRED and must be non-empty: "verification grounding" is a
 // first-class deliverable of intake, and a check the run cannot justify is exactly
-// what §6 rejects — so a missing grounding fails loud (Rule 11) rather than
-// defaulting to an empty string.
+// what the required-grounding rule rejects — so a missing grounding fails loud
+// (Rule 11) rather than defaulting to an empty string.
 function parseVerifications(value: unknown): Verification[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('intake seed `verifications` must be a non-empty array');
@@ -113,9 +110,9 @@ function parseVerifications(value: unknown): Verification[] {
       throw new Error('intake seed verification missing string `kind`/`check`');
     }
     if (typeof v.grounding !== 'string' || v.grounding.trim() === '') {
-      throw new Error('intake seed verification missing non-empty `grounding` (§6)');
+      throw new Error('intake seed verification missing non-empty `grounding`');
     }
-    // A `visual` outcome carries a structured replay spec in `check` (design §13); its
+    // A `visual` outcome carries a structured replay spec in `check`; its
     // match-granularity and semantic-action path are required, validated the same way
     // and at the same point grounding is — a visual seed missing either fails loud.
     if (v.kind === 'visual') {

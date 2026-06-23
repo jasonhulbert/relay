@@ -29,7 +29,7 @@ async function exists(p: string): Promise<boolean> {
 }
 
 // WHY: the key is what makes a project's store stable and collision-free across
-// runs (the §4 git-trackability rationale depends on resolving to the SAME path
+// runs (the git-trackability rationale depends on resolving to the SAME path
 // every time). A key that varied by cwd, or collided for two same-named projects,
 // would scatter or merge their `.relay/` records.
 describe('projectKey', () => {
@@ -64,7 +64,7 @@ describe('ensureProjectStore', () => {
       });
       expect(first.created).toBe(true);
       expect(first.storeDir).toBe(join(home, first.key));
-      // git-inited (design §4 git-trackability).
+      // git-inited (git-trackability).
       expect(await exists(join(first.storeDir, '.git'))).toBe(true);
       // Worktree root is OUTSIDE the store so sandboxes never enter the git record.
       expect(first.workRoot.startsWith(first.storeDir)).toBe(false);
@@ -101,7 +101,7 @@ describe('ensureProjectStore', () => {
   });
 });
 
-// WHY: "operator can `git log` the store" is a Phase 2 validation criterion; an
+// WHY: "operator can `git log` the store" is a validation criterion; an
 // empty `git init` is not log-able. commitStore is what makes a run's `.relay/`
 // land as a real commit, and it must tolerate a no-op re-run without failing.
 describe('commitStore', () => {

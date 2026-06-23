@@ -1,9 +1,9 @@
-// Spawning a child sub-orchestrator as its own OS process (C6, design §9.2). The
+// Spawning a child sub-orchestrator as its own OS process. The
 // orchestrator tree is a process tree of fresh `node` invocations, each bound to
 // a node-id and coordinating ONLY through `.relay/`. A parent spawns each branch
-// child here; the child writes its region (and, from M2 Phase 2, its verified
-// outcome contract) to `.relay/` and exits. The parent reads the result from the
-// ledger (A7) — never from this subprocess's stdout, which is why stdout is not
+// child here; the child writes its region (and its verified
+// outcome contract) to `.relay/` and exits. The parent trusts the structural ledger
+// fact that the gate fired — never this subprocess's stdout, which is why stdout is not
 // piped back.
 import { spawn } from 'node:child_process';
 import type { ChildInjection } from './orchestrator';
@@ -26,8 +26,8 @@ export interface ChildSpawnResult {
   code: number;
 }
 
-// Seam for tests: the default spawns a real subprocess (the C6 guarantee under
-// test); a test may inject a stand-in to isolate the parent's own behavior.
+// Seam for tests: the default spawns a real subprocess (the process-isolation
+// guarantee under test); a test may inject a stand-in to isolate the parent's own behavior.
 export type SpawnChild = (input: ChildSpawnInput) => Promise<ChildSpawnResult>;
 
 export const defaultSpawnChild: SpawnChild = ({ relayDir, nodeId, childEntry, injection }) => {
@@ -46,7 +46,7 @@ export const defaultSpawnChild: SpawnChild = ({ relayDir, nodeId, childEntry, in
     }
     const child = spawn(process.execPath, args, {
       // stdout is intentionally ignored: the parent reads the child's verdict from
-      // the committed `.relay/` contract (A7), never from this stream. stderr is
+      // the committed `.relay/` contract (the structural ledger fact), never from this stream. stderr is
       // inherited so a crashing child is debuggable.
       stdio: ['ignore', 'ignore', 'inherit'],
       // Propagate the entry so a deeper branch child can spawn its own children.

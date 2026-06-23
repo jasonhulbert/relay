@@ -1,4 +1,4 @@
-// Root-manifest reader/writer (design §4). Same codec as node files: YAML
+// Root-manifest reader/writer. Same codec as node files: YAML
 // front-matter is authoritative, the Markdown body is a human-readable render.
 import { readFile } from 'node:fs/promises';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
