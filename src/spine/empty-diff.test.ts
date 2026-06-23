@@ -16,7 +16,13 @@ async function freshRelay(): Promise<{ base: string; relayDir: string }> {
 // it is is NOT the executor's to declare — the critic gates the empty diff (below).
 function emptyDiffExecutor(calls: number[]): Executor {
   return {
-    capabilities: () => ({ provider: 'empty', json: true, resume: false, sandbox: true, mcp: false }),
+    capabilities: () => ({
+      provider: 'empty',
+      json: true,
+      resume: false,
+      sandbox: true,
+      mcp: false,
+    }),
     async run({ worktree }: ExecutorInput): Promise<ExecutorResult> {
       calls.push(1);
       await mkdir(worktree, { recursive: true });

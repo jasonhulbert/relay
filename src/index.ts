@@ -201,9 +201,7 @@ async function runCommand(args: readonly string[]): Promise<number> {
           // `maxQuestions: 0` makes a non-converging turn throw before `ask` is reached,
           // so a call here would be a bug — fail loud rather than secretly read stdin.
           ask: () =>
-            Promise.reject(
-              new Error('run: --outcome is non-interactive and must not read stdin'),
-            ),
+            Promise.reject(new Error('run: --outcome is non-interactive and must not read stdin')),
           opening: outcome,
           maxQuestions: 0,
         }

@@ -55,7 +55,13 @@ function scriptedIntake(): { interviewer: Interviewer; ask: AskHuman } {
 // diff string would fail apply-back). Mirrors dev-run's hermetic executor.
 function markerExecutor(): Executor {
   return {
-    capabilities: () => ({ provider: 'fake', json: true, resume: false, sandbox: true, mcp: false }),
+    capabilities: () => ({
+      provider: 'fake',
+      json: true,
+      resume: false,
+      sandbox: true,
+      mcp: false,
+    }),
     async run({ worktree }: ExecutorInput): Promise<ExecutorResult> {
       await writeFile(join(worktree, 'RESULT.txt'), 'relay was here\n');
       await execFileP('git', ['-C', worktree, 'add', 'RESULT.txt']);
@@ -194,7 +200,10 @@ function oneShotInterviewer(seedDoc: object): Interviewer {
     provider: 'claude',
     oneShot: true,
     invoke: () =>
-      Promise.resolve({ stdout: claudeStdout('```json\n' + JSON.stringify(seedDoc) + '\n```'), code: 0 }),
+      Promise.resolve({
+        stdout: claudeStdout('```json\n' + JSON.stringify(seedDoc) + '\n```'),
+        code: 0,
+      }),
   });
 }
 
@@ -300,7 +309,12 @@ describe('relayRun --outcome (one-shot grounded seed → decompose → apply-bac
         relayRun({
           projectPath: project,
           home,
-          interviewer: oneShotInterviewer({ kind: 'seed', outcome: '', verifications: [], sketch: { notes: [] } }),
+          interviewer: oneShotInterviewer({
+            kind: 'seed',
+            outcome: '',
+            verifications: [],
+            sketch: { notes: [] },
+          }),
           ask,
           opening: 'do the thing',
           maxQuestions: 0,
