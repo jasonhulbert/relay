@@ -81,5 +81,6 @@ is dev-only.
 - Tests encode **why** behavior matters, not just what it does — a test that can't
   fail when the intent regresses is wrong.
 - The richest orientation is the header comment atop each module's `index.ts`. Read
-  it before touching that module. For the on-disk record, read
+  it before touching that module. For how the whole system fits together and why,
+  read the canonical spec `docs/relay-spec.md`; for the on-disk record, read
   `docs/relay-state-layout.md`.

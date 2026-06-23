@@ -11,3 +11,5 @@ The core loop: the orchestrator is the loop, and it is a **code-owned state mach
 ## Design Philosophy
 
 **Don't depend on a model behaving well under pressure. Make the structure hold the truth, make the agents disposable, and author every durable record for the specific consumer whose correctness depends on it.**
+
+For the full "how and why" — the loop end to end, the guarantees that hold it, and every subsystem — see the canonical spec at [`docs/relay-spec.md`](docs/relay-spec.md).
