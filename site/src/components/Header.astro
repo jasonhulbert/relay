@@ -1,0 +1,150 @@
+---
+/**
+ * Site header: the `relay_` wordmark (home link), primary nav, a labelled but
+ * EMPTY search slot (the documented seam child 04 fills with Pagefind), the
+ * theme toggle, and the mobile-nav disclosure.
+ *
+ * The header consumes --surface/--border tokens so it flips with the theme.
+ * The `search` named slot has a placeholder default so the seam is present in
+ * the built HTML even before search exists.
+ */
+import Wordmark from './Wordmark.astro';
+import ThemeToggle from './ThemeToggle.astro';
+import MobileNav from './MobileNav.astro';
+import { nav, homeHref } from '../config/nav.ts';
+
+// Detect whether a page actually FILLED the search slot. Astro assigns named
+// slots at compile time, so an empty forward through the layouts still counts
+// as "has" — render the content and check for substance at runtime instead, so
+// the default empty-search seam shows until child 04 wires Pagefind.
+const searchHtml = Astro.slots.has('search') ? await Astro.slots.render('search') : '';
+const hasSearch = searchHtml.trim().length > 0;
+---
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="site-header__brand" href={homeHref} aria-label="relay — home">
+      <Wordmark showGlyph class="text-xl" />
+    </a>
+
+    <nav class="site-header__nav" aria-label="Primary">
+      {
+        nav.map((link) => (
+          <a
+            class="site-header__link"
+            href={link.href}
+            {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          >
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="site-header__actions">
+      <div class="site-header__search">
+        {
+          hasSearch ? (
+            <Fragment set:html={searchHtml} />
+          ) : (
+            <div class="search-placeholder" role="search" aria-label="Search docs" data-search-slot>
+              <span class="search-placeholder__hint">Search</span>
+              <kbd class="search-placeholder__key">⌘K</kbd>
+            </div>
+          )
+        }
+      </div>
+      <ThemeToggle />
+      <MobileNav />
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--base) 88%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .site-header__inner {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-gutter);
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0.75rem var(--spacing-gutter);
+  }
+
+  .site-header__brand {
+    color: var(--text);
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+
+  .site-header__nav {
+    display: none;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  @media (min-width: 48rem) {
+    .site-header__nav {
+      display: flex;
+    }
+  }
+
+  .site-header__link {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+  .site-header__link:hover {
+    color: var(--accent);
+  }
+
+  .site-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  /* Empty search seam — visually a disabled input affordance until child 04. */
+  .site-header__search {
+    display: none;
+  }
+  @media (min-width: 48rem) {
+    .site-header__search {
+      display: block;
+    }
+  }
+  .search-placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 12rem;
+    padding: 0.4rem 0.6rem;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+  }
+  .search-placeholder__key {
+    padding: 0.05rem 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    background: var(--base);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+  }
+</style>

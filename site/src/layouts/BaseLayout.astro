@@ -1,0 +1,91 @@
+---
+/**
+ * BaseLayout: the site shell every page renders through. Owns the document head
+ * (meta, fonts via global.css, the no-flash ThemeScript), the persistent
+ * GridFrame backdrop, the sticky Header (with its empty search seam), and the
+ * Footer.
+ *
+ * Slots:
+ *  - default: page content, placed inside <main>
+ *  - search: forwarded to the Header search seam (child 04 fills with Pagefind)
+ *  - head: extra <head> elements (per-page meta, etc.)
+ *
+ * Props:
+ *  - title: document <title>
+ *  - description: meta description
+ *  - mainClass: extra classes on <main> (e.g. width constraints for prose)
+ */
+import '../styles/global.css';
+import ThemeScript from '../components/ThemeScript.astro';
+import GridFrame from '../components/GridFrame.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  mainClass?: string;
+}
+
+const {
+  title,
+  description = 'Outcome-driven agent orchestration — terminal-native by design.',
+  mainClass = '',
+} = Astro.props;
+
+const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g, '/');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" href={faviconHref} />
+    <title>{title}</title>
+    <ThemeScript />
+    <slot name="head" />
+  </head>
+  <body>
+    <!-- Persistent vertical grid backdrop, fixed behind all content. -->
+    <GridFrame class="site-grid" columns={4} />
+
+    <div class="site-shell">
+      <Header>
+        <slot name="search" slot="search" />
+      </Header>
+
+      <main class={`site-main ${mainClass}`.trim()}>
+        <slot />
+      </main>
+
+      <Footer />
+    </div>
+  </body>
+</html>
+
+<style>
+  /* Fixed full-viewport backdrop: the grid lines + registration marks read
+     behind every page. Decorative only — sits below the content layer. */
+  :global(.site-grid) {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  :global(.site-grid > .grid-frame__content) {
+    display: none;
+  }
+
+  .site-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .site-main {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+</style>
