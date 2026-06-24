@@ -1,0 +1,142 @@
+---
+/**
+ * DiagramSection: the LoopDiagram shown in context, with a plain-language walk
+ * of a single run — root outcome → orchestrators → leaf agents → critic gate,
+ * which loops back. Grounded in the "core loop" section of docs/relay-spec.md.
+ *
+ * Phase-1 scope: structure + copy. The in-context signal-pulse staging and
+ * responsive polish land in Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+import LoopDiagram from '../LoopDiagram.astro';
+
+const stages = [
+  {
+    label: 'Outcome',
+    body: 'The goal enters at the root — what "done" means and how it’s checked.',
+  },
+  {
+    label: 'Orchestrators',
+    body: 'Plan the work and fan it out, one lazy layer at a time. Code owns the loop; the model is asked only for bounded judgments.',
+  },
+  {
+    label: 'Leaf agents',
+    body: 'Do the bounded, concrete work — each a fresh executor in its own worktree, run and then discarded.',
+  },
+  {
+    label: 'Critic gate',
+    body: 'Judges the converged result on evidence alone: approve, or loop back to try again. Nothing ships until it approves.',
+  },
+];
+---
+
+<section class="diagram" aria-labelledby="diagram-heading">
+  <div class="diagram__inner">
+    <header class="diagram__head">
+      <Eyebrow marker>The control loop</Eyebrow>
+      <CursorHeading as="h2" id="diagram-heading">How a run flows.</CursorHeading>
+      <p class="diagram__lead">
+        Every run is the same loop, regardless of the task. An outcome flows down through
+        orchestrators to leaf agents, then back up through a critic gate that decides whether it’s
+        done.
+      </p>
+    </header>
+
+    <div class="diagram__cols">
+      <div class="diagram__figure">
+        <LoopDiagram />
+      </div>
+      <ol class="diagram__walk">
+        {
+          stages.map((s, i) => (
+            <li class="diagram__step">
+              <span class="diagram__num" aria-hidden="true">
+                {i + 1}/
+              </span>
+              <div class="diagram__step-content">
+                <p class="diagram__step-label">{s.label}</p>
+                <p class="diagram__step-body">{s.body}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </div>
+</section>
+
+<style>
+  .diagram__inner {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .diagram__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    max-width: 50rem;
+  }
+  .diagram__lead {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .diagram__cols {
+    margin-top: 2.5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    align-items: center;
+  }
+  @media (min-width: 56rem) {
+    .diagram__cols {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 3rem;
+    }
+  }
+
+  .diagram__figure {
+    border: 1px solid var(--border);
+    border-radius: 0.7rem;
+    background: var(--surface);
+    padding: 1.5rem;
+  }
+
+  .diagram__walk {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .diagram__step {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.85rem;
+    align-items: baseline;
+  }
+  .diagram__num {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .diagram__step-label {
+    margin: 0;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .diagram__step-body {
+    margin: 0.3rem 0 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+</style>

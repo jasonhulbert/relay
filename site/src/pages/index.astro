@@ -13,6 +13,13 @@ import PillButton from '../components/PillButton.astro';
 import UIMock from '../components/UIMock.astro';
 import LoopDiagram from '../components/LoopDiagram.astro';
 import { withBase } from '../config/nav.ts';
+import TheIdea from '../components/landing/TheIdea.astro';
+import Concepts from '../components/landing/Concepts.astro';
+import CommandShowcase from '../components/landing/CommandShowcase.astro';
+import DiagramSection from '../components/landing/DiagramSection.astro';
+import GetStarted from '../components/landing/GetStarted.astro';
+import Faq from '../components/landing/Faq.astro';
+import FinalCta from '../components/landing/FinalCta.astro';
 ---
 
 <BaseLayout
@@ -57,7 +64,14 @@ import { withBase } from '../config/nav.ts';
     </div>
   </GridFrame>
 
-  {/* ── SEAM: child 02 appends the remaining landing sections below ── */}
+  {/* ── SEAM: landing sections (child 02) appended below the hero ── */}
+  <TheIdea />
+  <Concepts />
+  <CommandShowcase />
+  <DiagramSection />
+  <GetStarted />
+  <Faq />
+  <FinalCta />
 </BaseLayout>
 
 <style>

@@ -1,0 +1,133 @@
+---
+/**
+ * Concepts: the five ideas that carry Relay, as a card grid. Each card maps to
+ * a spec concept (outcomes, the loop, the evidence-only critic, evidence, the
+ * decision inbox) and is written standalone — no assumed knowledge, grounded in
+ * docs/relay-spec.md.
+ *
+ * Phase-1 scope: structure + copy. Hover/focus accents and responsive polish
+ * land in Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+
+const concepts = [
+  {
+    name: 'Outcomes',
+    body: 'A verifiable statement of done — what to achieve and how to check it. You write outcomes, not step-by-step plans; capable models decide the route just in time.',
+  },
+  {
+    name: 'The loop',
+    body: 'One shape at every level of the tree: an outcome fans out to orchestrators and agents, then converges on a gate. The same loop runs the whole run, top to bottom.',
+  },
+  {
+    name: 'The independent critic',
+    body: 'A separate, cross-provider judge rules done-ness — by default a different model than the one that did the work, so a single blind spot can’t both produce and bless the same mistake.',
+  },
+  {
+    name: 'Evidence',
+    body: 'The critic sees evidence only — the outcome spec, the diff, the captured proof — never the worker’s self-report. A false "done" is the dangerous one, so the judge never reads the worker’s story.',
+  },
+  {
+    name: 'The decision inbox',
+    body: 'The one inbound channel. Anything that genuinely needs you — an irreversible gate, an ambiguous call — is surfaced here and waits. Relay never auto-resolves it and never silently swallows it.',
+  },
+];
+---
+
+<section class="concepts" aria-labelledby="concepts-heading">
+  <div class="concepts__inner">
+    <header class="concepts__head">
+      <Eyebrow marker>The vocabulary</Eyebrow>
+      <CursorHeading as="h2" id="concepts-heading">Five ideas carry the whole system.</CursorHeading>
+      <p class="concepts__lead">
+        Relay is small at its core. Learn these five and the rest of the system reads as
+        applications of them.
+      </p>
+    </header>
+
+    <ul class="concepts__grid" role="list">
+      {
+        concepts.map((c, i) => (
+          <li class="concepts__card">
+            <span class="concepts__index" aria-hidden="true">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <h3 class="concepts__name">{c.name}</h3>
+            <p class="concepts__body">{c.body}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .concepts__inner {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .concepts__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    max-width: 46rem;
+  }
+  .concepts__lead {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .concepts__grid {
+    list-style: none;
+    margin: 2.5rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 40rem) {
+    .concepts__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (min-width: 64rem) {
+    .concepts__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .concepts__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    background: var(--surface);
+    padding: 1.4rem;
+  }
+
+  .concepts__index {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+  }
+  .concepts__name {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .concepts__body {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+</style>

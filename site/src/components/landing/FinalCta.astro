@@ -1,0 +1,63 @@
+---
+/**
+ * FinalCta: the closing call to action — restates the promise and points to the
+ * docs and the repo. The Docs link is base-aware via withBase so it resolves
+ * under /relay/; GitHub is an external absolute URL that bypasses the base.
+ *
+ * Phase-1 scope: structure + copy. Seam flourishes and hover polish land in
+ * Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+import PillButton from '../PillButton.astro';
+import { withBase } from '../../config/nav.ts';
+---
+
+<section class="finalcta" aria-labelledby="finalcta-heading">
+  <div class="finalcta__inner">
+    <Eyebrow marker>Start now</Eyebrow>
+    <CursorHeading as="h2" display id="finalcta-heading">Define the outcome. Relay runs the loop.</CursorHeading>
+    <p class="finalcta__lead">
+      Specify what "done" means and let the loop reach it — handing the work to capable models and
+      surfacing only the calls that are yours to make.
+    </p>
+    <div class="finalcta__actions">
+      <PillButton href={withBase('docs/what-is-relay')} variant="primary">Read the docs</PillButton>
+      <PillButton
+        href="https://github.com/jasonhulbert/relay"
+        variant="secondary"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        View on GitHub
+      </PillButton>
+    </div>
+  </div>
+</section>
+
+<style>
+  .finalcta__inner {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: clamp(4rem, 9vw, 7rem) clamp(1.5rem, 4vw, 3rem);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .finalcta__lead {
+    margin: 0;
+    max-width: 44ch;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .finalcta__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+</style>

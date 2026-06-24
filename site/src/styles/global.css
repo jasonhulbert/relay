@@ -90,6 +90,10 @@
 html {
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
+  /* The full-bleed GridFrame registration marks sit on the 0%/100% edge lines
+     and bleed a few px past the viewport. Clip (not hidden) absorbs that bleed
+     without creating a scroll container, so the sticky header still works. */
+  overflow-x: clip;
 }
 
 [data-theme='light'] {
@@ -104,6 +108,9 @@ body {
   font-synthesis-weight: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Pairs with html overflow-x:clip to absorb the GridFrame edge-mark bleed.
+     clip (not hidden) leaves the sticky header working. */
+  overflow-x: clip;
 }
 
 ::selection {

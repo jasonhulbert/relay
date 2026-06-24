@@ -1,0 +1,143 @@
+---
+/**
+ * Faq: a progressive-enhancement accordion built on native <details>/<summary>,
+ * so it toggles open and closed with JavaScript disabled. Answers are grounded
+ * in src/index.ts and docs/relay-spec.md.
+ *
+ * Phase-1 scope: structure + copy. Open/close motion and focus polish land in
+ * Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+
+const faqs = [
+  {
+    q: 'Do I still write the steps?',
+    a: 'No. You write a verifiable outcome — the goal and how it’s checked. The orchestrator decomposes the plan just in time, one layer ahead of execution, so you’re not authoring or babysitting a step list.',
+  },
+  {
+    q: 'What keeps a run honest?',
+    a: 'An independent critic rules done-ness, and it sees evidence only — the outcome spec, the diff, the captured proof — never the worker’s self-report. It defaults to a different provider than the one that did the work, so one model can’t both make and bless a mistake.',
+  },
+  {
+    q: 'Which models does Relay use?',
+    a: 'Relay hands the actual work to Claude Code or Codex as interchangeable executor backends, selectable per role with --provider and --critic-provider. The loop, the gates, and every durable write are owned by code, not a model.',
+  },
+  {
+    q: 'Where do I see what’s happening?',
+    a: 'A read-only web view, served over loopback with relay web, renders the live tree, per-node detail, and the decision inbox. It’s a projection of the on-disk record — a place to watch the run, not a control surface.',
+  },
+  {
+    q: 'What does Relay run on?',
+    a: 'macOS, shipped as a single binary. Durable state lives in plain Markdown under .relay/, so you can git log the tree and read any node by eye.',
+  },
+];
+---
+
+<section class="faq" aria-labelledby="faq-heading">
+  <div class="faq__inner">
+    <header class="faq__head">
+      <Eyebrow marker>FAQ</Eyebrow>
+      <CursorHeading as="h2" id="faq-heading">Questions, answered.</CursorHeading>
+    </header>
+
+    <div class="faq__list">
+      {
+        faqs.map((item) => (
+          <details class="faq__item">
+            <summary class="faq__q">
+              <span class="faq__q-text">{item.q}</span>
+              <span class="faq__marker" aria-hidden="true" />
+            </summary>
+            <p class="faq__a">{item.a}</p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .faq__inner {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .faq__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    margin-bottom: 2rem;
+  }
+
+  .faq__list {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border);
+  }
+
+  .faq__item {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .faq__q {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem 0.25rem;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 600;
+    color: var(--text);
+  }
+  /* Hide the default disclosure triangle across engines. */
+  .faq__q::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq__q-text {
+    font-size: 1.02rem;
+  }
+
+  /* A `+` that becomes `×` when open — pure CSS, no JS needed. */
+  .faq__marker {
+    position: relative;
+    flex: 0 0 auto;
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+  .faq__marker::before,
+  .faq__marker::after {
+    content: '';
+    position: absolute;
+    background: var(--accent);
+  }
+  .faq__marker::before {
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1.5px;
+    transform: translateY(-50%);
+  }
+  .faq__marker::after {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    transform: translateX(-50%);
+  }
+  .faq__item[open] .faq__marker::after {
+    transform: translateX(-50%) scaleY(0);
+  }
+
+  .faq__a {
+    margin: 0;
+    padding: 0 0.25rem 1.25rem;
+    max-width: 60ch;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+</style>
