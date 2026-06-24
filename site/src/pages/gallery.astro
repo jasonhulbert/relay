@@ -1,0 +1,192 @@
+---
+/**
+ * Dev-only component gallery. Renders every Phase 3 motif twice — once in a
+ * forced-dark panel, once in a forced-light panel — so a single screenshot
+ * verifies both themes. Review-only: noindex'd and never linked from nav; it
+ * must stay excluded from the production sitemap (Phase 04).
+ */
+import '../styles/global.css';
+import ThemeScript from '../components/ThemeScript.astro';
+import GridFrame from '../components/GridFrame.astro';
+import Eyebrow from '../components/Eyebrow.astro';
+import CursorHeading from '../components/CursorHeading.astro';
+import PillButton from '../components/PillButton.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import Callout from '../components/Callout.astro';
+import StatusDot from '../components/StatusDot.astro';
+import NumberedSteps from '../components/NumberedSteps.astro';
+import PixelDots from '../components/PixelDots.astro';
+import UIMock from '../components/UIMock.astro';
+
+const themes = ['dark', 'light'] as const;
+
+const sampleBash = `relay run --outcome "ship the docs site"
+# orchestrator fans out to leaf agents
+relay web --port 4321`;
+
+const sampleTs = `export async function critic(result: RunResult) {
+  if (!result.ok) return reject(result.reason);
+  return approve(result);
+}`;
+
+const steps = [
+  { title: 'Describe the outcome', body: 'State the goal in one line; Relay plans the loop.' },
+  { title: 'Agents fan out', body: 'Orchestrators delegate to leaf agents in parallel.' },
+  { title: 'Critic gates the result', body: 'Nothing ships until the critic approves the signal.' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Component gallery · relay_</title>
+    <ThemeScript />
+  </head>
+  <body>
+    <main class="gallery">
+      <header class="gallery__head">
+        <Eyebrow marker>Dev gallery · Phase 3 motifs</Eyebrow>
+        <p class="gallery__note">
+          Review-only route. Each motif is shown in both themes; not linked from nav, not indexed.
+        </p>
+      </header>
+
+      <div class="gallery__panels">
+        {
+          themes.map((theme) => (
+            <section class="gallery__panel" data-theme={theme}>
+              <p class="gallery__paneltag">{theme}</p>
+
+              <GridFrame class="gallery__grid">
+                <div class="stack">
+                  <Eyebrow marker>Eyebrow · grid frame</Eyebrow>
+                  <CursorHeading as="h2" display>
+                    Terminal-native by default
+                  </CursorHeading>
+                  <p class="gallery__copy">
+                    Persistent grid lines, registration marks, and corner crops frame the content.
+                  </p>
+                  <div class="row">
+                    <PillButton variant="primary" href="#">
+                      Get started
+                    </PillButton>
+                    <PillButton variant="secondary" href="#">
+                      Read the docs
+                    </PillButton>
+                  </div>
+                </div>
+              </GridFrame>
+
+              <div class="stack">
+                <Eyebrow>Status dots</Eyebrow>
+                <div class="row">
+                  <StatusDot status="live" label="live" />
+                  <StatusDot status="idle" label="idle" />
+                </div>
+              </div>
+
+              <div class="stack">
+                <Eyebrow>Code block</Eyebrow>
+                <CodeBlock code={sampleBash} lang="bash" filename="quickstart.sh" />
+                <CodeBlock code={sampleTs} lang="ts" filename="critic.ts" />
+              </div>
+
+              <div class="stack">
+                <Eyebrow>Callouts</Eyebrow>
+                <Callout type="note" title="Note">
+                  Relay's loop respects <code>prefers-reduced-motion</code>.
+                </Callout>
+                <Callout type="warn" title="Heads up">
+                  The critic gate blocks shipping until the signal is approved.
+                </Callout>
+              </div>
+
+              <div class="stack">
+                <Eyebrow>Numbered steps</Eyebrow>
+                <NumberedSteps steps={steps} />
+              </div>
+
+              <div class="stack">
+                <Eyebrow>Pixel dots</Eyebrow>
+                <PixelDots rows={4} cols={10} />
+              </div>
+
+              <div class="stack">
+                <Eyebrow>UI mockups</Eyebrow>
+                <UIMock variant="web" />
+                <UIMock variant="inbox" />
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </main>
+  </body>
+</html>
+
+<style>
+  .gallery {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 5rem;
+  }
+  .gallery__head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .gallery__note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .gallery__panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .gallery__panel {
+    background: var(--base);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.25rem;
+  }
+  .gallery__paneltag {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .gallery__grid {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+  }
+  .gallery__copy {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+</style>

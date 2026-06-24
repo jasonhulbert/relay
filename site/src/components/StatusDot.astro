@@ -1,0 +1,81 @@
+---
+/**
+ * StatusDot: a small live/idle indicator. The live state pulses an accent
+ * ring; the pulse is gated by prefers-reduced-motion. Idle reads muted.
+ *
+ * Props:
+ *  - status: 'live' | 'idle' (default 'live')
+ *  - label: optional text shown after the dot
+ *  - class: extra classes on the root
+ */
+interface Props {
+  status?: 'live' | 'idle';
+  label?: string;
+  class?: string;
+}
+
+const { status = 'live', label, class: className = '' } = Astro.props;
+---
+
+<span class={`status status--${status} ${className}`.trim()}>
+  <span class="status__dot" aria-hidden="true"></span>
+  {label && <span class="status__label">{label}</span>}
+</span>
+
+<style>
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .status__dot {
+    position: relative;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    flex: none;
+  }
+
+  .status--live .status__dot {
+    background: var(--accent);
+  }
+  .status--live .status__dot::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    animation: status-pulse 1.8s ease-out infinite;
+  }
+  .status--live .status__label {
+    color: var(--accent);
+  }
+
+  .status--idle .status__dot {
+    background: var(--muted);
+  }
+
+  @keyframes status-pulse {
+    0% {
+      transform: scale(0.7);
+      opacity: 0.8;
+    }
+    100% {
+      transform: scale(1.7);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status--live .status__dot::after {
+      animation: none;
+      opacity: 0.5;
+    }
+  }
+</style>

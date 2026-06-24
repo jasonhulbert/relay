@@ -1,0 +1,201 @@
+---
+/**
+ * UIMock: a stylized dark product-UI frame standing in for a Relay screenshot.
+ * It forces `data-theme="dark"` on its root so it always reads as a dark app
+ * surface, even when the surrounding page is in light mode (the agno-style
+ * "dark mockup on a light field").
+ *
+ * Variants:
+ *  - web: the web view — a sidebar plus a streamed run panel
+ *  - inbox: the decision inbox — a list of pending decisions
+ *
+ * Props:
+ *  - variant: 'web' | 'inbox' (default 'web')
+ *  - class: extra classes on the root
+ */
+import StatusDot from './StatusDot.astro';
+
+interface Props {
+  variant?: 'web' | 'inbox';
+  class?: string;
+}
+
+const { variant = 'web', class: className = '' } = Astro.props;
+
+const decisions = [
+  { label: 'approve deploy → prod', status: 'live' as const },
+  { label: 'merge PR #482', status: 'idle' as const },
+  { label: 'rotate API credentials', status: 'idle' as const },
+];
+---
+
+<div
+  class={`uimock uimock--${variant} ${className}`.trim()}
+  data-theme="dark"
+  role="img"
+  aria-label={`Relay ${variant === 'inbox' ? 'decision inbox' : 'web view'} mockup`}
+>
+  <div class="uimock__bar">
+    <span class="uimock__lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="uimock__addr">relay_ / {variant === 'inbox' ? 'inbox' : 'run'}</span>
+    <StatusDot status="live" label="live" class="uimock__status" />
+  </div>
+
+  {
+    variant === 'web' ? (
+      <div class="uimock__body uimock__body--web">
+        <aside class="uimock__nav" aria-hidden="true">
+          <span class="uimock__navitem is-active" />
+          <span class="uimock__navitem" />
+          <span class="uimock__navitem" />
+          <span class="uimock__navitem" />
+        </aside>
+        <div class="uimock__panel" aria-hidden="true">
+          <span class="uimock__line is-wide" />
+          <span class="uimock__line" />
+          <span class="uimock__line is-accent" />
+          <span class="uimock__line is-narrow" />
+          <span class="uimock__line" />
+          <span class="uimock__line is-wide" />
+        </div>
+      </div>
+    ) : (
+      <ul class="uimock__body uimock__body--inbox">
+        {decisions.map((d) => (
+          <li class="uimock__row">
+            <StatusDot status={d.status} class="uimock__rowdot" />
+            <span class="uimock__rowlabel">{d.label}</span>
+            <span class="uimock__rowactions" aria-hidden="true">
+              <span class="uimock__chip is-accent" />
+              <span class="uimock__chip" />
+            </span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</div>
+
+<style>
+  .uimock {
+    border: 1px solid var(--border);
+    border-radius: 0.7rem;
+    background: var(--surface);
+    overflow: hidden;
+    box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.7);
+  }
+
+  .uimock__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--base);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .uimock__lights {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  .uimock__lights i {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  .uimock__addr {
+    flex: 1;
+  }
+
+  /* web variant */
+  .uimock__body--web {
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    min-height: 11rem;
+  }
+  .uimock__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .uimock__navitem {
+    height: 0.55rem;
+    border-radius: 2px;
+    background: var(--surface-2);
+  }
+  .uimock__navitem.is-active {
+    background: var(--accent);
+    opacity: 0.85;
+  }
+  .uimock__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--base);
+  }
+  .uimock__line {
+    height: 0.55rem;
+    width: 80%;
+    border-radius: 2px;
+    background: var(--surface-2);
+  }
+  .uimock__line.is-wide {
+    width: 100%;
+  }
+  .uimock__line.is-narrow {
+    width: 55%;
+  }
+  .uimock__line.is-accent {
+    width: 40%;
+    background: var(--accent);
+    opacity: 0.8;
+  }
+
+  /* inbox variant */
+  .uimock__body--inbox {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 11rem;
+  }
+  .uimock__row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .uimock__row:last-child {
+    border-bottom: 0;
+  }
+  .uimock__rowlabel {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--text);
+  }
+  .uimock__rowactions {
+    display: inline-flex;
+    gap: 0.4rem;
+  }
+  .uimock__chip {
+    width: 1.6rem;
+    height: 0.7rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .uimock__chip.is-accent {
+    background: var(--accent);
+    opacity: 0.85;
+  }
+</style>

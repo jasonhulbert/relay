@@ -1,0 +1,137 @@
+---
+/**
+ * GridFrame: the structural backdrop motif. Draws persistent vertical grid
+ * lines, small registration `+` marks where the lines meet the top/bottom
+ * edges, and corner crop-brackets — then renders slotted content above them.
+ *
+ * Lines and marks are decorative (aria-hidden) and theme-flip via tokens.
+ *
+ * Props:
+ *  - columns: number of equal columns (default 4 → 5 lines incl. edges)
+ *  - class: extra classes on the root
+ */
+interface Props {
+  columns?: number;
+  class?: string;
+}
+
+const { columns = 4, class: className = '' } = Astro.props;
+const lines = Array.from({ length: columns + 1 }, (_, i) => (i / columns) * 100);
+---
+
+<div class={`grid-frame ${className}`.trim()}>
+  <div class="grid-frame__lines" aria-hidden="true">
+    {
+      lines.map((pos) => (
+        <span class="grid-frame__line" style={`left:${pos}%`}>
+          <span class="grid-frame__mark grid-frame__mark--top" />
+          <span class="grid-frame__mark grid-frame__mark--bottom" />
+        </span>
+      ))
+    }
+  </div>
+  <span class="grid-frame__crop grid-frame__crop--tl" aria-hidden="true"></span>
+  <span class="grid-frame__crop grid-frame__crop--tr" aria-hidden="true"></span>
+  <span class="grid-frame__crop grid-frame__crop--bl" aria-hidden="true"></span>
+  <span class="grid-frame__crop grid-frame__crop--br" aria-hidden="true"></span>
+  <div class="grid-frame__content">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .grid-frame {
+    position: relative;
+    /* Registration marks/crops read a touch stronger than the faint lines. */
+    --grid-mark: var(--border);
+  }
+
+  .grid-frame__lines {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .grid-frame__line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--grid-line);
+    transform: translateX(-0.5px);
+  }
+
+  .grid-frame__mark {
+    position: absolute;
+    left: 50%;
+    width: 9px;
+    height: 9px;
+    transform: translateX(-50%);
+  }
+  .grid-frame__mark--top {
+    top: -4.5px;
+  }
+  .grid-frame__mark--bottom {
+    bottom: -4.5px;
+  }
+  .grid-frame__mark::before,
+  .grid-frame__mark::after {
+    content: '';
+    position: absolute;
+    background: var(--grid-mark);
+  }
+  .grid-frame__mark::before {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+  }
+  .grid-frame__mark::after {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+  }
+
+  /* L-shaped crop brackets at the four corners. */
+  .grid-frame__crop {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    z-index: 0;
+    border: 1px solid var(--grid-mark);
+  }
+  .grid-frame__crop--tl {
+    top: 0;
+    left: 0;
+    border-right: 0;
+    border-bottom: 0;
+  }
+  .grid-frame__crop--tr {
+    top: 0;
+    right: 0;
+    border-left: 0;
+    border-bottom: 0;
+  }
+  .grid-frame__crop--bl {
+    bottom: 0;
+    left: 0;
+    border-right: 0;
+    border-top: 0;
+  }
+  .grid-frame__crop--br {
+    bottom: 0;
+    right: 0;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  .grid-frame__content {
+    position: relative;
+    z-index: 1;
+    padding: clamp(1.5rem, 4vw, 3rem);
+  }
+</style>

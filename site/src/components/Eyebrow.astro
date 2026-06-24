@@ -1,0 +1,50 @@
+---
+/**
+ * Eyebrow: a mono, uppercase, letter-tracked label that sits above headings.
+ * Optional leading accent `+` marker.
+ *
+ * Props:
+ *  - marker: render a leading accent `+` (default false)
+ *  - as: tag to render (default 'p')
+ *  - class: extra classes on the root
+ */
+interface Props {
+  marker?: boolean;
+  as?: 'p' | 'span' | 'div';
+  class?: string;
+}
+
+const { marker = false, as: Tag = 'p', class: className = '' } = Astro.props;
+---
+
+<Tag class={`eyebrow ${className}`.trim()}>
+  {
+    marker && (
+      <span class="eyebrow__marker" aria-hidden="true">
+        +
+      </span>
+    )
+  }
+  <slot />
+</Tag>
+
+<style>
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .eyebrow__marker {
+    color: var(--accent);
+    font-weight: 600;
+  }
+</style>
