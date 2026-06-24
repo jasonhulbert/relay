@@ -1,6 +1,6 @@
 ---
 /**
- * GridFrame: the structural backdrop motif. Draws persistent vertical grid
+ * GridFrame: the structural framing motif. Draws persistent vertical grid
  * lines, small registration `+` marks where the lines meet the top/bottom
  * edges, and corner crop-brackets — then renders slotted content above them.
  *
@@ -68,6 +68,14 @@ const lines = Array.from({ length: columns + 1 }, (_, i) => (i / columns) * 100)
     width: 9px;
     height: 9px;
     transform: translateX(-50%);
+  }
+  /* Suppress the `+` marks on the two extreme-edge lines: their 9px width,
+     centered on the 0%/100% lines, otherwise bleeds ~4.5px past the frame and
+     (for the full-bleed backdrop) past the viewport, forcing a scrollbar. The
+     corner crop-brackets already register those edges, so nothing is lost. */
+  .grid-frame__line:first-child .grid-frame__mark,
+  .grid-frame__line:last-child .grid-frame__mark {
+    display: none;
   }
   .grid-frame__mark--top {
     top: -4.5px;

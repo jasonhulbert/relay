@@ -17,7 +17,6 @@
  */
 import '../styles/global.css';
 import ThemeScript from '../components/ThemeScript.astro';
-import GridFrame from '../components/GridFrame.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 
@@ -25,12 +24,16 @@ interface Props {
   title: string;
   description?: string;
   mainClass?: string;
+  /* Draw the content-anchored grid rails down <main>. Opt-in (landing) so the
+     docs layout, which has its own column structure, is unaffected. */
+  rails?: boolean;
 }
 
 const {
   title,
   description = 'Outcome-driven agent orchestration — terminal-native by design.',
   mainClass = '',
+  rails = false,
 } = Astro.props;
 
 const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g, '/');
@@ -48,15 +51,26 @@ const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g,
     <slot name="head" />
   </head>
   <body>
-    <!-- Persistent vertical grid backdrop, fixed behind all content. -->
-    <GridFrame class="site-grid" columns={4} />
-
     <div class="site-shell">
       <Header>
         <slot name="search" slot="search" />
       </Header>
 
       <main class={`site-main ${mainClass}`.trim()}>
+        {
+          /* Content-anchored grid rails: two continuous vertical rules at the
+            content-column edges, in the document flow so they scroll WITH the
+            page. Section seams (`.seam`) cross them and drop `+` marks at the
+            content-aligned intersections. Not a fixed backdrop. */
+        }
+        {
+          rails && (
+            <div class="page-rails" aria-hidden="true">
+              <span class="page-rails__rail page-rails__rail--l" />
+              <span class="page-rails__rail page-rails__rail--r" />
+            </div>
+          )
+        }
         <slot />
       </main>
 
@@ -66,26 +80,59 @@ const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g,
 </html>
 
 <style>
-  /* Fixed full-viewport backdrop: the grid lines + registration marks read
-     behind every page. Decorative only — sits below the content layer. */
-  :global(.site-grid) {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-  }
-  :global(.site-grid > .grid-frame__content) {
-    display: none;
-  }
-
   .site-shell {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
   }
 
+  /* Stacking context so the rails (z-index:-1) sit behind the page content but
+     within <main>, scrolling with it. */
   .site-main {
+    position: relative;
+    z-index: 0;
     flex: 1 1 auto;
     width: 100%;
+  }
+
+  .page-rails {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .page-rails__rail {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .page-rails__rail--l {
+    left: var(--rail-inset);
+  }
+  .page-rails__rail--r {
+    right: var(--rail-inset);
+  }
+  /* `+` registration marks where each rail begins/ends — the grid's outer
+     corners (top at the hero, bottom at the final section). */
+  .page-rails__rail::before,
+  .page-rails__rail::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    width: 11px;
+    height: 11px;
+    background:
+      linear-gradient(var(--grid-cross), var(--grid-cross)) center / 100% 1px no-repeat,
+      linear-gradient(var(--grid-cross), var(--grid-cross)) center / 1px 100% no-repeat;
+  }
+  .page-rails__rail::before {
+    top: 0;
+    transform: translate(-50%, -50%);
+  }
+  .page-rails__rail::after {
+    bottom: 0;
+    transform: translate(-50%, 50%);
   }
 </style>

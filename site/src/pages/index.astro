@@ -25,44 +25,63 @@ import FinalCta from '../components/landing/FinalCta.astro';
 <BaseLayout
   title="relay_ — outcome-driven agent orchestration"
   description="Relay turns a single outcome into a controlled loop of orchestrators and agents, surfacing every decision that needs you. Terminal-native by design."
+  rails
 >
-  <GridFrame class="hero-frame" columns={2}>
-    <section class="hero" aria-labelledby="hero-heading">
-      <div class="hero__copy">
-        <Eyebrow marker>Outcome-driven orchestration</Eyebrow>
-        <CursorHeading as="h1" display class="hero__heading" id="hero-heading">
-          Define the outcome. Relay runs the loop.
-        </CursorHeading>
-        <p class="hero__lead">
-          Relay turns a single goal into a controlled loop of orchestrators and agents — fanning out
-          the work, converging on a critic gate, and surfacing every decision that needs you.
-          Terminal-native by design.
-        </p>
-        <div class="hero__actions">
-          <PillButton href={withBase('docs/what-is-relay')} variant="primary"
-            >Read the docs</PillButton
-          >
-          <PillButton
-            href="https://github.com/jasonhulbert/relay"
-            variant="secondary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View on GitHub
-          </PillButton>
+  <Fragment slot="head">
+    {
+      /* Set the entrance-motion gate before first paint so above-the-fold
+        `.reveal` blocks start hidden without a flash. Only engages when JS runs
+        AND motion is allowed — otherwise the page stays fully static. */
+    }
+    <script is:inline>
+      if (
+        typeof window !== 'undefined' &&
+        !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ) {
+        document.documentElement.classList.add('reveal-on');
+      }
+    </script>
+  </Fragment>
+
+  <div class="hero-frame">
+    <GridFrame columns={2}>
+      <section class="hero" aria-labelledby="hero-heading">
+        <div class="hero__copy reveal">
+          <Eyebrow marker>Outcome-driven orchestration</Eyebrow>
+          <CursorHeading as="h1" display class="hero__heading" id="hero-heading">
+            Define the outcome. Relay runs the loop.
+          </CursorHeading>
+          <p class="hero__lead">
+            Relay turns a single goal into a controlled loop of orchestrators and agents — fanning
+            out the work, converging on a critic gate, and surfacing every decision that needs you.
+            Terminal-native by design.
+          </p>
+          <div class="hero__actions">
+            <PillButton href={withBase('docs/what-is-relay')} variant="primary"
+              >Read the docs</PillButton
+            >
+            <PillButton
+              href="https://github.com/jasonhulbert/relay"
+              variant="secondary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View on GitHub
+            </PillButton>
+          </div>
         </div>
-      </div>
 
-      <div class="hero__mock">
-        <UIMock variant="web" />
-      </div>
-    </section>
+        <div class="hero__mock reveal">
+          <UIMock variant="web" />
+        </div>
+      </section>
 
-    <div class="hero__signal" aria-labelledby="hero-signal-label">
-      <Eyebrow class="hero__signal-label" id="hero-signal-label">The control loop</Eyebrow>
-      <LoopDiagram class="hero__diagram" />
-    </div>
-  </GridFrame>
+      <div class="hero__signal reveal" aria-labelledby="hero-signal-label">
+        <Eyebrow class="hero__signal-label" id="hero-signal-label">The control loop</Eyebrow>
+        <div class="hero__diagram"><LoopDiagram /></div>
+      </div>
+    </GridFrame>
+  </div>
 
   {/* ── SEAM: landing sections (child 02) appended below the hero ── */}
   <TheIdea />
@@ -100,7 +119,7 @@ import FinalCta from '../components/landing/FinalCta.astro';
     gap: 1.25rem;
   }
   .hero__heading {
-    max-width: 14ch;
+    max-width: 16ch;
   }
   .hero__lead {
     margin: 0;
@@ -126,11 +145,42 @@ import FinalCta from '../components/landing/FinalCta.astro';
     padding-top: 2.5rem;
     border-top: 1px solid var(--border);
   }
-  .hero__signal-label {
-    margin-bottom: 1.25rem;
-  }
   .hero__diagram {
     max-width: 44rem;
-    margin: 0 auto;
+    margin: 1.25rem auto 0;
+  }
+
+  /* Gentle stagger so the hero reads as one settling motion, not three. */
+  .hero__mock.is-revealed {
+    transition-delay: 0.08s;
+  }
+  .hero__signal.is-revealed {
+    transition-delay: 0.16s;
   }
 </style>
+
+<script>
+  // Reveal `.reveal` blocks as they enter view. The hidden state only exists
+  // when `html.reveal-on` is set (inline head script, JS + motion allowed), so
+  // this is pure enhancement: if it never runs, everything is already visible.
+  const targets = document.querySelectorAll<HTMLElement>('.reveal');
+  if (
+    document.documentElement.classList.contains('reveal-on') &&
+    'IntersectionObserver' in window
+  ) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-revealed');
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
+    );
+    targets.forEach((el) => io.observe(el));
+  } else {
+    targets.forEach((el) => el.classList.add('is-revealed'));
+  }
+</script>

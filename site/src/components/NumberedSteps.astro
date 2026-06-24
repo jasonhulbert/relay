@@ -55,7 +55,8 @@ const { steps, class: className = '' } = Astro.props;
 
   .steps__num {
     font-family: var(--font-mono);
-    font-size: 1.75rem;
+    /* Big agno-style step numerals — the section's visual anchor. */
+    font-size: clamp(2rem, 3vw, 2.6rem);
     font-weight: 600;
     line-height: 1;
     color: var(--accent);

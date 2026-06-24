@@ -34,8 +34,8 @@ const faqs = [
 ];
 ---
 
-<section class="faq" aria-labelledby="faq-heading">
-  <div class="faq__inner">
+<section class="faq seam" aria-labelledby="faq-heading">
+  <div class="faq__inner reveal">
     <header class="faq__head">
       <Eyebrow marker>FAQ</Eyebrow>
       <CursorHeading as="h2" id="faq-heading">Questions, answered.</CursorHeading>
@@ -59,7 +59,7 @@ const faqs = [
 
 <style>
   .faq__inner {
-    max-width: 56rem;
+    max-width: 72rem;
     margin: 0 auto;
     padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
   }
@@ -99,6 +99,16 @@ const faqs = [
 
   .faq__q-text {
     font-size: 1.02rem;
+    transition: color 0.15s ease;
+  }
+  .faq__q:hover .faq__q-text,
+  .faq__item[open] .faq__q-text {
+    color: var(--accent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .faq__q-text {
+      transition: none;
+    }
   }
 
   /* A `+` that becomes `×` when open — pure CSS, no JS needed. */

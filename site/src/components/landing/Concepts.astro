@@ -10,6 +10,7 @@
  */
 import Eyebrow from '../Eyebrow.astro';
 import CursorHeading from '../CursorHeading.astro';
+import PixelDots from '../PixelDots.astro';
 
 const concepts = [
   {
@@ -35,11 +36,13 @@ const concepts = [
 ];
 ---
 
-<section class="concepts" aria-labelledby="concepts-heading">
-  <div class="concepts__inner">
+<section class="concepts seam" aria-labelledby="concepts-heading">
+  <div class="concepts__inner reveal">
+    <div class="concepts__seam"><PixelDots rows={3} cols={6} /></div>
     <header class="concepts__head">
       <Eyebrow marker>The vocabulary</Eyebrow>
-      <CursorHeading as="h2" id="concepts-heading">Five ideas carry the whole system.</CursorHeading>
+      <CursorHeading as="h2" id="concepts-heading">Five ideas carry the whole system.</CursorHeading
+      >
       <p class="concepts__lead">
         Relay is small at its core. Learn these five and the rest of the system reads as
         applications of them.
@@ -58,22 +61,43 @@ const concepts = [
           </li>
         ))
       }
+      {/* Decorative cell that squares off the lattice and carries a pixel mark. */}
+      <li class="concepts__card concepts__card--fill" aria-hidden="true">
+        <PixelDots rows={3} cols={4} />
+      </li>
     </ul>
   </div>
 </section>
 
 <style>
+  /* Span the page rails: horizontal padding = the rail inset, so the lattice's
+     outer edges land exactly on the content-column rails (no inset double-grid).
+     The content box now runs rail-to-rail at every viewport width. */
   .concepts__inner {
-    max-width: 72rem;
-    margin: 0 auto;
-    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+    position: relative;
+    padding: clamp(3.5rem, 8vw, 6rem) var(--rail-inset);
   }
 
+  /* Pixel-dot flourish at the top-right, sitting just inside the right rail. */
+  .concepts__seam {
+    position: absolute;
+    top: clamp(1.75rem, 4vw, 3rem);
+    right: var(--rail-inset);
+  }
+  @media (max-width: 39.99rem) {
+    .concepts__seam {
+      display: none;
+    }
+  }
+
+  /* Inset the header gutter to match the cell padding, so the heading aligns
+     with the first column's content rather than sitting on the rail. */
   .concepts__head {
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
     max-width: 46rem;
+    padding-inline: 1.5rem;
   }
   .concepts__lead {
     margin: 0;
@@ -82,13 +106,18 @@ const concepts = [
     color: var(--muted);
   }
 
+  /* Drawn lattice — not literal cards. Shared hairlines form the cells; the
+     outer frame comes from the container's top/left + the cells' right/bottom,
+     so every rule is single-width. No fills, no radius. */
   .concepts__grid {
     list-style: none;
     margin: 2.5rem 0 0;
     padding: 0;
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
   }
   @media (min-width: 40rem) {
     .concepts__grid {
@@ -102,13 +131,48 @@ const concepts = [
   }
 
   .concepts__card {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 0.6rem;
-    background: var(--surface);
-    padding: 1.4rem;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem;
+    transition: background-color 0.2s ease;
+  }
+  /* `+` registration mark sitting on each cell's top-left intersection. */
+  .concepts__card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    transform: translate(-50%, -50%);
+    background:
+      linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat,
+      linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    pointer-events: none;
+  }
+  .concepts__card:hover {
+    background: color-mix(in oklab, var(--accent) 6%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .concepts__card {
+      transition: none;
+    }
+  }
+
+  /* Filler cell: closes the rectangle at 2/3-up; collapses when stacked. */
+  .concepts__card--fill {
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (min-width: 40rem) {
+    .concepts__card--fill {
+      display: flex;
+    }
   }
 
   .concepts__index {

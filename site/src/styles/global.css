@@ -32,11 +32,18 @@
   --text: #ededf0; /* primary text (near-white) */
   --muted: #8b8b94; /* secondary text — AA 5.7:1 on base */
   --border: #26262c; /* hairline borders */
-  --grid-line: rgba(255, 255, 255, 0.045); /* persistent grid + registration marks */
+  --grid-line: rgba(255, 255, 255, 0.06); /* persistent grid rules */
+  --grid-cross: rgba(255, 255, 255, 0.26); /* `+` marks at line crossings — read above the rules */
   --accent: #34d399; /* signal green — cursor, dots, CTA fills, focus */
   --accent-soft: rgba(52, 211, 153, 0.14); /* tinted fills / hover wash */
   --link: #34d399; /* link/body accent text — AA 10:1 on base */
   --selection: rgba(52, 211, 153, 0.28);
+
+  /* Content-grid geometry: the x-inset of the vertical rails from each edge —
+     the 72rem content-column edge on wide viewports, a 1.5rem gutter below it.
+     Shared by the rails (BaseLayout) and the section seams so every `+` lands
+     exactly on a rail. */
+  --rail-inset: max(1.5rem, calc(50% - 36rem));
 }
 
 [data-theme='light'] {
@@ -46,7 +53,8 @@
   --text: #18181b;
   --muted: #5c5c66; /* AA 7:1 on base */
   --border: #e3e3e0;
-  --grid-line: rgba(0, 0, 0, 0.05);
+  --grid-line: rgba(0, 0, 0, 0.07);
+  --grid-cross: rgba(0, 0, 0, 0.22); /* `+` marks at line crossings — read above the rules */
   --accent: #10b981; /* deeper, saturated green — reads on white */
   --accent-soft: rgba(16, 185, 129, 0.12);
   --link: #047857; /* AA 5.5:1 on base for link text */
@@ -90,9 +98,11 @@
 html {
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
-  /* The full-bleed GridFrame registration marks sit on the 0%/100% edge lines
-     and bleed a few px past the viewport. Clip (not hidden) absorbs that bleed
-     without creating a scroll container, so the sticky header still works. */
+  /* Safety net for sub-pixel grid bleed. GridFrame now suppresses the `+` marks
+     on its extreme-edge lines (the real fix — see GridFrame.astro), so the only
+     thing that can still cross the viewport edge is the 0.5px line-centering
+     transform. Clip (not hidden) absorbs it without creating a scroll
+     container, so the sticky header keeps working. */
   overflow-x: clip;
 }
 
@@ -108,8 +118,7 @@ body {
   font-synthesis-weight: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Pairs with html overflow-x:clip to absorb the GridFrame edge-mark bleed.
-     clip (not hidden) leaves the sticky header working. */
+  /* Pairs with html overflow-x:clip; see the note there. */
   overflow-x: clip;
 }
 
@@ -120,4 +129,59 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── Entrance motion ───────────────────────────────────────────────────────
+   Progressive enhancement: elements marked `.reveal` start hidden and fade up
+   as they scroll into view. The hidden state is gated on `html.reveal-on`,
+   which an inline head script sets ONLY when JS runs and motion is allowed — so
+   with JS disabled, or under prefers-reduced-motion, nothing is ever hidden and
+   the page renders fully static. The IntersectionObserver adds `.is-revealed`. */
+html.reveal-on .reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  will-change: opacity, transform;
+}
+html.reveal-on .reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.reveal-on .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── Section seam ───────────────────────────────────────────────────────────
+   A full-bleed horizontal rule at a section's top edge that crosses the two
+   content-column rails, dropping a `+` registration mark on each crossing.
+   Applied to section roots; pairs with `.page-rails` to draw the page's
+   content-anchored grid. */
+.seam {
+  position: relative;
+  border-top: 1px solid var(--border);
+}
+.seam::before,
+.seam::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--grid-cross), var(--grid-cross)) center / 100% 1px no-repeat,
+    linear-gradient(var(--grid-cross), var(--grid-cross)) center / 1px 100% no-repeat;
+}
+.seam::before {
+  left: var(--rail-inset);
+}
+.seam::after {
+  left: calc(100% - var(--rail-inset));
 }

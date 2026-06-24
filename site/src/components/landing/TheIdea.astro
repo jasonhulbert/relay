@@ -13,11 +13,13 @@ import Eyebrow from '../Eyebrow.astro';
 import CursorHeading from '../CursorHeading.astro';
 ---
 
-<section class="idea" aria-labelledby="idea-heading">
-  <div class="idea__inner">
+<section class="idea seam" aria-labelledby="idea-heading">
+  <div class="idea__inner reveal">
     <header class="idea__head">
       <Eyebrow marker>The shift</Eyebrow>
-      <CursorHeading as="h2" id="idea-heading">You shouldn't have to babysit the agent.</CursorHeading>
+      <CursorHeading as="h2" id="idea-heading"
+        >You shouldn't have to babysit the agent.</CursorHeading
+      >
       <p class="idea__lead">
         Most agent tools hand you a chat box and a sequence of steps to choreograph. You author the
         plan, watch every step, and step back in the moment it drifts. The plan is yours to write
@@ -49,17 +51,21 @@ import CursorHeading from '../CursorHeading.astro';
 </section>
 
 <style>
+  /* Span the page rails: horizontal padding = the rail inset, so the two-cell
+     lattice's outer edges land on the content-column rails and its center
+     divider falls on the page centerline (no inset double-grid). */
   .idea__inner {
-    max-width: 72rem;
-    margin: 0 auto;
-    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+    padding: clamp(3.5rem, 8vw, 6rem) var(--rail-inset);
   }
 
+  /* Header gutter matches the panel padding so the heading aligns with the
+     cell content rather than sitting on the rail. */
   .idea__head {
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
     max-width: 46rem;
+    padding-inline: 1.75rem;
   }
   .idea__lead {
     margin: 0;
@@ -68,11 +74,14 @@ import CursorHeading from '../CursorHeading.astro';
     color: var(--muted);
   }
 
+  /* Two cells of a drawn lattice — shared hairlines, no cards. */
   .idea__contrast {
     margin-top: 2.5rem;
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1.25rem;
+    gap: 0;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
   }
   @media (min-width: 48rem) {
     .idea__contrast {
@@ -81,14 +90,40 @@ import CursorHeading from '../CursorHeading.astro';
   }
 
   .idea__panel {
-    border: 1px solid var(--border);
-    border-radius: 0.6rem;
-    background: var(--surface);
-    padding: 1.5rem;
+    position: relative;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 1.75rem;
+    transition: background-color 0.2s ease;
   }
+  /* `+` mark on the cell's top-left intersection. */
+  .idea__panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    transform: translate(-50%, -50%);
+    background:
+      linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat,
+      linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    pointer-events: none;
+  }
+  .idea__panel:hover {
+    background: color-mix(in oklab, var(--accent) 5%, transparent);
+  }
+  /* The "with Relay" cell reads as a flat highlighted cell, not a raised card. */
   .idea__panel--new {
-    border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
-    background: var(--accent-soft);
+    background: color-mix(in oklab, var(--accent) 9%, transparent);
+  }
+  .idea__panel--new:hover {
+    background: color-mix(in oklab, var(--accent) 13%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .idea__panel {
+      transition: none;
+    }
   }
 
   .idea__panel-label {

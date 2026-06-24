@@ -10,6 +10,7 @@
 import Eyebrow from '../Eyebrow.astro';
 import CursorHeading from '../CursorHeading.astro';
 import NumberedSteps from '../NumberedSteps.astro';
+import PixelDots from '../PixelDots.astro';
 
 const steps = [
   {
@@ -27,22 +28,42 @@ const steps = [
 ];
 ---
 
-<section class="getstarted" aria-labelledby="getstarted-heading">
-  <div class="getstarted__inner">
+<section class="getstarted seam" aria-labelledby="getstarted-heading">
+  <div class="getstarted__inner reveal">
+    <div class="getstarted__seam"><PixelDots rows={3} cols={6} /></div>
     <header class="getstarted__head">
       <Eyebrow marker>Get started</Eyebrow>
       <CursorHeading as="h2" id="getstarted-heading">Three steps to your first run.</CursorHeading>
     </header>
 
-    <NumberedSteps steps={steps} class="getstarted__steps" />
+    <div class="getstarted__body">
+      <NumberedSteps steps={steps} />
+    </div>
   </div>
 </section>
 
 <style>
   .getstarted__inner {
-    max-width: 56rem;
+    position: relative;
+    max-width: 72rem;
     margin: 0 auto;
     padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  /* Keep step lines readable while the section frame spans the full column. */
+  .getstarted__body {
+    max-width: 46rem;
+  }
+
+  .getstarted__seam {
+    position: absolute;
+    top: clamp(1.75rem, 4vw, 3rem);
+    right: clamp(1.5rem, 4vw, 3rem);
+  }
+  @media (max-width: 39.99rem) {
+    .getstarted__seam {
+      display: none;
+    }
   }
 
   .getstarted__head {
@@ -50,9 +71,5 @@ const steps = [
     flex-direction: column;
     gap: 1.1rem;
     margin-bottom: 2.5rem;
-  }
-
-  .getstarted__steps {
-    max-width: 44rem;
   }
 </style>
