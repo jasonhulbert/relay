@@ -1,61 +1,122 @@
 ---
-import '../styles/global.css';
-import ThemeScript from '../components/ThemeScript.astro';
-import ThemeToggle from '../components/ThemeToggle.astro';
-import Wordmark from '../components/Wordmark.astro';
-
-// Foundation demonstrator for Phase 2 — exercises the token set, theming,
-// self-hosted fonts, and the wordmark. Phase 5 replaces this with the real hero.
-const swatches = [
-  { name: 'base', var: '--base' },
-  { name: 'surface', var: '--surface' },
-  { name: 'surface-2', var: '--surface-2' },
-  { name: 'border', var: '--border' },
-  { name: 'accent', var: '--accent' },
-];
+/**
+ * Landing page — the REAL hero spike (Phase 5). Composed through BaseLayout so
+ * it inherits the site chrome (head, grid backdrop, header, footer). This file
+ * intentionally contains ONLY the hero: child 02 (landing-page) APPENDS the
+ * remaining sections below the marked seam at the bottom of <main>.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import GridFrame from '../components/GridFrame.astro';
+import Eyebrow from '../components/Eyebrow.astro';
+import CursorHeading from '../components/CursorHeading.astro';
+import PillButton from '../components/PillButton.astro';
+import UIMock from '../components/UIMock.astro';
+import LoopDiagram from '../components/LoopDiagram.astro';
+import { withBase } from '../config/nav.ts';
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>relay_</title>
-    <ThemeScript />
-  </head>
-  <body>
-    <main class="mx-auto flex max-w-3xl flex-col gap-10 p-8">
-      <header class="flex items-center justify-between">
-        <Wordmark showGlyph class="text-2xl" />
-        <ThemeToggle />
-      </header>
-
-      <section class="flex flex-col gap-4">
-        <p class="font-mono text-xs tracking-[0.2em] text-muted uppercase">
-          Foundation · design system
+<BaseLayout
+  title="relay_ — outcome-driven agent orchestration"
+  description="Relay turns a single outcome into a controlled loop of orchestrators and agents, surfacing every decision that needs you. Terminal-native by design."
+>
+  <GridFrame class="hero-frame" columns={2}>
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero__copy">
+        <Eyebrow marker>Outcome-driven orchestration</Eyebrow>
+        <CursorHeading as="h1" display class="hero__heading" id="hero-heading">
+          Define the outcome. Relay runs the loop.
+        </CursorHeading>
+        <p class="hero__lead">
+          Relay turns a single goal into a controlled loop of orchestrators and agents — fanning out
+          the work, converging on a critic gate, and surfacing every decision that needs you.
+          Terminal-native by design.
         </p>
-        <h1 class="text-display-sm font-semibold text-text">Terminal-native by default.</h1>
-        <p class="max-w-prose text-muted">
-          Body copy renders in Geist Sans against the themed base. The accent stays refined and is
-          reserved for signal — like <a class="text-link underline underline-offset-4" href="#"
-            >this link</a
-          > — never neon.
-        </p>
-      </section>
+        <div class="hero__actions">
+          <PillButton href={withBase('docs/what-is-relay')} variant="primary"
+            >Read the docs</PillButton
+          >
+          <PillButton
+            href="https://github.com/jasonhulbert/relay"
+            variant="secondary"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on GitHub
+          </PillButton>
+        </div>
+      </div>
 
-      <section class="flex flex-wrap gap-3">
-        {
-          swatches.map((s) => (
-            <div class="flex flex-col gap-2">
-              <div
-                class="h-12 w-20 rounded-md border border-border"
-                style={`background-color: var(${s.var})`}
-              />
-              <span class="font-mono text-xs text-muted">{s.name}</span>
-            </div>
-          ))
-        }
-      </section>
-    </main>
-  </body>
-</html>
+      <div class="hero__mock">
+        <UIMock variant="web" />
+      </div>
+    </section>
+
+    <div class="hero__signal" aria-labelledby="hero-signal-label">
+      <Eyebrow class="hero__signal-label" id="hero-signal-label">The control loop</Eyebrow>
+      <LoopDiagram class="hero__diagram" />
+    </div>
+  </GridFrame>
+
+  {/* ── SEAM: child 02 appends the remaining landing sections below ── */}
+</BaseLayout>
+
+<style>
+  .hero-frame {
+    max-width: 72rem;
+    margin: 0 auto;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    align-items: center;
+  }
+  @media (min-width: 60rem) {
+    .hero {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 3.5rem;
+    }
+  }
+
+  .hero__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+  .hero__heading {
+    max-width: 14ch;
+  }
+  .hero__lead {
+    margin: 0;
+    max-width: 42ch;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .hero__mock {
+    width: 100%;
+  }
+
+  /* Signature visual — the loop diagram, framed below the hero copy. */
+  .hero__signal {
+    margin-top: 3.5rem;
+    padding-top: 2.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .hero__signal-label {
+    margin-bottom: 1.25rem;
+  }
+  .hero__diagram {
+    max-width: 44rem;
+    margin: 0 auto;
+  }
+</style>

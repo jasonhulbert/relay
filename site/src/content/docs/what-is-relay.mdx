@@ -1,0 +1,59 @@
+---
+title: What is Relay?
+description: Relay is an outcome-driven agent orchestrator — you define the outcome, and it runs the loop of orchestrators, agents, and a critic gate until the goal is met.
+order: 1
+---
+
+import Callout from '../../components/Callout.astro';
+
+Relay is an **outcome-driven agent orchestrator**. You hand it a single goal —
+the _outcome_ — and Relay runs a controlled loop that plans the work, fans it
+out across agents, and converges on a critic gate that decides whether the
+result is good enough to ship or needs another pass.
+
+Most agent tools ask you to choreograph individual steps. Relay inverts that:
+you describe the destination, not the route. The loop figures out the route, and
+surfaces the moments where it genuinely needs a human.
+
+## The loop
+
+Every Relay run is the same shape, regardless of the task:
+
+1. An **outcome** enters at the root — the goal you want met.
+2. One or more **orchestrators** plan the work and fan it out.
+3. **Leaf agents** do the bounded, concrete work in parallel.
+4. A **critic gate** judges the converged result: approve, or loop back.
+
+Nothing ships until the critic approves. When it rejects, the signal loops back
+to the root and the cycle runs again with what it learned.
+
+## Outcomes, not prompts
+
+An outcome is a durable statement of intent — "the test suite passes and the
+changelog is updated" — not a one-shot prompt. Relay keeps working the loop
+against that outcome, so a transient failure or a half-finished step doesn't end
+the run; it just feeds the next iteration.
+
+<Callout type="note" title="Outcomes are checkable">
+  Write outcomes you can verify. "Refactor the auth module" is a vibe; "auth tests pass and no
+  public API changed" is an outcome the critic gate can actually rule on.
+</Callout>
+
+## The human stays in the loop
+
+Relay never silently resolves a decision that's genuinely yours to make. When a
+step needs judgment — approving a deploy, choosing between two valid paths,
+rotating a credential — it surfaces that decision and waits. You stay in
+control of the calls that matter, without babysitting the ones that don't.
+
+<Callout type="warn" title="Surfaced, never swallowed">
+  A correctable mismatch or failure is always raised for you to see. Relay treats "quietly worked
+  around it" as a bug, not a feature.
+</Callout>
+
+## Where to go next
+
+This page is the orientation. From here, the guide walks through installing
+Relay, running your first outcome, and the web view where decisions land. The
+shape above — outcome, orchestrators, agents, critic gate — is the mental model
+every other page builds on.

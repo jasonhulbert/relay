@@ -11,12 +11,15 @@
  *  - href: when set, render an <a>
  *  - variant: 'primary' | 'secondary' (default 'primary')
  *  - type: button type when no href (default 'button')
+ *  - target / rel: forwarded to the anchor for external links
  *  - class: extra classes on the root
  */
 interface Props {
   href?: string;
   variant?: 'primary' | 'secondary';
   type?: 'button' | 'submit' | 'reset';
+  target?: string;
+  rel?: string;
   class?: string;
 }
 
