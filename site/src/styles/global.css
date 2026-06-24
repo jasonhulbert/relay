@@ -1,6 +1,116 @@
 @import 'tailwindcss';
 
-/* Design tokens land here in Phase 2. Empty placeholder proves the Tailwind v4
-   Vite plugin emits utilities before any visual work begins. */
+/* ── Self-hosted Geist (variable woff2, full 100–900 weight axis) ──────────
+   Served from public/fonts at the project base path. No external font
+   requests — the site works fully offline. */
+@font-face {
+  font-family: 'Geist';
+  src: url('/relay/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/relay/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Semantic color tokens ─────────────────────────────────────────────────
+   Dark is the default (bare :root), light overrides via [data-theme='light'].
+   One source of truth: every color below is consumed through the @theme inline
+   block so Tailwind utilities and raw CSS resolve the SAME runtime variable,
+   and a theme flip updates both at once. */
+:root,
+[data-theme='dark'] {
+  --base: #0b0b0d; /* page background */
+  --surface: #131317; /* cards / elevated panels */
+  --surface-2: #1a1a1f; /* raised-on-surface */
+  --text: #ededf0; /* primary text (near-white) */
+  --muted: #8b8b94; /* secondary text — AA 5.7:1 on base */
+  --border: #26262c; /* hairline borders */
+  --grid-line: rgba(255, 255, 255, 0.045); /* persistent grid + registration marks */
+  --accent: #34d399; /* signal green — cursor, dots, CTA fills, focus */
+  --accent-soft: rgba(52, 211, 153, 0.14); /* tinted fills / hover wash */
+  --link: #34d399; /* link/body accent text — AA 10:1 on base */
+  --selection: rgba(52, 211, 153, 0.28);
+}
+
+[data-theme='light'] {
+  --base: #fcfcfb;
+  --surface: #f4f4f3;
+  --surface-2: #ebebe9;
+  --text: #18181b;
+  --muted: #5c5c66; /* AA 7:1 on base */
+  --border: #e3e3e0;
+  --grid-line: rgba(0, 0, 0, 0.05);
+  --accent: #10b981; /* deeper, saturated green — reads on white */
+  --accent-soft: rgba(16, 185, 129, 0.12);
+  --link: #047857; /* AA 5.5:1 on base for link text */
+  --selection: rgba(16, 185, 129, 0.2);
+}
+
+/* `inline` so utilities reference the live --token (not a frozen copy),
+   making runtime theme switching flip every generated utility. */
+@theme inline {
+  --color-base: var(--base);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-grid-line: var(--grid-line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-link: var(--link);
+}
+
+/* ── Type + rhythm tokens (static across themes) ───────────────────────────
+   Hybrid system: sans for body/long-form, mono for wordmark/labels/code. */
 @theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+
+  /* Display scale for hero/section headings */
+  --text-display: 4rem;
+  --text-display--line-height: 1.04;
+  --text-display--letter-spacing: -0.02em;
+  --text-display-sm: 2.5rem;
+  --text-display-sm--line-height: 1.1;
+  --text-display-sm--letter-spacing: -0.015em;
+
+  /* Spacing rhythm: the grid gutter every techy-motif aligns to */
+  --spacing-gutter: 1.5rem;
+}
+
+/* ── Base element defaults ─────────────────────────────────────────────────*/
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: var(--base);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

@@ -1,5 +1,18 @@
 ---
 import '../styles/global.css';
+import ThemeScript from '../components/ThemeScript.astro';
+import ThemeToggle from '../components/ThemeToggle.astro';
+import Wordmark from '../components/Wordmark.astro';
+
+// Foundation demonstrator for Phase 2 — exercises the token set, theming,
+// self-hosted fonts, and the wordmark. Phase 5 replaces this with the real hero.
+const swatches = [
+  { name: 'base', var: '--base' },
+  { name: 'surface', var: '--surface' },
+  { name: 'surface-2', var: '--surface-2' },
+  { name: 'border', var: '--border' },
+  { name: 'accent', var: '--accent' },
+];
 ---
 
 <!doctype html>
@@ -8,10 +21,41 @@ import '../styles/global.css';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>relay_</title>
+    <ThemeScript />
   </head>
   <body>
-    <main class="mx-auto max-w-3xl p-8">
-      <p class="font-mono text-3xl">relay_</p>
+    <main class="mx-auto flex max-w-3xl flex-col gap-10 p-8">
+      <header class="flex items-center justify-between">
+        <Wordmark showGlyph class="text-2xl" />
+        <ThemeToggle />
+      </header>
+
+      <section class="flex flex-col gap-4">
+        <p class="font-mono text-xs tracking-[0.2em] text-muted uppercase">
+          Foundation · design system
+        </p>
+        <h1 class="text-display-sm font-semibold text-text">Terminal-native by default.</h1>
+        <p class="max-w-prose text-muted">
+          Body copy renders in Geist Sans against the themed base. The accent stays refined and is
+          reserved for signal — like <a class="text-link underline underline-offset-4" href="#"
+            >this link</a
+          > — never neon.
+        </p>
+      </section>
+
+      <section class="flex flex-wrap gap-3">
+        {
+          swatches.map((s) => (
+            <div class="flex flex-col gap-2">
+              <div
+                class="h-12 w-20 rounded-md border border-border"
+                style={`background-color: var(${s.var})`}
+              />
+              <span class="font-mono text-xs text-muted">{s.name}</span>
+            </div>
+          ))
+        }
+      </section>
     </main>
   </body>
 </html>
