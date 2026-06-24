@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+/* Design tokens land here in Phase 2. Empty placeholder proves the Tailwind v4
+   Vite plugin emits utilities before any visual work begins. */
+@theme {
+}

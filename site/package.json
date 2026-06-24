@@ -1,0 +1,29 @@
+{
+  "name": "relay-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "format": "prettier --write . --plugin=prettier-plugin-astro",
+    "format:check": "prettier --check . --plugin=prettier-plugin-astro"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^4.3.6",
+    "@tailwindcss/vite": "^4.3.1",
+    "astro": "^5.16.0",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.5",
+    "prettier": "^3.8.4",
+    "prettier-plugin-astro": "^0.14.1"
+  }
+}
