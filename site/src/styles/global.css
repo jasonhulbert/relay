@@ -36,6 +36,7 @@
   --grid-cross: rgba(255, 255, 255, 0.26); /* `+` marks at line crossings — read above the rules */
   --accent: #34d399; /* signal green — cursor, dots, CTA fills, focus */
   --accent-soft: rgba(52, 211, 153, 0.14); /* tinted fills / hover wash */
+  --accent-ink: #34d399; /* accent as readable text/glyph — AA in both themes (brand --accent is too light on white) */
   --link: #34d399; /* link/body accent text — AA 10:1 on base */
   --selection: rgba(52, 211, 153, 0.28);
 
@@ -57,6 +58,7 @@
   --grid-cross: rgba(0, 0, 0, 0.22); /* `+` marks at line crossings — read above the rules */
   --accent: #10b981; /* deeper, saturated green — reads on white */
   --accent-soft: rgba(16, 185, 129, 0.12);
+  --accent-ink: #047857; /* darker green — accent text/glyph stays AA on near-white */
   --link: #047857; /* AA 5.5:1 on base for link text */
   --selection: rgba(16, 185, 129, 0.2);
 }
@@ -73,6 +75,7 @@
   --color-grid-line: var(--grid-line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
   --color-link: var(--link);
 }
 

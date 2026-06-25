@@ -10,12 +10,19 @@
  * and each edge holds a static accent segment — a frozen frame, never hidden.
  *
  * Props:
+ *  - idBase: prefix for the SVG's internal ids (title/desc/marker). Must be
+ *    unique per instance — the diagram renders more than once on the landing,
+ *    and duplicate ids would break `aria-labelledby` and the marker reference.
  *  - class: extra classes on the root <figure>
  */
 interface Props {
+  idBase?: string;
   class?: string;
 }
-const { class: className = '' } = Astro.props;
+const { idBase = 'loop-diagram', class: className = '' } = Astro.props;
+const titleId = `${idBase}-title`;
+const descId = `${idBase}-desc`;
+const arrowId = `${idBase}-arrow`;
 
 // Edges as straight/curved paths; pathLength is normalized to 100 so one dash
 // pattern + one keyframe drives every edge regardless of true length. The
@@ -41,18 +48,18 @@ const leaves = [110, 280, 440, 610];
   <svg
     viewBox="0 0 720 480"
     role="img"
-    aria-labelledby="loop-diagram-title loop-diagram-desc"
+    aria-labelledby={`${titleId} ${descId}`}
     preserveAspectRatio="xMidYMid meet"
   >
-    <title id="loop-diagram-title">Relay control loop</title>
-    <desc id="loop-diagram-desc">
+    <title id={titleId}>Relay control loop</title>
+    <desc id={descId}>
       An outcome flows to orchestrators, which fan out to leaf agents; results converge on a critic
       gate that loops back to the outcome.
     </desc>
 
     <defs>
       <marker
-        id="loop-arrow"
+        id={arrowId}
         viewBox="0 0 8 8"
         refX="6"
         refY="4"
@@ -66,7 +73,7 @@ const leaves = [110, 280, 440, 610];
 
     {/* ── Edges: faint base path + traveling accent pulse ── */}
     <g class="ld-edges">
-      {edges.map((d) => <path d={d} class="ld-edge" marker-end="url(#loop-arrow)" />)}
+      {edges.map((d) => <path d={d} class="ld-edge" marker-end={`url(#${arrowId})`} />)}
       {
         edges.map((d, i) => (
           <path

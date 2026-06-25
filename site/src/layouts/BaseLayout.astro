@@ -37,6 +37,15 @@ const {
 } = Astro.props;
 
 const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g, '/');
+
+/* Self-hosted Geist woff2 (declared in global.css). Preloaded here so the
+   variable fonts are fetched at the highest priority and are ready by first
+   paint — closing the font-swap reflow that `font-display: swap` would
+   otherwise produce when the brand metrics replace the system fallback. */
+const fontPreloads = [
+  `${import.meta.env.BASE_URL}/fonts/Geist-Variable.woff2`,
+  `${import.meta.env.BASE_URL}/fonts/GeistMono-Variable.woff2`,
+].map((href) => href.replace(/\/{2,}/g, '/'));
 ---
 
 <!doctype html>
@@ -46,6 +55,11 @@ const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g,
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <link rel="icon" href={faviconHref} />
+    {
+      fontPreloads.map((href) => (
+        <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />
+      ))
+    }
     <title>{title}</title>
     <ThemeScript />
     <slot name="head" />

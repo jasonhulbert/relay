@@ -48,9 +48,11 @@ import FinalCta from '../components/landing/FinalCta.astro';
       <section class="hero" aria-labelledby="hero-heading">
         <div class="hero__copy reveal">
           <Eyebrow marker>Outcome-driven orchestration</Eyebrow>
-          <CursorHeading as="h1" display class="hero__heading" id="hero-heading">
-            Define the outcome. Relay runs the loop.
-          </CursorHeading>
+          <div class="hero__heading">
+            <CursorHeading as="h1" display id="hero-heading">
+              Define the outcome. Relay runs the loop.
+            </CursorHeading>
+          </div>
           <p class="hero__lead">
             Relay turns a single goal into a controlled loop of orchestrators and agents — fanning
             out the work, converging on a critic gate, and surfacing every decision that needs you.
@@ -76,9 +78,9 @@ import FinalCta from '../components/landing/FinalCta.astro';
         </div>
       </section>
 
-      <div class="hero__signal reveal" aria-labelledby="hero-signal-label">
+      <div class="hero__signal reveal" role="group" aria-labelledby="hero-signal-label">
         <Eyebrow class="hero__signal-label" id="hero-signal-label">The control loop</Eyebrow>
-        <div class="hero__diagram"><LoopDiagram /></div>
+        <div class="hero__diagram"><LoopDiagram idBase="hero-loop" /></div>
       </div>
     </GridFrame>
   </div>
@@ -119,7 +121,7 @@ import FinalCta from '../components/landing/FinalCta.astro';
     gap: 1.25rem;
   }
   .hero__heading {
-    max-width: 16ch;
+    width: 100%;
   }
   .hero__lead {
     margin: 0;

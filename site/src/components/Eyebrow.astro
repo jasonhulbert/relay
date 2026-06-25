@@ -6,18 +6,20 @@
  * Props:
  *  - marker: render a leading accent `+` (default false)
  *  - as: tag to render (default 'p')
+ *  - id: forwarded to the root so `aria-labelledby` references resolve
  *  - class: extra classes on the root
  */
 interface Props {
   marker?: boolean;
   as?: 'p' | 'span' | 'div';
+  id?: string;
   class?: string;
 }
 
-const { marker = false, as: Tag = 'p', class: className = '' } = Astro.props;
+const { marker = false, as: Tag = 'p', id, class: className = '' } = Astro.props;
 ---
 
-<Tag class={`eyebrow ${className}`.trim()}>
+<Tag id={id} class={`eyebrow ${className}`.trim()}>
   {
     marker && (
       <span class="eyebrow__marker" aria-hidden="true">
