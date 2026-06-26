@@ -8,9 +8,10 @@ order: 3
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
 import NumberedSteps from '../../components/NumberedSteps.astro';
+import DocLink from '../../components/DocLink.astro';
 
 This walks a real `relay run` from a one-line outcome to a reviewable branch. It assumes
-you've installed Relay and have the executor CLIs authenticated.
+you've <DocLink to="install">installed Relay</DocLink> and have the executor CLIs authenticated.
 
 ## Start a run
 
@@ -74,7 +75,7 @@ git merge relay/run-1            # take it`}
 
 ## Watch it in the browser
 
-While a run is in progress — or after it finishes — open the read-only web view of the
+While a run is in progress — or after it finishes — open the <DocLink to="web-view">read-only web view</DocLink> of the
 run's record:
 
 <CodeBlock lang="bash" code={`relay web`} />
@@ -85,7 +86,7 @@ inbox — never a control surface. Stop it with Ctrl-C.
 
 ## Exit codes
 
-Relay is scriptable and fails loud:
+Relay is scriptable and fails loud — the <DocLink to="cli-reference">CLI reference</DocLink> lists every command, flag, and code:
 
 - **0** — the root reached done and the result landed as a branch.
 - **1** — the run did not reach done, or it finished but delivered a patch instead of a

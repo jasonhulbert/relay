@@ -40,10 +40,14 @@ const label = filename ?? lang;
     --astro-code-foreground: var(--text);
     --astro-code-background: transparent;
     --astro-code-token-comment: var(--muted);
-    --astro-code-token-keyword: var(--accent);
-    --astro-code-token-string: color-mix(in oklab, var(--accent) 58%, var(--text));
-    --astro-code-token-string-expression: color-mix(in oklab, var(--accent) 58%, var(--text));
-    --astro-code-token-constant: var(--accent);
+    /* Text-bearing tokens use --accent-ink, not the brand --accent: on the light
+       code surface the fill-green fails AA, and --accent-ink is the token defined
+       to stay AA as text. In dark theme the two are identical, so this is a
+       light-theme-only contrast fix with no visual change in the dark default. */
+    --astro-code-token-keyword: var(--accent-ink);
+    --astro-code-token-string: color-mix(in oklab, var(--accent-ink) 58%, var(--text));
+    --astro-code-token-string-expression: color-mix(in oklab, var(--accent-ink) 58%, var(--text));
+    --astro-code-token-constant: var(--accent-ink);
     --astro-code-token-function: var(--text);
     --astro-code-token-parameter: var(--text);
     --astro-code-token-punctuation: var(--muted);

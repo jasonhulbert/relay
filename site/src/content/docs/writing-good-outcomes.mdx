@@ -7,13 +7,14 @@ order: 2
 
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay is only as good as the outcome you give it. An outcome it can't verify is an
 outcome it can't finish. This page is the practical guide to writing one.
 
 ## An outcome is a goal plus its checks
 
-When you start a run, intake compiles your input into a **seed** with three parts:
+When you start a run, intake compiles your input into a <DocLink to="glossary" hash="seed">**seed**</DocLink> with three parts:
 
 - the **outcome** — one verifiable statement of what "done" means;
 - its **verifications** — the grounded checks that decide done-ness (at least one, and
@@ -47,7 +48,7 @@ Each of the good ones names a state you can check and implies how to check it.
 
 ## Ground every check
 
-A verification carries a kind, the check itself, and **grounding** — why this check
+A <DocLink to="glossary" hash="verification">verification</DocLink> carries a kind, the check itself, and **grounding** — why this check
 proves the outcome. Grounding is required: intake rejects a seed whose check cites none,
 and the critic rejects a verdict that cites no evidence.
 

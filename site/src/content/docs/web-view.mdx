@@ -7,6 +7,7 @@ order: 2
 
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 `relay web` renders a run in a browser. It is a window onto the run record, not a control
 surface: it reads the store and shows you the tree, every verdict, and the decisions
@@ -16,7 +17,8 @@ waiting on you — and it writes nothing back.
 
 <CodeBlock lang="bash" code={`relay web`} />
 
-It serves on `http://127.0.0.1:4317` — loopback only, override the port with `--port` —
+It serves on `http://127.0.0.1:4317` — loopback only, override the port with `--port`
+(every flag is in the <DocLink to="cli-reference" hash="relay-web">CLI reference</DocLink>) —
 and recomposes the page from disk on every request, so a refresh always reflects the
 current state. Stop it with Ctrl-C.
 

@@ -6,6 +6,7 @@ order: 1
 ---
 
 import Callout from '../../components/Callout.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay is built on one principle: **don't depend on a model behaving well under
 pressure.** Make the structure hold the truth, make the agents disposable, and write
@@ -16,11 +17,11 @@ below is an application of that idea.
 
 You give Relay a **verifiable outcome** — what "done" is and how to check it — not a
 step-by-step plan. Capable models decide _how_ to reach it just in time. The plan is
-emergent: the orchestrator decomposes one layer at a time, informed by everything
+emergent: the <DocLink to="glossary" hash="orchestrator">orchestrator</DocLink> decomposes one layer at a time, informed by everything
 learned on the way to that point, rather than committing to a master plan up front.
 
 That is why the outcome has to be checkable. The next page is a practical guide to
-writing one.
+<DocLink to="writing-good-outcomes">writing one</DocLink>.
 
 ## The code-owned loop
 
@@ -37,7 +38,7 @@ control the loop hands over.
 
 ## The independent critic
 
-Done-ness is ruled by a critic that never sees the worker's story.
+Done-ness is ruled by a <DocLink to="glossary" hash="critic">critic</DocLink> that never sees the worker's story.
 
 - It runs on a **different provider by default**, so one model's blind spot can't both
   produce and bless the same mistake.

@@ -6,7 +6,7 @@ order: 2
 ---
 
 import Callout from '../../components/Callout.astro';
-import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Done-ness in Relay is something you prove, not something a model claims. Every outcome
 carries grounded checks, and the loop runs them cheapest-first — reaching for a model only
@@ -20,7 +20,7 @@ the first that proves the outcome:
 - **command** — a command exits cleanly (a linter, a build);
 - **test** — a test command passes;
 - **artifact** — a file or state assertion holds;
-- **agent-critic** — a cross-provider model reviews the diff against the outcome;
+- **agent-critic** — a <DocLink to="providers-mcp">cross-provider</DocLink> model reviews the diff against the outcome;
 - **structural** and **visual** — assertions over a UI's semantic tree, or a screenshot
   judgment;
 - **human** — a decision-inbox gate, for the irreversible or ambiguous call.

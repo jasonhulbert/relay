@@ -7,6 +7,7 @@ order: 3
 
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay is built to fail loud, so most problems announce themselves with a clear message and
 a non-zero exit. This page collects the common ones and the questions that come up early.
@@ -36,7 +37,7 @@ which. A usage error — an unknown flag, a bad value, a missing required argume
 
 ### A run can't find claude or codex
 
-The executors are the real coding backends, and Relay shells out to them. Both `claude`
+The <DocLink to="providers-mcp">executors</DocLink> are the real coding backends, and Relay shells out to them. Both `claude`
 and `codex` must be installed, on your `PATH`, and authenticated. A default run needs both,
 because the critic runs on the opposite backend from the author.
 
@@ -54,7 +55,8 @@ critic to it:
 
 Use `relay web`. It serves a strictly read-only projection of the run on
 `http://127.0.0.1:4317` — the live tree, each node's verdict and evidence, and any blocked
-decisions — recomposed from disk on every request. It never changes the run.
+decisions — recomposed from disk on every request. It never changes the run. See
+<DocLink to="web-view">the web view</DocLink> for the full tour.
 
 ### How do I resolve a blocked decision?
 

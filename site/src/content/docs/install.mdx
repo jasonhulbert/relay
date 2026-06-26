@@ -7,6 +7,7 @@ order: 2
 
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay targets **macOS** and runs on **Node 22**. Today you install it from source. The
 planned single-binary packaging is not shipped yet — see the note at the end.
@@ -55,8 +56,9 @@ shell alias) lets you invoke `relay` directly. The rest of this guide writes com
 
 <CodeBlock lang="bash" code={`relay --help`} />
 
-You should see the three commands — `run`, `dev-run`, and `web`. If you do, you're ready
-for the quickstart.
+You should see the three commands — `run`, `dev-run`, and `web`, each detailed in the
+<DocLink to="cli-reference">CLI reference</DocLink>. If you do, you're ready for the
+<DocLink to="quickstart">quickstart</DocLink>.
 
 <Callout type="note" title="The single binary is still on the way">
   Relay's design ships as one self-contained macOS binary via Node SEA. That packaging is a deferred

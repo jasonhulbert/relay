@@ -6,7 +6,7 @@ order: 1
 ---
 
 import Callout from '../../components/Callout.astro';
-import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay does no coding itself. It drives two backends — Claude Code and Codex — behind one
 uniform adapter, routes the different model roles across them, and owns the loop, the
@@ -30,7 +30,7 @@ it did.
 A run uses up to three model roles, and Relay routes each independently:
 
 - the **executor** (the author) produces the change — `--provider`, default `claude`;
-- the **critic** grades the result on evidence alone — `--critic-provider`, default the
+- the **critic** grades the result on <DocLink to="verification-surfaces">evidence alone</DocLink> — `--critic-provider`, default the
   _other_ provider from the executor;
 - the **brain** makes the decompose judgment that splits a node one layer —
   `--brain-provider`, default the same as the executor.

@@ -12,6 +12,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "a11y": "astro build && node scripts/a11y.mjs",
+    "links": "astro build && node scripts/links.mjs",
     "format": "prettier --write . --plugin=prettier-plugin-astro",
     "format:check": "prettier --check . --plugin=prettier-plugin-astro"
   },

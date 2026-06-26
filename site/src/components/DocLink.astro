@@ -1,0 +1,28 @@
+---
+/**
+ * DocLink — an inline cross-link from one docs page to another, always routed
+ * through `withBase` so the configured `/relay/` base is never dropped. This is
+ * the one sanctioned way docs prose links a sibling page: pass the target's
+ * slug (its MDX filename without the extension) and, optionally, a heading
+ * anchor on that page. Routing every cross-link through here makes a
+ * base-missing absolute link structurally impossible.
+ *
+ * Usage in MDX:
+ *   <DocLink to="cli-reference">CLI reference</DocLink>
+ *   <DocLink to="glossary" hash="critic">critic</DocLink>
+ *
+ * The rendered <a> inherits the docs prose link styling from the route
+ * (`.docs__content a`); this component adds no styling of its own.
+ */
+import { withBase } from '../config/nav.ts';
+
+interface Props {
+  to: string;
+  hash?: string;
+}
+
+const { to, hash } = Astro.props;
+const href = withBase(`docs/${to}`) + (hash ? `#${hash}` : '');
+---
+
+<a href={href}><slot /></a>

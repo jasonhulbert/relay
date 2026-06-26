@@ -7,6 +7,7 @@ order: 1
 
 import Callout from '../../components/Callout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
 
 Relay has three commands — `run`, `dev-run`, and `web` — plus the usual version and
 help globals. This page lists every flag and its real default. Everything here matches
@@ -78,7 +79,7 @@ store, then prints a recap. Reach for it to exercise the loop against a fixed ou
 
 ## relay web
 
-Serve the read-only web view of this project's store in a browser. It renders the run
+Serve the <DocLink to="web-view">read-only web view</DocLink> of this project's store in a browser. It renders the run
 record and never writes to it.
 
 <CodeBlock lang="bash" code={`relay web --port 4317`} />
