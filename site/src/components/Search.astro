@@ -1,0 +1,497 @@
+---
+/**
+ * Search: static local search over the built site, powered by Pagefind.
+ *
+ * Fills child 01's header `search` seam. A trigger pill (matching the seam's
+ * placeholder look) opens a keyboard-driven modal:
+ *   - `/` or `cmd/ctrl+k` opens it from anywhere (except while typing);
+ *   - typing queries Pagefind, results render as a listbox;
+ *   - ArrowUp/Down move the active result, Enter navigates, Esc closes.
+ *
+ * Pagefind's bundle + index are GENERATED post-build (`pagefind --site dist`),
+ * so they do not exist in `astro dev`. The bundle is therefore loaded lazily on
+ * first open via a runtime dynamic import, base-path aware (`/relay/pagefind/`),
+ * and the modal degrades to a "not built" hint if the import fails. All client
+ * logic is inline (no hydration), matching ThemeToggle/MobileNav.
+ *
+ * Mounted once site-wide through BaseLayout, so the search box is present in the
+ * header on every page. Result links are injected by JS, so their styles are
+ * anchored under `[data-search-results]` with `:global(...)` — Astro's scoped
+ * hashes never reach runtime-created nodes.
+ */
+import { withBase } from '../config/nav.ts';
+
+// Where the Pagefind bundle ships (under the site base) and the base used to
+// re-prefix the root-relative URLs Pagefind returns for the deployed site.
+const pagefindBase = withBase('pagefind/');
+const base = withBase('');
+---
+
+<div class="search" data-search>
+  <button
+    type="button"
+    class="search__trigger"
+    aria-label="Search docs"
+    aria-keyshortcuts="Control+K Meta+K Slash"
+    aria-haspopup="dialog"
+    data-search-open
+  >
+    <svg class="search__icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5"></circle>
+      <line x1="15.5" y1="15.5" x2="20" y2="20"></line>
+    </svg>
+    <span class="search__trigger-label">Search</span>
+    <kbd class="search__trigger-key">⌘K</kbd>
+  </button>
+
+  <div class="search__overlay" data-search-overlay hidden>
+    <div
+      class="search__dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search the documentation"
+      data-search-dialog
+    >
+      <div class="search__field">
+        <svg
+          class="search__icon search__icon--field"
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          aria-hidden="true"
+        >
+          <circle cx="10.5" cy="10.5" r="6.5"></circle>
+          <line x1="15.5" y1="15.5" x2="20" y2="20"></line>
+        </svg>
+        <input
+          type="search"
+          class="search__input"
+          placeholder="Search the documentation…"
+          aria-label="Search query"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="search-results"
+          aria-autocomplete="list"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          data-search-input
+        />
+        <kbd class="search__esc">Esc</kbd>
+      </div>
+      <div
+        class="search__results"
+        id="search-results"
+        role="listbox"
+        aria-label="Search results"
+        data-search-results
+      >
+        <p class="search__status" data-search-status>Type to search the documentation.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* ── Trigger pill (mirrors the header seam placeholder) ──────────────────── */
+  .search {
+    display: contents;
+  }
+  .search__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 12rem;
+    padding: 0.4rem 0.6rem;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .search__trigger:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .search__icon {
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+  .search__trigger-label {
+    flex: 1 1 auto;
+    text-align: left;
+  }
+  .search__trigger-key {
+    flex-shrink: 0;
+    padding: 0.05rem 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    background: var(--base);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+  }
+
+  /* ── Overlay + dialog ────────────────────────────────────────────────────── */
+  .search__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vh 1rem 1rem;
+    background: color-mix(in srgb, var(--base) 70%, transparent);
+    backdrop-filter: blur(4px);
+  }
+  .search__overlay[hidden] {
+    display: none;
+  }
+
+  .search__dialog {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 36rem;
+    max-height: 70vh;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  .search__field {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .search__icon--field {
+    color: var(--muted);
+  }
+  .search__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-family: var(--font-sans);
+    font-size: 1rem;
+  }
+  .search__input::placeholder {
+    color: var(--muted);
+  }
+  /* Drop the native search-field decorations so the box stays on-theme. */
+  .search__input::-webkit-search-decoration,
+  .search__input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search__esc {
+    flex-shrink: 0;
+    padding: 0.1rem 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    background: var(--base);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+  }
+
+  .search__results {
+    overflow-y: auto;
+    padding: 0.4rem;
+  }
+  .search__status {
+    margin: 0;
+    padding: 1.2rem 0.75rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  /* ── JS-injected result items (anchored global — scope hash never reaches
+       runtime-created nodes, so style them under the template-scoped list) ─── */
+  .search__results :global(.search__result) {
+    display: block;
+    padding: 0.7rem 0.75rem;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+  }
+  .search__results :global(.search__result[aria-selected='true']),
+  .search__results :global(.search__result:hover) {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .search__results :global(.search__result-title) {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .search__results :global(.search__result-excerpt) {
+    display: block;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+  .search__results :global(.search__result-excerpt mark) {
+    color: var(--accent-ink);
+    background: transparent;
+    font-weight: 600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search__trigger {
+      transition: none;
+    }
+  }
+</style>
+
+<script define:vars={{ pagefindBase, base }}>
+  (function () {
+    var root = document.querySelector('[data-search]');
+    if (!root) return;
+    var openBtn = root.querySelector('[data-search-open]');
+    var overlay = root.querySelector('[data-search-overlay]');
+    var dialog = root.querySelector('[data-search-dialog]');
+    var input = root.querySelector('[data-search-input]');
+    var resultsEl = root.querySelector('[data-search-results]');
+    var statusEl = root.querySelector('[data-search-status]');
+
+    var pagefind = null; // the lazily-imported Pagefind module
+    var loadState = 'idle'; // idle | loading | ready | failed
+    var results = []; // [{ href, title, excerptHtml }]
+    var active = -1; // index of the keyboard-selected result
+    var lastFocus = null; // element to restore focus to on close
+    var queryToken = 0; // guards against out-of-order async renders
+
+    var baseNoSlash = base.replace(/\/$/, '');
+
+    // Pagefind indexes the built output root-relative; re-prefix with the site
+    // base so links resolve under the deployment path (`/relay/…`).
+    function toHref(url) {
+      if (!url) return base;
+      if (url.indexOf(baseNoSlash + '/') === 0) return url;
+      return baseNoSlash + (url.charAt(0) === '/' ? url : '/' + url);
+    }
+
+    function setStatus(text) {
+      resultsEl.innerHTML = '';
+      var p = document.createElement('p');
+      p.className = 'search__status';
+      p.textContent = text;
+      resultsEl.appendChild(p);
+    }
+
+    async function loadPagefind() {
+      if (loadState === 'ready') return pagefind;
+      if (loadState === 'failed') return null;
+      loadState = 'loading';
+      try {
+        pagefind = await import(pagefindBase + 'pagefind.js');
+        if (pagefind.options) {
+          await pagefind.options({ baseUrl: base });
+        }
+        loadState = 'ready';
+        return pagefind;
+      } catch (e) {
+        loadState = 'failed';
+        return null;
+      }
+    }
+
+    function isOpen() {
+      return !overlay.hasAttribute('hidden');
+    }
+
+    function open() {
+      if (isOpen()) return;
+      lastFocus = document.activeElement;
+      overlay.removeAttribute('hidden');
+      document.documentElement.style.overflow = 'hidden';
+      input.value = '';
+      results = [];
+      active = -1;
+      setStatus('Type to search the documentation.');
+      input.setAttribute('aria-expanded', 'false');
+      input.focus();
+      loadPagefind(); // warm the bundle while the user starts typing
+    }
+
+    function close() {
+      if (!isOpen()) return;
+      overlay.setAttribute('hidden', '');
+      document.documentElement.style.overflow = '';
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+      if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus();
+    }
+
+    function render() {
+      resultsEl.innerHTML = '';
+      if (!results.length) return;
+      results.forEach(function (r, i) {
+        var a = document.createElement('a');
+        a.className = 'search__result';
+        a.id = 'search-result-' + i;
+        a.href = r.href;
+        a.setAttribute('role', 'option');
+        a.setAttribute('aria-selected', i === active ? 'true' : 'false');
+
+        var title = document.createElement('span');
+        title.className = 'search__result-title';
+        title.textContent = r.title;
+        a.appendChild(title);
+
+        var ex = document.createElement('span');
+        ex.className = 'search__result-excerpt';
+        ex.innerHTML = r.excerptHtml; // Pagefind-sanitized excerpt with <mark>
+        a.appendChild(ex);
+
+        a.addEventListener('mouseenter', function () {
+          setActive(i, false);
+        });
+        resultsEl.appendChild(a);
+      });
+      setActive(active, true);
+    }
+
+    function setActive(i, scroll) {
+      var nodes = resultsEl.querySelectorAll('.search__result');
+      if (!nodes.length) {
+        active = -1;
+        input.removeAttribute('aria-activedescendant');
+        return;
+      }
+      active = ((i % nodes.length) + nodes.length) % nodes.length;
+      nodes.forEach(function (n, idx) {
+        n.setAttribute('aria-selected', idx === active ? 'true' : 'false');
+      });
+      var el = nodes[active];
+      input.setAttribute('aria-activedescendant', el.id);
+      if (scroll) el.scrollIntoView({ block: 'nearest' });
+    }
+
+    async function runSearch(query) {
+      var token = ++queryToken;
+      var pf = await loadPagefind();
+      if (token !== queryToken) return; // superseded
+      if (!pf) {
+        setStatus('Search runs on the built site (npm run build).');
+        return;
+      }
+      var search = await pf.search(query);
+      if (token !== queryToken || !search) return;
+      var data = await Promise.all(
+        search.results.slice(0, 8).map(function (r) {
+          return r.data();
+        }),
+      );
+      if (token !== queryToken) return;
+      results = data.map(function (d) {
+        return {
+          href: toHref(d.url),
+          title: (d.meta && d.meta.title) || d.url,
+          excerptHtml: d.excerpt,
+        };
+      });
+      active = results.length ? 0 : -1;
+      input.setAttribute('aria-expanded', results.length ? 'true' : 'false');
+      if (!results.length) {
+        setStatus('No results for “' + query + '”.');
+        return;
+      }
+      render();
+    }
+
+    var debounceTimer = null;
+    input.addEventListener('input', function () {
+      var query = input.value.trim();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (!query) {
+        queryToken++;
+        results = [];
+        active = -1;
+        input.setAttribute('aria-expanded', 'false');
+        setStatus('Type to search the documentation.');
+        return;
+      }
+      debounceTimer = setTimeout(function () {
+        runSearch(query);
+      }, 180);
+    });
+
+    // In-modal keyboard navigation.
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (results.length) setActive(active + 1, true);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (results.length) setActive(active - 1, true);
+      } else if (e.key === 'Enter') {
+        if (active >= 0 && results[active]) {
+          e.preventDefault();
+          window.location.href = results[active].href;
+        }
+      }
+    });
+
+    openBtn.addEventListener('click', open);
+    overlay.addEventListener('mousedown', function (e) {
+      if (e.target === overlay) close(); // click the scrim, not the dialog
+    });
+
+    // Global shortcuts: cmd/ctrl+k and `/` open; Esc closes.
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        isOpen() ? close() : open();
+        return;
+      }
+      if (e.key === 'Escape' && isOpen()) {
+        e.preventDefault();
+        close();
+        return;
+      }
+      if (e.key === '/' && !isOpen()) {
+        var t = e.target;
+        var tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+        var typing =
+          tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable);
+        if (!typing) {
+          e.preventDefault();
+          open();
+        }
+      }
+    });
+
+    // Keep focus within the dialog while open (simple two-stop trap: input ↔ first result).
+    dialog.addEventListener('keydown', function (e) {
+      if (e.key !== 'Tab') return;
+      // Only the input is reliably focusable; results are reachable via arrows.
+      // Trap Tab so focus can't escape to the page behind the modal.
+      e.preventDefault();
+      input.focus();
+    });
+  })();
+</script>

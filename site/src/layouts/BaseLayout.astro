@@ -19,6 +19,7 @@ import '../styles/global.css';
 import ThemeScript from '../components/ThemeScript.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import Search from '../components/Search.astro';
 
 interface Props {
   title: string;
@@ -27,6 +28,9 @@ interface Props {
   /* Draw the content-anchored grid rails down <main>. Opt-in (landing) so the
      docs layout, which has its own column structure, is unaffected. */
   rails?: boolean;
+  /* Include this page's content in the Pagefind search index. Default true;
+     set false for dev-only/scaffolding routes that shouldn't surface in search. */
+  index?: boolean;
 }
 
 const {
@@ -34,6 +38,7 @@ const {
   description = 'Outcome-driven agent orchestration — terminal-native by design.',
   mainClass = '',
   rails = false,
+  index = true,
 } = Astro.props;
 
 const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g, '/');
@@ -67,10 +72,20 @@ const fontPreloads = [
   <body>
     <div class="site-shell">
       <Header>
-        <slot name="search" slot="search" />
+        {
+          /* Fill the header search seam with Pagefind site-wide. Every page
+            renders through BaseLayout, so mounting Search here is the single
+            integration point (child 04 filling child 01's documented seam). */
+        }
+        <Search slot="search" />
       </Header>
 
-      <main class={`site-main ${mainClass}`.trim()}>
+      {
+        /* data-pagefind-body scopes the search index to page content, so the
+          header/footer/nav chrome isn't indexed into every page's results.
+          Omitted when index=false so dev-only routes stay out of the index. */
+      }
+      <main class={`site-main ${mainClass}`.trim()} data-pagefind-body={index ? true : undefined}>
         {
           /* Content-anchored grid rails: two continuous vertical rules at the
             content-column edges, in the document flow so they scroll WITH the

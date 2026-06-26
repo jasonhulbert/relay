@@ -37,17 +37,18 @@ interface Props {
   headings?: Heading[];
   prev?: PageRef;
   next?: PageRef;
+  /* Forwarded to BaseLayout — set false to keep a route out of search. */
+  index?: boolean;
 }
 
-const { title, description, headings = [], prev, next } = Astro.props;
+const { title, description, headings = [], prev, next, index = true } = Astro.props;
 
 // Auto-TOC: h2/h3 only — deeper levels add noise in a side rail.
 const tocItems = headings.filter((h) => h.depth === 2 || h.depth === 3);
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout title={title} description={description} index={index}>
   <slot name="head" slot="head" />
-  <slot name="search" slot="search" />
 
   <div class="docs">
     <aside class="docs__sidebar" aria-label="Docs navigation">

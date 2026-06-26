@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
     "check": "astro check",
     "a11y": "astro build && node scripts/a11y.mjs",
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.5",
     "axe-core": "^4.12.1",
+    "pagefind": "^1.4.0",
     "prettier": "^3.8.4",
     "prettier-plugin-astro": "^0.14.1"
   },
