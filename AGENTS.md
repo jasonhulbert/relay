@@ -83,4 +83,6 @@ is dev-only.
 - The richest orientation is the header comment atop each module's `index.ts`. Read
   it before touching that module. For how the whole system fits together and why,
   read the canonical spec `docs/relay-spec.md`; for the on-disk record, read
-  `docs/relay-state-layout.md`.
+  `docs/relay-state-layout.md`. Operator-facing documentation (quickstart,
+  concepts, CLI reference) is published at <https://jasonhulbert.github.io/relay/>;
+  `docs/relay-spec.md` stays the canonical in-repo contributor reference.
