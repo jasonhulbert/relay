@@ -1,0 +1,75 @@
+---
+/**
+ * GetStarted: the three-step path to a first run, via NumberedSteps. Steps are
+ * executable against the real CLI in src/index.ts. Install is honest to current
+ * behavior — Relay ships as a single macOS binary, built from source today
+ * (`npm run build` produces the `relay` CLI); there is no published package yet.
+ *
+ * Phase-1 scope: structure + copy. Responsive and motion polish land in Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+import NumberedSteps from '../NumberedSteps.astro';
+import PixelDots from '../PixelDots.astro';
+
+const steps = [
+  {
+    title: 'Install Relay',
+    body: 'Relay targets macOS and ships as a single binary. Clone the repo and run npm run build to produce the relay CLI.',
+  },
+  {
+    title: 'Write a verifiable outcome',
+    body: 'Describe what "done" looks like and how to check it — for example, "the test suite passes and no public API changed." Checkable beats aspirational.',
+  },
+  {
+    title: 'Run the loop',
+    body: 'relay run --outcome "…" compiles your outcome into a run, executes it, and applies the verified result back as a relay/<runId> branch.',
+  },
+];
+---
+
+<section class="getstarted seam" aria-labelledby="getstarted-heading">
+  <div class="getstarted__inner reveal">
+    <div class="getstarted__seam"><PixelDots rows={3} cols={6} /></div>
+    <header class="getstarted__head">
+      <Eyebrow marker>Get started</Eyebrow>
+      <CursorHeading as="h2" id="getstarted-heading">Three steps to your first run.</CursorHeading>
+    </header>
+
+    <div class="getstarted__body">
+      <NumberedSteps steps={steps} />
+    </div>
+  </div>
+</section>
+
+<style>
+  .getstarted__inner {
+    position: relative;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  /* Keep step lines readable while the section frame spans the full column. */
+  .getstarted__body {
+    max-width: 46rem;
+  }
+
+  .getstarted__seam {
+    position: absolute;
+    top: clamp(1.75rem, 4vw, 3rem);
+    right: clamp(1.5rem, 4vw, 3rem);
+  }
+  @media (max-width: 39.99rem) {
+    .getstarted__seam {
+      display: none;
+    }
+  }
+
+  .getstarted__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    margin-bottom: 2.5rem;
+  }
+</style>

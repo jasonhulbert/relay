@@ -1,0 +1,79 @@
+---
+/**
+ * NumberedSteps: the big `1/ 2/ 3/` mono step list. Steps are passed as a
+ * prop array so the component stays usable from both .astro and MDX.
+ *
+ * Props:
+ *  - steps: { title, body? }[]
+ *  - class: extra classes on the root
+ */
+interface Step {
+  title: string;
+  body?: string;
+}
+
+interface Props {
+  steps: Step[];
+  class?: string;
+}
+
+const { steps, class: className = '' } = Astro.props;
+---
+
+<ol class={`steps ${className}`.trim()}>
+  {
+    steps.map((step, i) => (
+      <li class="steps__item">
+        <span class="steps__num" aria-hidden="true">
+          {i + 1}/
+        </span>
+        <div class="steps__content">
+          <p class="steps__title">{step.title}</p>
+          {step.body && <p class="steps__body">{step.body}</p>}
+        </div>
+      </li>
+    ))
+  }
+</ol>
+
+<style>
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .steps__item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: baseline;
+  }
+
+  .steps__num {
+    font-family: var(--font-mono);
+    /* Big agno-style step numerals — the section's visual anchor. */
+    font-size: clamp(2rem, 3vw, 2.6rem);
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent-ink);
+    letter-spacing: -0.02em;
+  }
+
+  .steps__title {
+    margin: 0;
+    color: var(--text);
+    font-weight: 600;
+    font-size: 1.05rem;
+  }
+
+  .steps__body {
+    margin: 0.35rem 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+</style>

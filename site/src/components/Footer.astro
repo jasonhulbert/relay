@@ -1,0 +1,85 @@
+---
+/**
+ * Site footer: compact wordmark, a short tagline, the primary nav links, and a
+ * live status dot. All token-driven so it flips with the theme.
+ */
+import Wordmark from './Wordmark.astro';
+import StatusDot from './StatusDot.astro';
+import { nav } from '../config/nav.ts';
+---
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <Wordmark class="text-base" />
+      <p class="site-footer__tagline">Outcome-driven agent orchestration.</p>
+    </div>
+
+    <nav class="site-footer__nav" aria-label="Footer">
+      {
+        nav.map((link) => (
+          <a
+            class="site-footer__link"
+            href={link.href}
+            {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          >
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="site-footer__status">
+      <StatusDot status="live" label="docs · in development" />
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+  }
+  .site-footer__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-gutter);
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem var(--spacing-gutter);
+  }
+  .site-footer__brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .site-footer__tagline {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .site-footer__nav {
+    display: flex;
+    gap: 1.25rem;
+    margin-left: auto;
+  }
+  .site-footer__link {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+  .site-footer__link:hover {
+    color: var(--accent);
+  }
+  .site-footer__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+</style>

@@ -1,0 +1,185 @@
+---
+/**
+ * Docs route — renders each entry in the `docs` collection through DocsLayout.
+ * Ordering, draft-filtering, and sidebar grouping all come from `config/docs.ts`
+ * so this route, the prev/next pager, and the `/docs` index redirect share one
+ * source of truth. Added pages render with no route change — they only set
+ * frontmatter (`group`, `order`). The prose styling for the article body lives
+ * here as the docs-content baseline.
+ */
+import { render } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import Eyebrow from '../../components/Eyebrow.astro';
+import CursorHeading from '../../components/CursorHeading.astro';
+import { withBase } from '../../config/nav.ts';
+import { getOrderedDocs, buildSidebar } from '../../config/docs.ts';
+
+export async function getStaticPaths() {
+  const ordered = await getOrderedDocs();
+
+  return ordered.map((entry, i) => ({
+    params: { slug: entry.id },
+    props: {
+      entry,
+      sidebarGroups: buildSidebar(ordered, entry.id),
+      prev: ordered[i - 1]
+        ? { href: withBase(`docs/${ordered[i - 1].id}`), title: ordered[i - 1].data.title }
+        : undefined,
+      next: ordered[i + 1]
+        ? { href: withBase(`docs/${ordered[i + 1].id}`), title: ordered[i + 1].data.title }
+        : undefined,
+    },
+  }));
+}
+
+const { entry, sidebarGroups, prev, next } = Astro.props;
+const { Content, headings } = await render(entry);
+---
+
+<DocsLayout
+  title={`${entry.data.title} — relay_`}
+  description={entry.data.description}
+  headings={headings}
+  prev={prev}
+  next={next}
+>
+  <nav slot="sidebar" class="docs-nav" aria-label="Docs">
+    {
+      sidebarGroups.map((section) => (
+        <div class="docs-nav__group">
+          <p class="docs-nav__title">{section.group}</p>
+          <ul class="docs-nav__list">
+            {section.items.map((item) => (
+              <li>
+                <a
+                  class="docs-nav__link"
+                  href={item.href}
+                  aria-current={item.current ? 'page' : undefined}
+                >
+                  {item.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </nav>
+
+  <header class="docs-head">
+    <Eyebrow marker>Guide</Eyebrow>
+    <CursorHeading as="h1" display>{entry.data.title}</CursorHeading>
+    {entry.data.description && <p class="docs-head__lead">{entry.data.description}</p>}
+  </header>
+
+  <Content />
+</DocsLayout>
+
+<style>
+  .docs-nav__group:not(:last-child) {
+    margin-bottom: 1.5rem;
+  }
+  .docs-nav__title {
+    margin: 0 0 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .docs-nav__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .docs-nav__link {
+    display: block;
+    padding: 0.35rem 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .docs-nav__link:hover {
+    color: var(--text);
+  }
+  .docs-nav__link[aria-current='page'] {
+    color: var(--accent-ink);
+  }
+
+  /* Page title block, above the rendered MDX body. Flex gap spaces the child
+     components (Eyebrow / CursorHeading carry their own margin:0). */
+  .docs-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .docs-head__lead {
+    margin: 0;
+    max-width: 46ch;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  /* Article prose baseline — the docs-content typography child 03 extends.
+     Fully global because `.docs__content` is owned by DocsLayout; a scoped
+     anchor here would never match (the element carries no scope id). The
+     `.docs__content` ancestor keeps these rules off the rest of the site. */
+  :global(.docs__content h2) {
+    margin: 2.5rem 0 0.75rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+    scroll-margin-top: 5rem;
+  }
+  :global(.docs__content h3) {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    scroll-margin-top: 5rem;
+  }
+  :global(.docs__content p) {
+    margin: 0 0 1.1rem;
+    line-height: 1.7;
+    color: var(--text);
+  }
+  :global(.docs__content ul),
+  :global(.docs__content ol) {
+    margin: 0 0 1.1rem;
+    padding-left: 1.4rem;
+    line-height: 1.7;
+    color: var(--text);
+  }
+  :global(.docs__content li) {
+    margin: 0.3rem 0;
+  }
+  :global(.docs__content li::marker) {
+    color: var(--muted);
+  }
+  :global(.docs__content a) {
+    color: var(--link);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  :global(.docs__content strong) {
+    color: var(--text);
+    font-weight: 600;
+  }
+  :global(.docs__content code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.12em 0.36em;
+    border-radius: 0.3rem;
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  /* Space the MDX callouts from surrounding prose. */
+  :global(.docs__content .callout) {
+    margin: 1.5rem 0;
+  }
+</style>

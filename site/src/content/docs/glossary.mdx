@@ -1,0 +1,139 @@
+---
+title: Glossary
+description: The vocabulary the rest of the guide uses — the run tree, outcomes and verification, the provider roles, and the durable record — each term defined the way Relay actually uses it.
+group: Glossary
+order: 1
+---
+
+The terms below appear throughout the guide. Each is defined the way Relay uses it, not in
+the abstract.
+
+## The run tree
+
+### Orchestrator
+
+The code-owned state machine that runs a node to completion. It owns the loop, the gates,
+and every write to the run record. It is not an autonomous agent — it calls a model only
+for discrete judgments (decompose, execute, critique) and acts on the answers itself.
+
+### Node
+
+A single unit of work in the run tree: a verifiable outcome with a durable record. Every
+node is either a branch or a leaf, and moves through pending, active, and done (or blocked
+or cancelled).
+
+### Branch
+
+A node that has been decomposed into a layer of child nodes, with the contracts between
+them. The orchestrator decomposes one layer at a time, lazily. This is the run-tree sense
+of "branch" — distinct from the git `relay/<runId>` branch a finished run lands on.
+
+### Leaf
+
+A terminal node, driven by a single fresh executor in its own worktree. It runs once and
+returns a diff plus a self-report. A leaf judged too big to finish in one pass is promoted
+to a branch and decomposed further.
+
+### Seam
+
+A typed contract between two children of the same decomposed layer — for example a shared
+file boundary or an exported interface. Seams pin how siblings fit together and let the
+orchestrator run them concurrently while still being able to verify the join.
+
+### Footprint
+
+The set of resources a child is predicted to touch — its repo-relative write globs, plus
+any named non-file resources. Footprints are pinned at decomposition; two siblings run
+concurrently only when theirs are disjoint.
+
+## Outcomes & verification
+
+### Outcome
+
+The verifiable statement of what "done" means for a node, fixed when the node is
+dispatched. An outcome is a short goal plus at least one grounded verification — the
+contract the critic rules against.
+
+### Verification
+
+A grounded check that proves an outcome, declared up front. Relay grades verification kinds
+cheapest-first: a command, a test, an artifact or state assertion, a cross-provider review,
+and — reserved for later — structural, visual, and human-gate checks. Every verification
+must carry grounding, or it's rejected.
+
+### Evidence
+
+The non-narrative artifacts a verdict is grounded in: the diff, command and test output,
+an asserted artifact, a screenshot judgment, or a model review. Evidence is stored in the
+run record and referenced by the critic — never the executor's own account of success.
+
+### Critic
+
+The independent judge of done-ness. It runs on a different provider by default, sees
+evidence only — the outcome, the diff, the captured evidence — and never the worker's
+self-report. The same circuit gates a leaf, a merged branch, and visual verification.
+
+### Seed
+
+How a leaf's worktree is initialized, decided once at the start of a run. A clean git repo
+forks each leaf off a fixed base, so the result can land as a branch; a dirty or non-git
+workspace copies its files instead, so the result lands as a patch.
+
+## Providers & execution
+
+### Provider
+
+An execution backend: `claude` (Claude Code) or `codex`. The same provider choice drives
+the executor, critic, and brain roles, each routable independently, with the critic
+defaulting to the opposite provider from the executor.
+
+### Executor
+
+The disposable worker that does a leaf's coding. It's spawned fresh per leaf — `claude -p`
+or `codex exec` behind one uniform adapter — handed the spec and prior learnings, and
+returns a diff and a self-report. It never writes to the run record.
+
+### Brain
+
+The model role that makes the decompose judgment: given a node, it returns the children to
+split it into, their footprints, and the seams between them. Code reads and commits that
+answer; the brain never owns the write. It defaults to the same provider as the executor.
+
+## The durable record
+
+### Run record
+
+The system of record for a run: plain Markdown files in a per-project store. It holds the
+node files, the root manifest, evidence, the decision inbox, and the intent journal.
+Orchestrators are stateless views over this on-disk record.
+
+### Intent journal
+
+The write-ahead journal that makes a multi-file change all-or-nothing. Before a transition,
+the orchestrator writes the complete post-state of every file it will touch, commits that
+intent, then applies the writes — so a crash mid-write rolls forward cleanly instead of
+leaving a half-written record.
+
+### Decision inbox
+
+The human-owned region where decisions only a person can make are staged, one file per
+decision. The orchestrator reads and drains it on each activation; it never authors into
+it, never auto-resolves a correctable case, and never silently swallows one.
+
+### Worktree
+
+The executor's sandbox directory, seeded per the run's seed plan. All executor edits happen
+inside it, the critic runs its checks against it, and it's discarded on failure and rebuilt
+fresh on retry. It is never part of the run record.
+
+### Apply-back
+
+Landing a verified run as a reviewable git branch in your repo without touching your working
+tree or `HEAD`. It happens only when the root reaches done and the workspace is a clean git
+repo; a dirty or non-git workspace gets a patch file instead.
+
+### The `relay/<runId>` branch
+
+The branch apply-back produces — one commit off a per-run base, holding the verified result.
+Your `HEAD` and working tree are left untouched, so you review and merge it on your own
+terms.

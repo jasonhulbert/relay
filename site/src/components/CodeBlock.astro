@@ -1,0 +1,123 @@
+---
+/**
+ * CodeBlock: a language-tabbed code card with line numbers. Highlighting uses
+ * Astro's built-in Shiki via the `css-variables` theme; the token colors are
+ * mapped to the design tokens below, so the code theme flips with the site
+ * theme instead of carrying a separate hardcoded palette.
+ *
+ * Props:
+ *  - code: the source string (trimmed)
+ *  - lang: Shiki language id (default 'bash')
+ *  - filename: optional label for the tab (falls back to `lang`)
+ */
+import { Code } from 'astro:components';
+
+interface Props {
+  code: string;
+  lang?: string;
+  filename?: string;
+}
+
+const { code, lang = 'bash', filename } = Astro.props;
+const label = filename ?? lang;
+---
+
+<figure class="code-block">
+  <figcaption class="code-block__bar">
+    <span class="code-block__lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="code-block__tab">{label}</span>
+  </figcaption>
+  <div class="code-block__body">
+    <!-- lang is a free-form string on this reusable card; Shiki's union is cast at the boundary -->
+    <Code code={code.trim()} lang={lang as any} theme="css-variables" />
+  </div>
+</figure>
+
+<style>
+  .code-block {
+    /* Map Shiki's css-variables theme onto the design tokens. These inherit
+       into the generated <pre>, so the highlight flips with the site theme. */
+    --astro-code-foreground: var(--text);
+    --astro-code-background: transparent;
+    --astro-code-token-comment: var(--muted);
+    /* Text-bearing tokens use --accent-ink, not the brand --accent: on the light
+       code surface the fill-green fails AA, and --accent-ink is the token defined
+       to stay AA as text. In dark theme the two are identical, so this is a
+       light-theme-only contrast fix with no visual change in the dark default. */
+    --astro-code-token-keyword: var(--accent-ink);
+    --astro-code-token-string: color-mix(in oklab, var(--accent-ink) 58%, var(--text));
+    --astro-code-token-string-expression: color-mix(in oklab, var(--accent-ink) 58%, var(--text));
+    --astro-code-token-constant: var(--accent-ink);
+    --astro-code-token-function: var(--text);
+    --astro-code-token-parameter: var(--text);
+    --astro-code-token-punctuation: var(--muted);
+    --astro-code-token-link: var(--link);
+
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .code-block__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .code-block__lights {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  .code-block__lights i {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: var(--border);
+  }
+
+  .code-block__tab {
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+
+  .code-block__body {
+    overflow-x: auto;
+    padding: 0.85rem 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  /* Shiki output lives in a child component, so reach it with :global and
+     lay each line out as a grid row carrying a counter-based gutter. */
+  :global(.code-block .astro-code) {
+    background: transparent !important;
+    margin: 0;
+    font-family: var(--font-mono);
+  }
+  :global(.code-block .astro-code code) {
+    counter-reset: line;
+    display: grid;
+  }
+  :global(.code-block .astro-code .line) {
+    counter-increment: line;
+    padding: 0 1rem;
+  }
+  :global(.code-block .astro-code .line)::before {
+    content: counter(line);
+    display: inline-block;
+    width: 1.5rem;
+    margin-right: 1.1rem;
+    text-align: right;
+    color: var(--muted);
+    opacity: 0.55;
+    user-select: none;
+  }
+</style>

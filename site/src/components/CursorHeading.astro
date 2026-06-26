@@ -1,0 +1,75 @@
+---
+/**
+ * CursorHeading: a heading with a trailing accent-green underscore cursor,
+ * echoing the wordmark's terminal prompt. The blink is gated by
+ * prefers-reduced-motion (steady, never hidden, when reduced).
+ *
+ * Props:
+ *  - as: heading level to render (default 'h2')
+ *  - display: use the large display type scale (default false)
+ *  - id: forwarded to the root so `aria-labelledby` references resolve
+ *  - class: extra classes on the root
+ */
+interface Props {
+  as?: 'h1' | 'h2' | 'h3' | 'h4';
+  display?: boolean;
+  id?: string;
+  class?: string;
+}
+
+const { as: Tag = 'h2', display = false, id, class: className = '' } = Astro.props;
+---
+
+<Tag
+  id={id}
+  class={`cursor-heading ${display ? 'cursor-heading--display' : ''} ${className}`.trim()}
+>
+  <slot /><span class="cursor-heading__cursor" aria-hidden="true">_</span>
+</Tag>
+
+<style>
+  .cursor-heading {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    /* Section headings carry real weight against the agno-grade scale. */
+    font-size: clamp(1.6rem, 2.4vw, 2rem);
+    letter-spacing: -0.02em;
+    line-height: 1.12;
+  }
+
+  .cursor-heading--display {
+    /* Display moments (hero, final CTA, doc title) read big and heavy. */
+    font-size: clamp(2.6rem, 5.2vw, 3.75rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.01;
+  }
+
+  .cursor-heading__cursor {
+    color: var(--accent);
+    font-weight: 700;
+    /* Hug the last glyph — a tight terminal cursor, not a floating mark. */
+    margin-left: 0.02em;
+    animation: cursor-heading-blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes cursor-heading-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor-heading__cursor {
+      animation: none;
+      opacity: 1;
+    }
+  }
+</style>

@@ -1,0 +1,88 @@
+---
+title: Core concepts
+description: The mental model the rest of the guide builds on — outcomes over plans, the code-owned loop, the evidence-only critic, grounded evidence, and the decision inbox.
+group: Concepts
+order: 1
+---
+
+import Callout from '../../components/Callout.astro';
+import DocLink from '../../components/DocLink.astro';
+
+Relay is built on one principle: **don't depend on a model behaving well under
+pressure.** Make the structure hold the truth, make the agents disposable, and write
+every durable record for the exact reader whose correctness depends on it. Every concept
+below is an application of that idea.
+
+## Outcomes, not plans
+
+You give Relay a **verifiable outcome** — what "done" is and how to check it — not a
+step-by-step plan. Capable models decide _how_ to reach it just in time. The plan is
+emergent: the <DocLink to="glossary" hash="orchestrator">orchestrator</DocLink> decomposes one layer at a time, informed by everything
+learned on the way to that point, rather than committing to a master plan up front.
+
+That is why the outcome has to be checkable. The next page is a practical guide to
+<DocLink to="writing-good-outcomes">writing one</DocLink>.
+
+## The code-owned loop
+
+The orchestrator **is** the loop, and the loop is a code-owned state machine — not an
+autonomous agent. A model is invoked only for bounded judgments — decompose a node,
+execute a leaf, critique a result — and its answer is data the loop acts on, never
+control the loop hands over.
+
+- **Code owns the loop and the writes.** Dispatch, the gates, and every write to the run
+  record are code. No model owns the loop or the durable state.
+- **Agents are disposable.** Any executor can be killed and rebuilt from the on-disk
+  record. Losing an agent costs a re-dispatch, never correctness — nothing the loop
+  depends on lives only in an agent's head.
+
+## The independent critic
+
+Done-ness is ruled by a <DocLink to="glossary" hash="critic">critic</DocLink> that never sees the worker's story.
+
+- It runs on a **different provider by default**, so one model's blind spot can't both
+  produce and bless the same mistake.
+- It sees **evidence only** — the outcome spec, the diff, the captured evidence — never
+  the executor's self-report.
+
+The split is enforced by construction, not by prompting: the critic's view is built
+through a single constructor, marked by a type that makes a raw record impossible to
+pass, and guarded by a test. The reasoning is blunt — a false "done" propagates upward
+as truth and later work builds on it, so the judge is structurally prevented from ever
+reading a claim of success.
+
+<Callout type="note" title="The author is never the sole judge">
+  Every verdict has to cite grounded evidence, and the model that wrote a change is never the one
+  that accepts it. A verdict that cites no evidence is rejected outright.
+</Callout>
+
+## Evidence
+
+The critic grounds each verdict in whatever the outcome admits, cheapest first: a
+command exiting cleanly, then a test, then an artifact or state assertion, then a visual
+screenshot judgment, then a cross-provider review of the diff, and finally a human gate
+for the irreversible or ambiguous case. Every unit of work declares at least one
+grounded check, fixed when it is dispatched rather than chosen after the fact.
+
+## The decision inbox
+
+Relay is operated, not chatted with. Your involvement is concentrated at two points —
+defining the outcome up front, and resolving the few decisions only a human can make —
+and is otherwise read-only.
+
+Anything that genuinely needs you — an irreversible or ambiguous gate — is surfaced into
+a human-owned **decision inbox**. The orchestrator only reads and drains it. It never
+authors into it, never auto-resolves a correctable case, and never silently swallows
+one.
+
+<Callout type="warn" title="Correctable failures are always surfaced">
+  A mismatch you could fix is yours to resolve, never the loop's to quietly work around. This is a
+  hard invariant, not a setting.
+</Callout>
+
+## The shape of a run today
+
+The deep tree of orchestrators is the design target; a run reaches it lazily. Each
+activation decomposes one layer and runs it; a piece judged too big is promoted and
+decomposed further on its next activation. Depth grows over successive steps rather than
+all at once — the same loop at every level.

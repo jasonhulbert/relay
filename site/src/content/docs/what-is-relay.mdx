@@ -1,0 +1,77 @@
+---
+title: What is Relay?
+description: Relay is an outcome-driven orchestrator — you define a verifiable outcome, and it runs a code-owned loop of decomposition, execution, and an independent critic until the goal is met.
+group: Getting Started
+order: 1
+---
+
+import Callout from '../../components/Callout.astro';
+import DocLink from '../../components/DocLink.astro';
+
+Relay is an **outcome-driven orchestrator** for software work. You hand it a single
+_outcome_ — what "done" looks like and how to check it — and Relay turns that into a
+loop it runs and verifies on its own, handing the actual coding to Claude Code or
+Codex.
+
+Most agent tools ask you to choreograph individual steps. Relay inverts that: you
+describe the destination and how you'll know you've arrived, not the route. Capable
+models decide the route just in time, and Relay surfaces the few moments that
+genuinely need you.
+
+## The loop
+
+Every run is the same shape, at every level of the work:
+
+1. An **outcome** enters at the root — the verifiable goal you defined.
+2. The **orchestrator** decomposes one layer of work and dispatches it.
+3. **Executors** — fresh `claude -p` or `codex exec` processes — do the bounded work
+   in isolated worktrees.
+4. An **independent critic** judges the result against the outcome, on evidence alone.
+
+The orchestrator is not an autonomous agent — it's a code-owned state machine. A model
+is called only for discrete judgments (decompose, execute, critique); code owns the
+loop, the gates, and every durable write. Nothing is accepted until the critic
+approves, and when it rejects, the orchestrator retries, swaps to a different provider,
+or raises the model tier before it gives up.
+
+When the root reaches done, Relay lands the verified result as a reviewable
+`relay/<runId>` git branch — your working tree left untouched.
+
+## Outcomes, not prompts
+
+An outcome is a durable statement of intent plus how to verify it — "the test suite
+passes and the changelog is updated" — not a one-shot prompt. Relay keeps working the
+loop against that outcome, so a transient failure or a half-finished step doesn't end
+the run; it feeds the next iteration.
+
+<Callout type="note" title="Outcomes are checkable">
+  Write outcomes you can verify. "Refactor the auth module" is a vibe; "auth tests pass and no
+  public API changed" is an outcome a critic can actually rule on. Every outcome carries at least
+  one grounded check.
+</Callout>
+
+## The independent critic
+
+Done-ness is decided by a critic that never sees the worker's story. It runs on a
+different provider by default, and it reads evidence only — the outcome spec, the diff,
+the captured evidence — never the executor's own report of success. A false "done" is
+more dangerous than a false "failed", so the judge is structurally prevented from ever
+reading the worker's claim that it succeeded.
+
+## The human stays in the loop
+
+Relay never silently resolves a decision that's genuinely yours to make. When a step
+needs judgment — an irreversible gate, an ambiguous call — it surfaces that into a
+decision inbox and waits. You stay in control of the calls that matter, without
+babysitting the ones that don't.
+
+<Callout type="warn" title="Surfaced, never swallowed">
+  A correctable mismatch or failure is always raised for you to see. Relay treats "quietly worked
+  around it" as a bug, not a feature.
+</Callout>
+
+## Where to go next
+
+This page is the orientation. From here, the guide walks through <DocLink to="install">installing Relay</DocLink>,
+<DocLink to="quickstart">running your first outcome</DocLink>, and the <DocLink to="core-concepts">concepts</DocLink> the rest of the docs build on — the
+code-owned loop, the evidence-only critic, and the decision inbox.

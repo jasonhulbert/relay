@@ -1,0 +1,154 @@
+---
+/**
+ * Dev-only review route for Phase 4 chrome — exercises BaseLayout, the
+ * DocsLayout three-pane shell (sidebar + content + auto-TOC + prev/next), and
+ * the LoopDiagram. Review-only: noindex'd and never linked from nav; child 04's
+ * sitemap must keep it (like /gallery) excluded from production.
+ *
+ * Phase 5 builds the REAL hero (index.astro) and the REAL docs page through
+ * these same layouts; this route just proves the chrome renders + behaves.
+ */
+import DocsLayout from '../layouts/DocsLayout.astro';
+import LoopDiagram from '../components/LoopDiagram.astro';
+import Eyebrow from '../components/Eyebrow.astro';
+import CursorHeading from '../components/CursorHeading.astro';
+import { withBase } from '../config/nav.ts';
+
+// Headings the page renders, fed to the auto-TOC (must match the ids below).
+const headings = [
+  { depth: 2, slug: 'the-loop', text: 'The loop' },
+  { depth: 2, slug: 'orchestration', text: 'Orchestration' },
+  { depth: 3, slug: 'fan-out', text: 'Fan-out' },
+  { depth: 3, slug: 'the-critic-gate', text: 'The critic gate' },
+  { depth: 2, slug: 'responsiveness', text: 'Responsiveness' },
+];
+
+const sidebar = [
+  { label: 'What is Relay', href: '#', current: true },
+  { label: 'The loop', href: '#the-loop' },
+  { label: 'Orchestration', href: '#orchestration' },
+  { label: 'Critic gate', href: '#the-critic-gate' },
+];
+---
+
+<DocsLayout
+  title="Layout preview — relay_"
+  description="Dev-only Phase 4 chrome review."
+  headings={headings}
+  prev={{ href: withBase('docs/install'), title: 'Install' }}
+  next={{ href: withBase('docs/quickstart'), title: 'Quickstart' }}
+  index={false}
+>
+  <meta slot="head" name="robots" content="noindex,nofollow" />
+
+  {/* Sidebar nav stub (child 03 feeds the real tree) */}
+  <nav slot="sidebar" class="lp-sidebar" aria-label="Docs">
+    <p class="lp-sidebar__title">Getting started</p>
+    <ul class="lp-sidebar__list">
+      {
+        sidebar.map((item) => (
+          <li>
+            <a
+              class="lp-sidebar__link"
+              href={item.href}
+              aria-current={item.current ? 'page' : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+
+  <Eyebrow marker>Phase 4 · chrome review</Eyebrow>
+  <CursorHeading as="h1" display>Layout chrome</CursorHeading>
+  <p class="lp-lead">
+    This dev-only page renders the BaseLayout shell, the DocsLayout three-pane grid, and the signal
+    LoopDiagram so the Phase 4 chrome is reviewable in both themes before Phase 5 seeds the real
+    pages.
+  </p>
+
+  <LoopDiagram class="lp-diagram" />
+
+  <h2 id="the-loop">The loop</h2>
+  <p class="lp-body">
+    An outcome flows down through orchestrators to leaf agents, and results converge on a critic
+    gate that loops back to the root. The diagram above animates a signal pulse along each edge, and
+    freezes to a static frame under reduced-motion.
+  </p>
+
+  <h2 id="orchestration">Orchestration</h2>
+  <p class="lp-body">Orchestrators own planning and fan-out; leaf agents do the bounded work.</p>
+
+  <h3 id="fan-out">Fan-out</h3>
+  <p class="lp-body">Each orchestrator delegates to multiple leaf agents that run in parallel.</p>
+
+  <h3 id="the-critic-gate">The critic gate</h3>
+  <p class="lp-body">Nothing ships until the critic approves the converged signal.</p>
+
+  <h2 id="responsiveness">Responsiveness</h2>
+  <p class="lp-body">
+    The sidebar appears at the large breakpoint, the table-of-contents rail at the extra-large
+    breakpoint, and the header collapses to a mobile menu below the medium breakpoint. The table of
+    contents tracks the section in view.
+  </p>
+</DocsLayout>
+
+<style>
+  .lp-lead {
+    margin: 1rem 0 2rem;
+    font-size: 1.05rem;
+    color: var(--muted);
+    max-width: 40rem;
+  }
+  .lp-diagram {
+    margin: 2rem 0 3rem;
+  }
+  .lp-body {
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 40rem;
+  }
+  :global(.docs__content h2) {
+    margin: 2.5rem 0 0.75rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+    scroll-margin-top: 5rem;
+  }
+  :global(.docs__content h3) {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    scroll-margin-top: 5rem;
+  }
+
+  .lp-sidebar__title {
+    margin: 0 0 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .lp-sidebar__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .lp-sidebar__link {
+    display: block;
+    padding: 0.35rem 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .lp-sidebar__link:hover {
+    color: var(--text);
+  }
+  .lp-sidebar__link[aria-current='page'] {
+    color: var(--accent);
+  }
+</style>

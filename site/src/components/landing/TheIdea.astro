@@ -1,0 +1,154 @@
+---
+/**
+ * TheIdea: the problem-first section. Names the pain operators feel today
+ * (hand-authoring plans and babysitting agents) and frames Relay's inversion
+ * (specify a verifiable outcome; Relay runs and verifies the loop). The two
+ * contrast panels stand in for agno's "there is no runtime layer" device,
+ * mapped onto Relay's domain.
+ *
+ * Phase-1 scope: structure + copy. The alternating section rhythm, decorative
+ * seams, and motion are added in Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+---
+
+<section class="idea seam" aria-labelledby="idea-heading">
+  <div class="idea__inner reveal">
+    <header class="idea__head">
+      <Eyebrow marker>The shift</Eyebrow>
+      <CursorHeading as="h2" id="idea-heading"
+        >You shouldn't have to babysit the agent.</CursorHeading
+      >
+      <p class="idea__lead">
+        Most agent tools hand you a chat box and a sequence of steps to choreograph. You author the
+        plan, watch every step, and step back in the moment it drifts. The plan is yours to write
+        and yours to babysit.
+      </p>
+    </header>
+
+    <div class="idea__contrast">
+      <article class="idea__panel idea__panel--old">
+        <p class="idea__panel-label">The old way</p>
+        <p class="idea__panel-title">You write the steps. You run the loop.</p>
+        <p class="idea__panel-body">
+          Decompose the task by hand, prompt each step, and supervise the whole thing. When a model
+          declares success it doesn't have, it's on you to catch it.
+        </p>
+      </article>
+
+      <article class="idea__panel idea__panel--new">
+        <p class="idea__panel-label">With Relay</p>
+        <p class="idea__panel-title">You define the outcome. Relay runs the loop.</p>
+        <p class="idea__panel-body">
+          Specify a verifiable outcome — what "done" looks like and how to check it. Relay turns it
+          into a loop it runs and verifies on its own, surfacing only the decisions that are
+          genuinely yours.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Span the page rails: horizontal padding = the rail inset, so the two-cell
+     lattice's outer edges land on the content-column rails and its center
+     divider falls on the page centerline (no inset double-grid). */
+  .idea__inner {
+    padding: clamp(3.5rem, 8vw, 6rem) var(--rail-inset);
+  }
+
+  /* Header gutter matches the panel padding so the heading aligns with the
+     cell content rather than sitting on the rail. */
+  .idea__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    max-width: 46rem;
+    padding-inline: 1.75rem;
+  }
+  .idea__lead {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  /* Two cells of a drawn lattice — shared hairlines, no cards. */
+  .idea__contrast {
+    margin-top: 2.5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+  @media (min-width: 48rem) {
+    .idea__contrast {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .idea__panel {
+    position: relative;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 1.75rem;
+    transition: background-color 0.2s ease;
+  }
+  /* `+` mark on the cell's top-left intersection. */
+  .idea__panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    transform: translate(-50%, -50%);
+    background:
+      linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat,
+      linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    pointer-events: none;
+  }
+  .idea__panel:hover {
+    background: color-mix(in oklab, var(--accent) 5%, transparent);
+  }
+  /* The "with Relay" cell reads as a flat highlighted cell, not a raised card. */
+  .idea__panel--new {
+    background: color-mix(in oklab, var(--accent) 9%, transparent);
+  }
+  .idea__panel--new:hover {
+    background: color-mix(in oklab, var(--accent) 13%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .idea__panel {
+      transition: none;
+    }
+  }
+
+  .idea__panel-label {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .idea__panel--new .idea__panel-label {
+    color: var(--accent-ink);
+  }
+  .idea__panel-title {
+    margin: 0.75rem 0 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .idea__panel-body {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+</style>

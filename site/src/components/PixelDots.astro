@@ -1,0 +1,45 @@
+---
+/**
+ * PixelDots: a decorative grid of small square dots, with a few accent cells
+ * for a pixel-flourish accent. Purely ornamental (aria-hidden).
+ *
+ * Props:
+ *  - rows: dot rows (default 4)
+ *  - cols: dot columns (default 8)
+ *  - class: extra classes on the root
+ */
+interface Props {
+  rows?: number;
+  cols?: number;
+  class?: string;
+}
+
+const { rows = 4, cols = 8, class: className = '' } = Astro.props;
+const cells = Array.from({ length: rows * cols }, (_, i) => i);
+// Deterministic scatter of accent cells (no Math.random — must be stable).
+const accent = new Set([0, cols + 3, cols * 2 + 1, cols * 2 + 6, cols * 3 + 4]);
+---
+
+<div class={`pixels ${className}`.trim()} style={`--pixels-cols:${cols}`} aria-hidden="true">
+  {cells.map((i) => <span class={`pixels__dot ${accent.has(i) ? 'is-accent' : ''}`.trim()} />)}
+</div>
+
+<style>
+  .pixels {
+    display: grid;
+    grid-template-columns: repeat(var(--pixels-cols), 1fr);
+    gap: 0.4rem;
+    width: fit-content;
+  }
+
+  .pixels__dot {
+    width: 0.32rem;
+    height: 0.32rem;
+    border-radius: 1px;
+    background: var(--border);
+  }
+
+  .pixels__dot.is-accent {
+    background: var(--accent);
+  }
+</style>

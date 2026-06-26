@@ -1,0 +1,83 @@
+---
+title: Verification & surfaces
+description: How Relay proves a result is done — the cheapest-first verification kinds, visual verification through a Surface, and the integration gate that re-verifies a concurrent layer as a whole.
+group: Advanced
+order: 2
+---
+
+import Callout from '../../components/Callout.astro';
+import DocLink from '../../components/DocLink.astro';
+
+Done-ness in Relay is something you prove, not something a model claims. Every outcome
+carries grounded checks, and the loop runs them cheapest-first — reaching for a model only
+when cheaper, deterministic evidence can't settle the question.
+
+## The verification kinds
+
+A verification declares _how_ a result is checked. Relay grades them in order, stopping at
+the first that proves the outcome:
+
+- **command** — a command exits cleanly (a linter, a build);
+- **test** — a test command passes;
+- **artifact** — a file or state assertion holds;
+- **agent-critic** — a <DocLink to="providers-mcp">cross-provider</DocLink> model reviews the diff against the outcome;
+- **structural** and **visual** — assertions over a UI's semantic tree, or a screenshot
+  judgment;
+- **human** — a decision-inbox gate, for the irreversible or ambiguous call.
+
+The first three are deterministic and run in code — no model, no cost. Only if they pass
+does the loop spend a model call on the cross-provider critic.
+
+<Callout type="note" title="Some kinds are declared but not yet dispatched">
+  `command`, `test`, `artifact`, and the cross-provider `agent-critic` are the kinds a run actually
+  uses today. `structural`, `visual`, and `human` are defined and reserved, but not yet wired into
+  the live critic path — so reach for a command, a test, or an artifact assertion when you write an
+  outcome now.
+</Callout>
+
+## Visual verification through a surface
+
+For outcomes about a running UI, Relay verifies against a **Surface** — the single seam
+between the verification subsystem and a live application. The executor drives the surface
+to reach a state; the critic then **replays the same semantic path** against it and grades
+what it finds. The critic never asks the executor to drive the app and hand back a
+screenshot — it reaches the state itself, on the evidence-only side.
+
+A surface is **semantic-first**: the accessibility tree is the load-bearing read, and the
+screenshot is the fallback, so checks target named elements rather than raw pixels. The
+current driver is a web surface over a Playwright/CDP backend. Visual checks come at three
+granularities:
+
+- **structural** — deterministic assertions over a named element's semantic subtree, no
+  model;
+- **intent** — a multimodal model judgment, tolerant of pixel-level variation;
+- **baseline-diff** — a perceptual comparison against a stored reference image.
+
+<Callout type="warn" title="The surface subsystem isn't wired into a live run yet">
+  The surface contract, the web driver, semantic replay, and the three granularities are built and
+  tested, but they're not yet dispatched by the orchestrator's critic path — a run's live judge
+  today is the evidence-only cross-provider critic. Visual verification is a proven capability
+  waiting to be switched on, not a step in the loop right now.
+</Callout>
+
+## The integration gate
+
+Relay can run a layer's children concurrently, and that creates a verification gap:
+parallel siblings each fork from the same base and never see one another, so each child's
+critic graded that child's diff in isolation — blind to its siblings. No per-child verdict
+ever witnessed the combination.
+
+So before a branch that ran any children concurrently may be marked done, it runs an
+**integration gate**: it merges the completed layer and verifies the merged whole,
+recovering the cross-sibling check that serial work would have gotten for free. The gate is
+deterministic-first and short-circuits:
+
+1. **footprints** — from the write-ahead record, confirm no two children wrote a shared
+   path and each stayed within its declared footprint;
+2. **seams** — check the typed contracts between siblings that code can check (a file
+   boundary, an exported interface);
+3. **the merged critic** — the parent re-runs its own evidence-only critic on the merged
+   diff against its own spec.
+
+Only a passing gate lets a concurrent branch become done. A failure blocks the branch
+rather than letting an unverified combination propagate upward as truth.

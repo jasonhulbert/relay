@@ -1,0 +1,110 @@
+---
+/**
+ * CommandShowcase: the real `relay run` invocation in a CodeBlock, paired with
+ * the decision-inbox mockup that shows where a run surfaces the calls only a
+ * human can make. Every flag here exists in src/index.ts — copy is checked
+ * against the CLI, not written from memory.
+ *
+ * Phase-1 scope: structure + copy. Responsive refinement and motion land in
+ * Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+import CodeBlock from '../CodeBlock.astro';
+import UIMock from '../UIMock.astro';
+
+const runSnippet = `# Compile a verifiable outcome into a run — non-interactive
+relay run --outcome "the test suite passes and the changelog notes the fix"
+
+# Omit --outcome to be grilled into a run seed interactively
+relay run
+
+# Split the roles: one provider authors, a different one critiques
+relay run --provider claude --critic-provider codex`;
+---
+
+<section class="showcase seam" aria-labelledby="showcase-heading">
+  <div class="showcase__inner reveal">
+    <header class="showcase__head">
+      <Eyebrow marker>In practice</Eyebrow>
+      <CursorHeading as="h2" id="showcase-heading">One command runs the loop.</CursorHeading>
+      <p class="showcase__lead">
+        <code>relay run</code> compiles your outcome into a run, lets the orchestrator decompose and execute
+        it, and applies the verified result back as a <code>relay/&lt;runId&gt;</code> branch. You supervise
+        from a read-only view; decisions that need you land in the inbox.
+      </p>
+    </header>
+
+    <div class="showcase__cols">
+      <div class="showcase__code">
+        <CodeBlock code={runSnippet} lang="bash" filename="terminal" />
+      </div>
+      <figure class="showcase__inbox">
+        <UIMock variant="inbox" />
+        <figcaption class="showcase__caption">
+          The decision inbox — the one inbound channel. Approvals and ambiguous calls wait here for
+          you; nothing is silently resolved.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<style>
+  .showcase__inner {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: clamp(3.5rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .showcase__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    max-width: 50rem;
+  }
+  .showcase__lead {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .showcase__lead code {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+    color: var(--text);
+  }
+
+  .showcase__cols {
+    margin-top: 2.5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (min-width: 56rem) {
+    .showcase__cols {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: 2rem;
+    }
+  }
+
+  /* Let the code column shrink below the snippet's longest line so the
+     CodeBlock's own overflow-x:auto handles it, instead of the card blowing
+     out the grid track at narrow widths. */
+  .showcase__code {
+    min-width: 0;
+  }
+
+  .showcase__inbox {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .showcase__caption {
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+</style>

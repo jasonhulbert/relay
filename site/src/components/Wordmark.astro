@@ -1,0 +1,105 @@
+---
+/**
+ * The `relay_` wordmark: lowercase mono logotype with a trailing accent-green
+ * underscore cursor that blinks like a terminal prompt. The blink is gated by
+ * prefers-reduced-motion — when reduced, the cursor holds steady (still
+ * visible, never hidden).
+ *
+ * Props:
+ *  - showGlyph: prepend the minimal SVG prompt glyph (default false)
+ *  - class: extra classes on the root
+ */
+interface Props {
+  showGlyph?: boolean;
+  class?: string;
+}
+
+const { showGlyph = false, class: className = '' } = Astro.props;
+---
+
+<span class={`wordmark ${className}`.trim()}>
+  {
+    showGlyph && (
+      <svg
+        class="wordmark__glyph"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        width="1em"
+        height="1em"
+        fill="none"
+      >
+        <rect
+          x="2.5"
+          y="2.5"
+          width="19"
+          height="19"
+          rx="4.5"
+          stroke="currentColor"
+          stroke-width="1.6"
+          opacity="0.55"
+        />
+        <path
+          d="M8 8.5 11.5 12 8 15.5"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <line
+          x1="13"
+          y1="15.5"
+          x2="16.5"
+          y2="15.5"
+          stroke="var(--accent)"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </svg>
+    )
+  }
+  <span class="wordmark__text">relay</span><span class="wordmark__cursor" aria-hidden="true">_</span
+  >
+</span>
+
+<style>
+  .wordmark {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3em;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    line-height: 1;
+    user-select: none;
+  }
+
+  .wordmark__glyph {
+    align-self: center;
+    color: var(--text);
+  }
+
+  .wordmark__cursor {
+    color: var(--accent);
+    font-weight: 700;
+    animation: wordmark-blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes wordmark-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wordmark__cursor {
+      animation: none;
+      opacity: 1;
+    }
+  }
+</style>

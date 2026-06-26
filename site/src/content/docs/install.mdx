@@ -1,0 +1,67 @@
+---
+title: Install & requirements
+description: How to get a runnable relay on macOS today — from source on Node 22 — plus the git and executor CLIs it needs at run time.
+group: Getting Started
+order: 2
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import DocLink from '../../components/DocLink.astro';
+
+Relay targets **macOS** and runs on **Node 22**. Today you install it from source. The
+planned single-binary packaging is not shipped yet — see the note at the end.
+
+## Requirements
+
+- **macOS.** The supported platform today; other platforms are a deferred second
+  backend.
+- **Node 22.** The repo pins `22.22.3` in `.nvmrc`. With `nvm`, `nvm use` selects it.
+- **git** on your `PATH`. Relay forks executor worktrees, captures diffs, and lands
+  results as a branch using `git` — it must be installed.
+- **An executor CLI** — Claude Code (`claude`) and/or Codex (`codex`) — installed, on
+  your `PATH`, and authenticated. These are the backends that do the actual coding.
+
+<Callout type="note" title="A default run uses two providers">
+  Relay's critic is cross-provider by default: the independent judge runs on the _other_ backend
+  from the one doing the work. So a default `relay run` expects both `claude` and `codex` to be
+  available. Pin `--critic-provider` to the same backend as `--provider` if you only have one.
+</Callout>
+
+## Install from source
+
+<CodeBlock
+  lang="bash"
+  code={`git clone https://github.com/jasonhulbert/relay.git
+cd relay
+nvm use            # selects Node 22.22.3 from .nvmrc
+npm install
+npm run build      # esbuild bundles src/ into dist/index.js`}
+/>
+
+`npm run build` produces `dist/index.js`, a self-contained CommonJS bundle with an
+executable shebang. Run the CLI through Node:
+
+<CodeBlock
+  lang="bash"
+  code={`node dist/index.js --version
+node dist/index.js --help`}
+/>
+
+The package declares a `relay` bin pointing at `dist/index.js`, so `npm link` (or a
+shell alias) lets you invoke `relay` directly. The rest of this guide writes commands as
+`relay …`.
+
+## Verify
+
+<CodeBlock lang="bash" code={`relay --help`} />
+
+You should see the three commands — `run`, `dev-run`, and `web`, each detailed in the
+<DocLink to="cli-reference">CLI reference</DocLink>. If you do, you're ready for the
+<DocLink to="quickstart">quickstart</DocLink>.
+
+<Callout type="note" title="The single binary is still on the way">
+  Relay's design ships as one self-contained macOS binary via Node SEA. That packaging is a deferred
+  milestone — a viability smoke test passed, but nothing Relay does today depends on the binary. For
+  now, the `node dist/index.js` route above is the supported way to run it.
+</Callout>

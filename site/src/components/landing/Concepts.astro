@@ -1,0 +1,197 @@
+---
+/**
+ * Concepts: the five ideas that carry Relay, as a card grid. Each card maps to
+ * a spec concept (outcomes, the loop, the evidence-only critic, evidence, the
+ * decision inbox) and is written standalone — no assumed knowledge, grounded in
+ * docs/relay-spec.md.
+ *
+ * Phase-1 scope: structure + copy. Hover/focus accents and responsive polish
+ * land in Phase 2.
+ */
+import Eyebrow from '../Eyebrow.astro';
+import CursorHeading from '../CursorHeading.astro';
+import PixelDots from '../PixelDots.astro';
+
+const concepts = [
+  {
+    name: 'Outcomes',
+    body: 'A verifiable statement of done — what to achieve and how to check it. You write outcomes, not step-by-step plans; capable models decide the route just in time.',
+  },
+  {
+    name: 'The loop',
+    body: 'One shape at every level of the tree: an outcome fans out to orchestrators and agents, then converges on a gate. The same loop runs the whole run, top to bottom.',
+  },
+  {
+    name: 'The independent critic',
+    body: 'A separate, cross-provider judge rules done-ness — by default a different model than the one that did the work, so a single blind spot can’t both produce and bless the same mistake.',
+  },
+  {
+    name: 'Evidence',
+    body: 'The critic sees evidence only — the outcome spec, the diff, the captured proof — never the worker’s self-report. A false "done" is the dangerous one, so the judge never reads the worker’s story.',
+  },
+  {
+    name: 'The decision inbox',
+    body: 'The one inbound channel. Anything that genuinely needs you — an irreversible gate, an ambiguous call — is surfaced here and waits. Relay never auto-resolves it and never silently swallows it.',
+  },
+];
+---
+
+<section class="concepts seam" aria-labelledby="concepts-heading">
+  <div class="concepts__inner reveal">
+    <div class="concepts__seam"><PixelDots rows={3} cols={6} /></div>
+    <header class="concepts__head">
+      <Eyebrow marker>The vocabulary</Eyebrow>
+      <CursorHeading as="h2" id="concepts-heading">Five ideas carry the whole system.</CursorHeading
+      >
+      <p class="concepts__lead">
+        Relay is small at its core. Learn these five and the rest of the system reads as
+        applications of them.
+      </p>
+    </header>
+
+    <ul class="concepts__grid" role="list">
+      {
+        concepts.map((c, i) => (
+          <li class="concepts__card">
+            <span class="concepts__index" aria-hidden="true">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <h3 class="concepts__name">{c.name}</h3>
+            <p class="concepts__body">{c.body}</p>
+          </li>
+        ))
+      }
+      {/* Decorative cell that squares off the lattice and carries a pixel mark. */}
+      <li class="concepts__card concepts__card--fill" aria-hidden="true">
+        <PixelDots rows={3} cols={4} />
+      </li>
+    </ul>
+  </div>
+</section>
+
+<style>
+  /* Span the page rails: horizontal padding = the rail inset, so the lattice's
+     outer edges land exactly on the content-column rails (no inset double-grid).
+     The content box now runs rail-to-rail at every viewport width. */
+  .concepts__inner {
+    position: relative;
+    padding: clamp(3.5rem, 8vw, 6rem) var(--rail-inset);
+  }
+
+  /* Pixel-dot flourish at the top-right, sitting just inside the right rail. */
+  .concepts__seam {
+    position: absolute;
+    top: clamp(1.75rem, 4vw, 3rem);
+    right: var(--rail-inset);
+  }
+  @media (max-width: 39.99rem) {
+    .concepts__seam {
+      display: none;
+    }
+  }
+
+  /* Inset the header gutter to match the cell padding, so the heading aligns
+     with the first column's content rather than sitting on the rail. */
+  .concepts__head {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    max-width: 46rem;
+    padding-inline: 1.5rem;
+  }
+  .concepts__lead {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  /* Drawn lattice — not literal cards. Shared hairlines form the cells; the
+     outer frame comes from the container's top/left + the cells' right/bottom,
+     so every rule is single-width. No fills, no radius. */
+  .concepts__grid {
+    list-style: none;
+    margin: 2.5rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+  @media (min-width: 40rem) {
+    .concepts__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (min-width: 64rem) {
+    .concepts__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .concepts__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem;
+    transition: background-color 0.2s ease;
+  }
+  /* `+` registration mark sitting on each cell's top-left intersection. */
+  .concepts__card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    transform: translate(-50%, -50%);
+    background:
+      linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat,
+      linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    pointer-events: none;
+  }
+  .concepts__card:hover {
+    background: color-mix(in oklab, var(--accent) 6%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .concepts__card {
+      transition: none;
+    }
+  }
+
+  /* Filler cell: closes the rectangle at 2/3-up; collapses when stacked. */
+  .concepts__card--fill {
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (min-width: 40rem) {
+    .concepts__card--fill {
+      display: flex;
+    }
+  }
+
+  .concepts__index {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent-ink);
+  }
+  .concepts__name {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .concepts__body {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+</style>

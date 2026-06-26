@@ -1,0 +1,190 @@
+@import 'tailwindcss';
+
+/* ── Self-hosted Geist (variable woff2, full 100–900 weight axis) ──────────
+   Served from public/fonts at the project base path. No external font
+   requests — the site works fully offline. */
+@font-face {
+  font-family: 'Geist';
+  src: url('/relay/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/relay/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Semantic color tokens ─────────────────────────────────────────────────
+   Dark is the default (bare :root), light overrides via [data-theme='light'].
+   One source of truth: every color below is consumed through the @theme inline
+   block so Tailwind utilities and raw CSS resolve the SAME runtime variable,
+   and a theme flip updates both at once. */
+:root,
+[data-theme='dark'] {
+  --base: #0b0b0d; /* page background */
+  --surface: #131317; /* cards / elevated panels */
+  --surface-2: #1a1a1f; /* raised-on-surface */
+  --text: #ededf0; /* primary text (near-white) */
+  --muted: #8b8b94; /* secondary text — AA 5.7:1 on base */
+  --border: #26262c; /* hairline borders */
+  --grid-line: rgba(255, 255, 255, 0.06); /* persistent grid rules */
+  --grid-cross: rgba(255, 255, 255, 0.26); /* `+` marks at line crossings — read above the rules */
+  --accent: #34d399; /* signal green — cursor, dots, CTA fills, focus */
+  --accent-soft: rgba(52, 211, 153, 0.14); /* tinted fills / hover wash */
+  --accent-ink: #34d399; /* accent as readable text/glyph — AA in both themes (brand --accent is too light on white) */
+  --link: #34d399; /* link/body accent text — AA 10:1 on base */
+  --selection: rgba(52, 211, 153, 0.28);
+
+  /* Content-grid geometry: the x-inset of the vertical rails from each edge —
+     the 72rem content-column edge on wide viewports, a 1.5rem gutter below it.
+     Shared by the rails (BaseLayout) and the section seams so every `+` lands
+     exactly on a rail. */
+  --rail-inset: max(1.5rem, calc(50% - 36rem));
+}
+
+[data-theme='light'] {
+  --base: #fcfcfb;
+  --surface: #f4f4f3;
+  --surface-2: #ebebe9;
+  --text: #18181b;
+  --muted: #5c5c66; /* AA 7:1 on base */
+  --border: #e3e3e0;
+  --grid-line: rgba(0, 0, 0, 0.07);
+  --grid-cross: rgba(0, 0, 0, 0.22); /* `+` marks at line crossings — read above the rules */
+  --accent: #10b981; /* deeper, saturated green — reads on white */
+  --accent-soft: rgba(16, 185, 129, 0.12);
+  --accent-ink: #047857; /* darker green — accent text/glyph stays AA on near-white */
+  --link: #047857; /* AA 5.5:1 on base for link text */
+  --selection: rgba(16, 185, 129, 0.2);
+}
+
+/* `inline` so utilities reference the live --token (not a frozen copy),
+   making runtime theme switching flip every generated utility. */
+@theme inline {
+  --color-base: var(--base);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-grid-line: var(--grid-line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-link: var(--link);
+}
+
+/* ── Type + rhythm tokens (static across themes) ───────────────────────────
+   Hybrid system: sans for body/long-form, mono for wordmark/labels/code. */
+@theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+
+  /* Display scale for hero/section headings */
+  --text-display: 4rem;
+  --text-display--line-height: 1.04;
+  --text-display--letter-spacing: -0.02em;
+  --text-display-sm: 2.5rem;
+  --text-display-sm--line-height: 1.1;
+  --text-display-sm--letter-spacing: -0.015em;
+
+  /* Spacing rhythm: the grid gutter every techy-motif aligns to */
+  --spacing-gutter: 1.5rem;
+}
+
+/* ── Base element defaults ─────────────────────────────────────────────────*/
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  /* Safety net for sub-pixel grid bleed. GridFrame now suppresses the `+` marks
+     on its extreme-edge lines (the real fix — see GridFrame.astro), so the only
+     thing that can still cross the viewport edge is the 0.5px line-centering
+     transform. Clip (not hidden) absorbs it without creating a scroll
+     container, so the sticky header keeps working. */
+  overflow-x: clip;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: var(--base);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Pairs with html overflow-x:clip; see the note there. */
+  overflow-x: clip;
+}
+
+::selection {
+  background-color: var(--selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Entrance motion ───────────────────────────────────────────────────────
+   Progressive enhancement: elements marked `.reveal` start hidden and fade up
+   as they scroll into view. The hidden state is gated on `html.reveal-on`,
+   which an inline head script sets ONLY when JS runs and motion is allowed — so
+   with JS disabled, or under prefers-reduced-motion, nothing is ever hidden and
+   the page renders fully static. The IntersectionObserver adds `.is-revealed`. */
+html.reveal-on .reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  will-change: opacity, transform;
+}
+html.reveal-on .reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.reveal-on .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── Section seam ───────────────────────────────────────────────────────────
+   A full-bleed horizontal rule at a section's top edge that crosses the two
+   content-column rails, dropping a `+` registration mark on each crossing.
+   Applied to section roots; pairs with `.page-rails` to draw the page's
+   content-anchored grid. */
+.seam {
+  position: relative;
+  border-top: 1px solid var(--border);
+}
+.seam::before,
+.seam::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--grid-cross), var(--grid-cross)) center / 100% 1px no-repeat,
+    linear-gradient(var(--grid-cross), var(--grid-cross)) center / 1px 100% no-repeat;
+}
+.seam::before {
+  left: var(--rail-inset);
+}
+.seam::after {
+  left: calc(100% - var(--rail-inset));
+}

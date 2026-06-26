@@ -1,0 +1,154 @@
+---
+/**
+ * MobileNav: the small-screen disclosure for the primary nav. A hamburger
+ * button toggles a panel of the same links the desktop Header shows (sourced
+ * from the shared nav config). Visible only below the `md` breakpoint; the
+ * desktop nav takes over at `md+`.
+ *
+ * Pure inline JS — no framework — so it works without hydration: the button
+ * flips `data-open` on the root and `aria-expanded` on itself.
+ */
+import { nav } from '../config/nav.ts';
+---
+
+<div class="mobile-nav md:hidden" data-mobile-nav>
+  <button
+    type="button"
+    class="mobile-nav__trigger"
+    aria-label="Open navigation menu"
+    aria-expanded="false"
+    aria-controls="mobile-nav-panel"
+    data-mobile-nav-trigger
+  >
+    <svg class="mobile-nav__icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <line class="mobile-nav__bar mobile-nav__bar--top" x1="3.5" y1="7" x2="20.5" y2="7"></line>
+      <line class="mobile-nav__bar mobile-nav__bar--mid" x1="3.5" y1="12" x2="20.5" y2="12"></line>
+      <line class="mobile-nav__bar mobile-nav__bar--bot" x1="3.5" y1="17" x2="20.5" y2="17"></line>
+    </svg>
+  </button>
+
+  <div class="mobile-nav__panel" id="mobile-nav-panel" hidden>
+    <ul class="mobile-nav__list">
+      {
+        nav.map((link) => (
+          <li>
+            <a
+              class="mobile-nav__link"
+              href={link.href}
+              {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</div>
+
+<style>
+  .mobile-nav__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .mobile-nav__trigger:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .mobile-nav__bar {
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    transform-origin: center;
+    transition:
+      transform 0.18s ease,
+      opacity 0.18s ease;
+  }
+  [data-open] .mobile-nav__bar--top {
+    transform: translateY(5px) rotate(45deg);
+  }
+  [data-open] .mobile-nav__bar--mid {
+    opacity: 0;
+  }
+  [data-open] .mobile-nav__bar--bot {
+    transform: translateY(-5px) rotate(-45deg);
+  }
+
+  .mobile-nav__panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 50;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .mobile-nav__list {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem var(--spacing-gutter);
+  }
+
+  .mobile-nav__link {
+    display: block;
+    padding: 0.75rem 0;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: var(--text);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-nav__list li:last-child .mobile-nav__link {
+    border-bottom: 0;
+  }
+  .mobile-nav__link:hover {
+    color: var(--accent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-nav__bar {
+      transition: none;
+    }
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    var root = document.querySelector('[data-mobile-nav]');
+    if (!root) return;
+    var trigger = root.querySelector('[data-mobile-nav-trigger]');
+    var panel = root.querySelector('#mobile-nav-panel');
+    function setOpen(open) {
+      if (open) root.setAttribute('data-open', '');
+      else root.removeAttribute('data-open');
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      trigger.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
+      panel.hidden = !open;
+    }
+    trigger.addEventListener('click', function () {
+      setOpen(root.getAttribute('data-open') === null);
+    });
+    // Close on Escape and on viewport growth past the mobile breakpoint.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && root.getAttribute('data-open') !== null) setOpen(false);
+    });
+    window.matchMedia('(min-width: 48rem)').addEventListener('change', function (e) {
+      if (e.matches) setOpen(false);
+    });
+  })();
+</script>

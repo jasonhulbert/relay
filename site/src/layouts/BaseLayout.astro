@@ -1,0 +1,167 @@
+---
+/**
+ * BaseLayout: the site shell every page renders through. Owns the document head
+ * (meta, fonts via global.css, the no-flash ThemeScript), the persistent
+ * GridFrame backdrop, the sticky Header (with its empty search seam), and the
+ * Footer.
+ *
+ * Slots:
+ *  - default: page content, placed inside <main>
+ *  - search: forwarded to the Header search seam (child 04 fills with Pagefind)
+ *  - head: extra <head> elements (per-page meta, etc.)
+ *
+ * Props:
+ *  - title: document <title>
+ *  - description: meta description
+ *  - mainClass: extra classes on <main> (e.g. width constraints for prose)
+ */
+import '../styles/global.css';
+import ThemeScript from '../components/ThemeScript.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Search from '../components/Search.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  mainClass?: string;
+  /* Draw the content-anchored grid rails down <main>. Opt-in (landing) so the
+     docs layout, which has its own column structure, is unaffected. */
+  rails?: boolean;
+  /* Include this page's content in the Pagefind search index. Default true;
+     set false for dev-only/scaffolding routes that shouldn't surface in search. */
+  index?: boolean;
+}
+
+const {
+  title,
+  description = 'Outcome-driven agent orchestration — terminal-native by design.',
+  mainClass = '',
+  rails = false,
+  index = true,
+} = Astro.props;
+
+const faviconHref = `${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/{2,}/g, '/');
+
+/* Self-hosted Geist woff2 (declared in global.css). Preloaded here so the
+   variable fonts are fetched at the highest priority and are ready by first
+   paint — closing the font-swap reflow that `font-display: swap` would
+   otherwise produce when the brand metrics replace the system fallback. */
+const fontPreloads = [
+  `${import.meta.env.BASE_URL}/fonts/Geist-Variable.woff2`,
+  `${import.meta.env.BASE_URL}/fonts/GeistMono-Variable.woff2`,
+].map((href) => href.replace(/\/{2,}/g, '/'));
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" href={faviconHref} />
+    {
+      fontPreloads.map((href) => (
+        <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />
+      ))
+    }
+    <title>{title}</title>
+    <ThemeScript />
+    <slot name="head" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <Header>
+        {
+          /* Fill the header search seam with Pagefind site-wide. Every page
+            renders through BaseLayout, so mounting Search here is the single
+            integration point (child 04 filling child 01's documented seam). */
+        }
+        <Search slot="search" />
+      </Header>
+
+      {
+        /* data-pagefind-body scopes the search index to page content, so the
+          header/footer/nav chrome isn't indexed into every page's results.
+          Omitted when index=false so dev-only routes stay out of the index. */
+      }
+      <main class={`site-main ${mainClass}`.trim()} data-pagefind-body={index ? true : undefined}>
+        {
+          /* Content-anchored grid rails: two continuous vertical rules at the
+            content-column edges, in the document flow so they scroll WITH the
+            page. Section seams (`.seam`) cross them and drop `+` marks at the
+            content-aligned intersections. Not a fixed backdrop. */
+        }
+        {
+          rails && (
+            <div class="page-rails" aria-hidden="true">
+              <span class="page-rails__rail page-rails__rail--l" />
+              <span class="page-rails__rail page-rails__rail--r" />
+            </div>
+          )
+        }
+        <slot />
+      </main>
+
+      <Footer />
+    </div>
+  </body>
+</html>
+
+<style>
+  .site-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* Stacking context so the rails (z-index:-1) sit behind the page content but
+     within <main>, scrolling with it. */
+  .site-main {
+    position: relative;
+    z-index: 0;
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .page-rails {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .page-rails__rail {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .page-rails__rail--l {
+    left: var(--rail-inset);
+  }
+  .page-rails__rail--r {
+    right: var(--rail-inset);
+  }
+  /* `+` registration marks where each rail begins/ends — the grid's outer
+     corners (top at the hero, bottom at the final section). */
+  .page-rails__rail::before,
+  .page-rails__rail::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    width: 11px;
+    height: 11px;
+    background:
+      linear-gradient(var(--grid-cross), var(--grid-cross)) center / 100% 1px no-repeat,
+      linear-gradient(var(--grid-cross), var(--grid-cross)) center / 1px 100% no-repeat;
+  }
+  .page-rails__rail::before {
+    top: 0;
+    transform: translate(-50%, -50%);
+  }
+  .page-rails__rail::after {
+    bottom: 0;
+    transform: translate(-50%, 50%);
+  }
+</style>

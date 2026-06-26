@@ -1,0 +1,94 @@
+---
+/**
+ * PillButton: a rounded mono pill with a leading `+` glyph. Renders as an
+ * anchor when `href` is set, otherwise a button.
+ *
+ * Variants:
+ *  - primary: accent-green fill (key CTAs)
+ *  - secondary: neutral outline
+ *
+ * Props:
+ *  - href: when set, render an <a>
+ *  - variant: 'primary' | 'secondary' (default 'primary')
+ *  - type: button type when no href (default 'button')
+ *  - target / rel: forwarded to the anchor for external links
+ *  - class: extra classes on the root
+ */
+interface Props {
+  href?: string;
+  variant?: 'primary' | 'secondary';
+  type?: 'button' | 'submit' | 'reset';
+  target?: string;
+  rel?: string;
+  class?: string;
+}
+
+const { href, variant = 'primary', type = 'button', class: className = '', ...rest } = Astro.props;
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class={`pill pill--${variant} ${className}`.trim()}
+  href={href}
+  type={href ? undefined : type}
+  {...rest}
+>
+  <span class="pill__glyph" aria-hidden="true">+</span>
+  <span class="pill__label"><slot /></span>
+</Tag>
+
+<style>
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.6rem 1.1rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .pill:active {
+    transform: translateY(1px);
+  }
+
+  .pill__glyph {
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  /* Primary: accent fill with a fixed dark label that reads on green in
+     both themes (avoids the white-on-light-green AA trap). */
+  .pill--primary {
+    background-color: var(--accent);
+    color: #06120c;
+  }
+  .pill--primary:hover {
+    background-color: color-mix(in oklab, var(--accent) 88%, white);
+  }
+  .pill--primary .pill__glyph {
+    opacity: 0.65;
+  }
+
+  .pill--secondary {
+    background-color: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .pill--secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--accent-soft);
+  }
+</style>

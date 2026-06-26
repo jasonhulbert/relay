@@ -1,6 +1,9 @@
 # Relay
 
 [![CI](https://github.com/jasonhulbert/relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jasonhulbert/relay/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-online-34d399)](https://jasonhulbert.github.io/relay/)
+
+**Operator docs:** [jasonhulbert.github.io/relay](https://jasonhulbert.github.io/relay/) — quickstart, concepts, and the CLI reference.
 
 ## What is Relay?
 
