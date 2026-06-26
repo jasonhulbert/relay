@@ -1,0 +1,90 @@
+---
+title: Writing good outcomes
+description: How to specify an outcome Relay can actually verify — a checkable goal plus grounded verifications — with concrete before/after examples.
+group: Concepts
+order: 2
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+Relay is only as good as the outcome you give it. An outcome it can't verify is an
+outcome it can't finish. This page is the practical guide to writing one.
+
+## An outcome is a goal plus its checks
+
+When you start a run, intake compiles your input into a **seed** with three parts:
+
+- the **outcome** — one verifiable statement of what "done" means;
+- its **verifications** — the grounded checks that decide done-ness (at least one, and
+  each must carry grounding);
+- a **non-binding sketch** — optional orientation the orchestrator is free to ignore.
+
+The first two are the contract. The sketch is only a hint.
+
+## Make the outcome checkable
+
+The test of a good outcome: could a critic that sees only the diff and some evidence
+rule on it? If not, it's a vibe, not an outcome.
+
+<CodeBlock
+  lang="text"
+  filename="not an outcome"
+  code={`Refactor the auth module.
+Make the dashboard faster.
+Clean up the API.`}
+/>
+
+<CodeBlock
+  lang="text"
+  filename="verifiable outcomes"
+  code={`Auth tests pass and no public API signature changed.
+The dashboard's first paint is under 1s on the sample dataset, by the existing perf test.
+Every endpoint in routes/ has a request-validation schema and the schema test passes.`}
+/>
+
+Each of the good ones names a state you can check and implies how to check it.
+
+## Ground every check
+
+A verification carries a kind, the check itself, and **grounding** — why this check
+proves the outcome. Grounding is required: intake rejects a seed whose check cites none,
+and the critic rejects a verdict that cites no evidence.
+
+Relay grades evidence cheapest-first — reach for the simplest check that actually proves
+the point:
+
+- **a command** that exits cleanly (a linter, a build);
+- **a test** that passes;
+- **an artifact or state assertion** (a file exists, a row is written);
+- **a visual judgment** for UI outcomes (a screenshot graded at a chosen granularity);
+- **a cross-provider review** of the diff;
+- **a human gate**, for the irreversible or ambiguous call.
+
+<Callout type="note" title="Prefer a command or a test">
+  The cheapest grounded check that proves the outcome is the best one. A passing test is a sharper
+  contract than a paragraph of description, and it's the kind of evidence the critic trusts most
+  directly.
+</Callout>
+
+## Let the loop find the route
+
+State the destination, not the turns. A good outcome says nothing about _how_ — which
+files to touch, what order to work in. That is the orchestrator's job to decide and the
+critic's to verify. If you find yourself writing steps, move them into the sketch, where
+they stay non-binding, and keep the outcome about the end state.
+
+## Two ways to seed a run
+
+Interactive intake is the better path when the outcome is fuzzy — it asks just enough to
+pin the checks down, then stops:
+
+<CodeBlock lang="bash" code={`relay run`} />
+
+Reach for `--outcome` when you already know exactly what "done" means; it compiles a
+grounded seed from one line, no questions asked:
+
+<CodeBlock
+  lang="bash"
+  code={`relay run --outcome "Auth tests pass and no public API signature changed"`}
+/>

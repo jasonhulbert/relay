@@ -1,0 +1,100 @@
+---
+title: 'Quickstart: your first run'
+description: Run a real outcome end to end with relay run — from intake to a verified relay/<runId> branch — and watch it in the read-only web view.
+group: Getting Started
+order: 3
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import NumberedSteps from '../../components/NumberedSteps.astro';
+
+This walks a real `relay run` from a one-line outcome to a reviewable branch. It assumes
+you've installed Relay and have the executor CLIs authenticated.
+
+## Start a run
+
+From the root of the project you want to change:
+
+<CodeBlock
+  lang="bash"
+  code={`relay run --outcome "Add a /health endpoint that returns 200 and a JSON status"`}
+/>
+
+`--outcome` is the non-interactive path: Relay compiles your one line into a grounded
+seed in a single model call, no questions asked. Omit it to be **grilled
+interactively** — a bounded conversation that asks just enough to compile the same seed,
+then stops.
+
+<Callout type="note" title="Run it on a clean git branch">
+  Relay lands its result as a branch off your current commit and leaves your working tree untouched
+  — but only when the workspace is a clean git repo. Commit or stash first. A dirty or non-git
+  workspace still runs; it just delivers the result as a patch file instead (more below).
+</Callout>
+
+## What happens
+
+<NumberedSteps
+  steps={[
+    {
+      title: 'Intake compiles a seed',
+      body: 'Your outcome becomes a run seed: the verifiable outcome, the grounded checks that decide "done", and a non-binding sketch. Interactive intake grills you for it; --outcome compiles it in one shot.',
+    },
+    {
+      title: 'The orchestrator decomposes and runs',
+      body: 'Relay commits a childless root, decomposes one layer of work, and dispatches it to fresh claude -p / codex exec executors, each in its own worktree seeded from your project.',
+    },
+    {
+      title: 'An independent critic gates the result',
+      body: 'A cross-provider critic judges the captured diff against your outcome on evidence alone. On failure the orchestrator retries, swaps provider, or raises the model tier before giving up.',
+    },
+    {
+      title: 'Relay lands the verified result',
+      body: 'When the root is done, the change is persisted as patch evidence and re-derived into a relay/<runId> branch — one commit off a per-run base, your HEAD untouched.',
+    },
+  ]}
+/>
+
+## Review the branch
+
+When the root is done, the recap prints the branch name (your first run is
+`relay/run-1`) and the exact commands to review and take it:
+
+<CodeBlock
+  lang="bash"
+  code={`git diff <base>..relay/run-1     # review what landed (the recap prints the real base)
+git merge relay/run-1            # take it`}
+/>
+
+<Callout type="warn" title="A dirty tree gets a patch, not a branch — loudly">
+  If your workspace has uncommitted changes, isn't a git repo, or the verified patch doesn't apply,
+  Relay does not invent a branch. It writes the verified result as a patch file, prints the reason,
+  and exits non-zero. The result is never silently dropped or silently force-applied.
+</Callout>
+
+## Watch it in the browser
+
+While a run is in progress — or after it finishes — open the read-only web view of the
+run's record:
+
+<CodeBlock lang="bash" code={`relay web`} />
+
+It serves a projection of the run on `http://127.0.0.1:4317` (override with `--port`).
+It is strictly read-only: the live tree, each node's verdict and diff, and the decision
+inbox — never a control surface. Stop it with Ctrl-C.
+
+## Exit codes
+
+Relay is scriptable and fails loud:
+
+- **0** — the root reached done and the result landed as a branch.
+- **1** — the run did not reach done, or it finished but delivered a patch instead of a
+  branch.
+- **2** — a usage error, such as an unknown flag or a missing required argument.
+
+<Callout type="note" title="Deeper runs are emergent">
+  A first run usually resolves to a single layer of leaf work, which is what lands as a branch
+  today. Larger outcomes decompose further over successive activations into a tree of orchestrators;
+  branch apply-back for those deeper trees is still being wired, so they currently leave their
+  verified result in the run record rather than on a branch.
+</Callout>
