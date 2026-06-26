@@ -1,0 +1,108 @@
+---
+title: CLI reference
+description: Every Relay command and flag — run, dev-run, and web — with the real defaults, the per-role provider knobs, and the exit codes, grounded in the CLI itself.
+group: Reference
+order: 1
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+Relay has three commands — `run`, `dev-run`, and `web` — plus the usual version and
+help globals. This page lists every flag and its real default. Everything here matches
+the CLI's own `--help`.
+
+<CodeBlock
+  lang="bash"
+  code={`relay [command] [options]
+relay --help        # the full synopsis
+relay --version     # print the version and exit`}
+/>
+
+## Global options
+
+- **`-v`, `--version`** — print the version and exit.
+- **`-h`, `--help`** — print the usage synopsis and exit.
+
+Both short-circuit before any command runs, and exit `0`.
+
+## relay run
+
+The real entry point. It grills intake to a seed (or compiles one from `--outcome`),
+commits a childless root, lets the orchestrator decompose and execute it, and applies the
+verified result back as a `relay/<runId>` branch.
+
+<CodeBlock
+  lang="bash"
+  code={`relay run --outcome "Add a /health endpoint that returns 200 and a JSON status"`}
+/>
+
+- **`--project <path>`** — the project to run for. Default: the current directory.
+- **`--outcome <text>`** — compile a grounded seed from this one line and skip interactive
+  intake. Omit it to be grilled interactively instead.
+- **`--provider claude|codex`** — the primary executor (the author of the change).
+  Default: `claude`.
+- **`--model <name>`** — override the executor model. Default: the provider's cheapest
+  model.
+- **`--critic-provider claude|codex`** — the independent critic's provider. Default: the
+  _other_ provider from `--provider`, so the judge and the author never share a backend.
+- **`--critic-model <name>`** — override the critic model. Default: the provider's cheapest
+  model.
+- **`--brain-provider claude|codex`** — the provider for decomposition judgments. Default:
+  the same as `--provider` (the author).
+- **`--brain-model <name>`** — override the brain model. Default: the provider's cheapest
+  model.
+
+<Callout type="note" title="A default run uses both backends">
+  Because the critic defaults to the other provider, a plain `relay run` expects both `claude` and
+  `codex` to be installed and authenticated. If you only have one, pin `--critic-provider` to match
+  `--provider`.
+</Callout>
+
+## relay dev-run
+
+A dev and eval harness, not the real entry point. It hand-seeds a **single-leaf** root —
+no intake, no decomposition — and drives the real orchestrator against this project's
+store, then prints a recap. Reach for it to exercise the loop against a fixed outcome.
+
+<CodeBlock
+  lang="bash"
+  code={`relay dev-run --outcome "the build passes" --check "npm run build"`}
+/>
+
+- **`--outcome <text>`** — **required.** The single leaf's outcome.
+- **`--check <command>`** — the leaf's command verification. Default: an always-pass check.
+- **`--project <path>`** — the project to run for. Default: the current directory.
+- **`--provider`, `--model`, `--critic-provider`, `--critic-model`, `--brain-provider`,
+  `--brain-model`** — identical to `run`, with the same defaults.
+
+## relay web
+
+Serve the read-only web view of this project's store in a browser. It renders the run
+record and never writes to it.
+
+<CodeBlock lang="bash" code={`relay web --port 4317`} />
+
+- **`--project <path>`** — the project whose store to render. Default: the current
+  directory.
+- **`--port <n>`** — the port to bind, on loopback only (`127.0.0.1`). Default: `4317`.
+
+`web` resolves an existing store and never creates one. If the project has no store yet —
+no `manifest.md` — it prints the reason and exits non-zero rather than serving an empty
+page. Run a run for the project first.
+
+## Exit codes
+
+Relay is scriptable and fails loud:
+
+- **0** — the root reached done and the result landed as a branch.
+- **1** — the run did not reach done, or it finished but delivered a patch instead of a
+  branch.
+- **2** — a usage error, such as an unknown flag, an invalid value, or a missing required
+  argument.
+
+<Callout type="note" title="Deeper runs are still emergent">
+  A run decomposes one layer at a time and deepens lazily over successive activations. Branch
+  apply-back for the deeper trees that emerge is still being wired, so today those runs leave their
+  verified result in the run record rather than on a branch — a non-zero exit, never a silent drop.
+</Callout>

@@ -1,0 +1,81 @@
+---
+title: Troubleshooting & FAQ
+description: The failures you're most likely to hit — a patch instead of a branch, a missing store, a missing executor — and the questions operators ask, each answered against how Relay actually behaves.
+group: Reference
+order: 3
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+Relay is built to fail loud, so most problems announce themselves with a clear message and
+a non-zero exit. This page collects the common ones and the questions that come up early.
+
+## Common failures
+
+### My result came back as a patch, not a branch
+
+Relay only lands a `relay/<runId>` branch when the workspace is a clean git repo. If your
+tree has uncommitted changes, isn't a git repo, or the verified patch doesn't apply
+cleanly, Relay does not invent a branch. It writes the verified result as a patch file,
+prints the reason, and exits `1`. The work isn't lost — it's in the patch, named in the
+recap. Commit or stash your changes and run again to get a branch.
+
+### relay web says there's no store
+
+`relay web` renders an existing run record; it never creates one. If you haven't run
+anything for this project yet, there's no `manifest.md` to serve, so `web` prints the path
+it looked for and exits. Run a run for the project first, then point `web` at it.
+
+### The run exited non-zero but seemed to work
+
+Two different outcomes share exit `1`: the run didn't reach done, or it reached done but
+delivered a patch instead of a branch. The recap printed just above the exit tells you
+which. A usage error — an unknown flag, a bad value, a missing required argument — is exit
+`2` instead.
+
+### A run can't find claude or codex
+
+The executors are the real coding backends, and Relay shells out to them. Both `claude`
+and `codex` must be installed, on your `PATH`, and authenticated. A default run needs both,
+because the critic runs on the opposite backend from the author.
+
+## FAQ
+
+### Do I need both Claude Code and Codex?
+
+For a default run, yes. The critic defaults to the _other_ provider from the executor, so
+the judge and the author never share a backend. If you only have one installed, pin the
+critic to it:
+
+<CodeBlock lang="bash" code={`relay run --provider claude --critic-provider claude`} />
+
+### How do I watch or review a run?
+
+Use `relay web`. It serves a strictly read-only projection of the run on
+`http://127.0.0.1:4317` — the live tree, each node's verdict and evidence, and any blocked
+decisions — recomposed from disk on every request. It never changes the run.
+
+### How do I resolve a blocked decision?
+
+A decision only a human can make is surfaced as a blocked node, with a reason and a
+human-facing message. The web view shows it but is display-only — resolution flows through
+the run's decision inbox, which the orchestrator reads and drains on each activation.
+
+<Callout type="warn" title="A correctable failure is always surfaced">
+  Relay never quietly works around a mismatch you could have fixed. Anything genuinely yours to
+  decide is raised for you and waited on — never auto-resolved, never silently swallowed.
+</Callout>
+
+### Why didn't a big outcome decompose into a branch?
+
+A run deepens lazily — it decomposes one layer at a time over successive activations, and a
+piece judged too big is promoted and split further on its next pass. Branch apply-back for
+those deeper trees is still being wired, so a run that grows past a single layer currently
+leaves its verified result in the run record rather than on a branch.
+
+### Where does Relay keep its state?
+
+In a per-project store of plain Markdown files. `relay web` is the supported way to read
+it; the run record is the durable system of record, and the orchestrator is a stateless
+view over it.

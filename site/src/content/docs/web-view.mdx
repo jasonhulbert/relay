@@ -1,0 +1,79 @@
+---
+title: The web view & decision inbox
+description: relay web serves a strictly read-only projection of a run — the live tree, each node's verdict and evidence, the supervisor detail, and the decision inbox — recomposed from disk on every request.
+group: Reference
+order: 2
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+`relay web` renders a run in a browser. It is a window onto the run record, not a control
+surface: it reads the store and shows you the tree, every verdict, and the decisions
+waiting on you — and it writes nothing back.
+
+## Start it
+
+<CodeBlock lang="bash" code={`relay web`} />
+
+It serves on `http://127.0.0.1:4317` — loopback only, override the port with `--port` —
+and recomposes the page from disk on every request, so a refresh always reflects the
+current state. Stop it with Ctrl-C.
+
+The view needs an existing store for the project (a `manifest.md`). If there isn't one
+yet, `web` prints the reason and exits rather than serving an empty page. Run a run first.
+
+## The run view
+
+The index page (`/`) is the whole run at a glance:
+
+- the **root outcome** as the heading, with the run id, root id, and created-at;
+- a **cost rollup** for the run — the total in USD, the number of model calls, and how
+  many of those calls are not yet costed;
+- the **node tree**, nested from the root, and for each node: its status (pending, active,
+  done, blocked, cancelled), its kind (branch or leaf), the provider that judged it, the
+  outcome text, the cost burned on it, and the critic's verdict — pass or fail, with the
+  rationale;
+- an **evidence link** on any node that captured evidence;
+- an **orphans** section listing node files unreachable from the root, if any exist.
+
+## A node in detail
+
+Each node links to its own detail page (`/node/<id>`), the supervisor's read-only view of
+one unit of work. It shows:
+
+- the node's **captured evidence**, one capture at a time, with prev/next links — plain
+  navigation, never a control;
+- the executor's **self-report** and **learnings** (the narrative the critic never sees,
+  surfaced here for the human);
+- the **critic verdict** for the node;
+- for a branch, the **decompose judgment** — the children it split into, each child's
+  declared write footprint, and the seams between them;
+- the referenced **evidence artifacts** themselves, or a plain notice where an artifact is
+  missing.
+
+<Callout type="note" title="The narrative lives here, not in the verdict">
+  The critic rules on evidence alone and never reads the executor's self-report. That self-report
+  isn't discarded, though — it's persisted and shown on the node detail page so a human can read
+  what the worker thought it did, separate from what the critic actually accepted.
+</Callout>
+
+## The decision inbox
+
+When a run hits something only a human can settle — an irreversible or ambiguous gate — it
+surfaces that as a blocked node. The web view shows those inline in the tree, each with its
+reason and a human-facing message, so nothing that needs you is hidden.
+
+<Callout type="warn" title="The web view shows decisions; it doesn't resolve them">
+  The view is display-only. You can see every blocked decision and read why it's blocked, but you
+  cannot resolve one by clicking in the browser — the web view has no write path at all. Resolution
+  happens through the run's decision inbox, which the orchestrator reads and drains; the view is how
+  you see what's waiting, not where you act on it.
+</Callout>
+
+## Read-only by construction
+
+The read-only guarantee isn't a convention, it's enforced. The server answers `GET`
+requests only — any other method gets a `405` — and there is no code path in the view that
+writes to the store. Every page is recomposed from the on-disk record at request time, so
+what you see is always the store as it is right now, and looking at it can never change it.

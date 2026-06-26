@@ -1,0 +1,83 @@
+---
+title: Providers & MCP
+description: How Relay drives Claude Code and Codex as interchangeable executor backends, routes the executor, critic, and brain roles across them, recovers from a bad result, and where MCP fits today.
+group: Advanced
+order: 1
+---
+
+import Callout from '../../components/Callout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+
+Relay does no coding itself. It drives two backends — Claude Code and Codex — behind one
+uniform adapter, routes the different model roles across them, and owns the loop, the
+gates, and every durable write around them.
+
+## Two interchangeable backends
+
+Both executors sit behind the same contract, so the loop treats them identically. Relay
+spawns each as a fresh subprocess in the leaf's worktree:
+
+- **Claude Code** runs as `claude -p`, streaming structured JSON back to Relay.
+- **Codex** runs as `codex exec`, sandboxed to writes inside the worktree.
+
+Each one receives the spec — the outcome and its verifications — plus any prior learnings,
+and returns the **diff** it produced, a narrative **self-report**, and its token usage.
+Relay captures the diff from the worktree with git, never from the model's account of what
+it did.
+
+## The three roles
+
+A run uses up to three model roles, and Relay routes each independently:
+
+- the **executor** (the author) produces the change — `--provider`, default `claude`;
+- the **critic** grades the result on evidence alone — `--critic-provider`, default the
+  _other_ provider from the executor;
+- the **brain** makes the decompose judgment that splits a node one layer —
+  `--brain-provider`, default the same as the executor.
+
+The critic's cross-provider default is the important one: by running the judge on a
+different backend from the author, one model's blind spot can't both write a mistake and
+bless it.
+
+<Callout type="note" title="Each role takes a model override too">
+  `--model`, `--critic-model`, and `--brain-model` set the model per role. With no override, each
+  role runs the provider's cheapest model — a deliberate cost guardrail, since the loop can make
+  many calls. Raise a role's model only where you need it.
+</Callout>
+
+## Recovering from a bad result
+
+When the critic rejects a result, the orchestrator doesn't give up at the first failure —
+it climbs an escalation ladder, one rung per failed attempt:
+
+1. **retry** — re-dispatch on the same provider;
+2. **swap-provider** — flip to the other backend (Claude to Codex, or the reverse);
+3. **raise-tier** — reach for a stronger model;
+4. **promote** — give up on a single leaf and decompose the work into a layer instead.
+
+<Callout type="note" title="The ladder is still filling in">
+  `retry`, `swap-provider`, and `promote` are live. The `raise-tier` rung is wired into the ladder
+  but is currently a same-provider re-dispatch rather than a real model-tier bump — the slot exists,
+  the tier change lands later.
+</Callout>
+
+## Cost
+
+Relay meters every model call — tokens, wall-clock, and dollars where the backend reports
+them — and rolls the totals up per node and per run. You can see that rollup in the web
+view. Claude reports its cost directly and Relay takes it as ground truth; Codex reports
+tokens only today, so its dollar figure isn't derived yet and shows as uncosted in the
+rollup.
+
+## Where MCP fits
+
+MCP — the Model Context Protocol — is the bus through which executors get capabilities:
+the tools and servers a backend may call while it works. Relay knows how to hand a granted
+set of MCP servers to each backend in its own native form — a single config document for
+Claude, per-server config overrides for Codex.
+
+<Callout type="warn" title="MCP grants aren't wired into a run yet">
+  The routing exists, but the code-owned loop that decides and grants capabilities is not built yet.
+  So a run today attaches no MCP servers — executors work with their own built-in tools. This is the
+  current state, stated plainly: the seam is in place, the grant loop on top of it is still to come.
+</Callout>
