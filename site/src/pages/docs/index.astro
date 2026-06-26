@@ -1,0 +1,30 @@
+---
+/**
+ * `/docs` landing — redirects to the first page of the first nav group
+ * (Getting Started), derived from the collection so it follows reordering
+ * automatically. The site builds to static output for GitHub Pages (no server
+ * adapter), so this emits a meta-refresh + JS redirect page rather than
+ * `Astro.redirect()`, which needs a request/response runtime.
+ */
+import { getOrderedDocs } from '../../config/docs.ts';
+import { withBase } from '../../config/nav.ts';
+
+const ordered = await getOrderedDocs();
+const target = withBase(`docs/${ordered[0].id}`);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+    <title>Relay guide</title>
+    <script is:inline define:vars={{ target }}>
+      window.location.replace(target);
+    </script>
+  </head>
+  <body>
+    <p>Redirecting to <a href={target}>the Relay guide</a>.</p>
+  </body>
+</html>

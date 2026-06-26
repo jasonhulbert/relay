@@ -1,32 +1,27 @@
 ---
 /**
  * Docs route — renders each entry in the `docs` collection through DocsLayout.
- * Phase 5 seeds the collection with one page (`what-is-relay`); this route is
- * already general, so child 03's added pages render with no route change.
- *
- * The sidebar nav and prev/next are derived from the collection (sorted by
- * `order`) so they grow automatically as more docs land. The prose styling for
- * the article body lives here as the docs-content baseline child 03 extends.
+ * Ordering, draft-filtering, and sidebar grouping all come from `config/docs.ts`
+ * so this route, the prev/next pager, and the `/docs` index redirect share one
+ * source of truth. Added pages render with no route change — they only set
+ * frontmatter (`group`, `order`). The prose styling for the article body lives
+ * here as the docs-content baseline.
  */
-import { getCollection, render } from 'astro:content';
+import { render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
 import Eyebrow from '../../components/Eyebrow.astro';
 import CursorHeading from '../../components/CursorHeading.astro';
 import { withBase } from '../../config/nav.ts';
+import { getOrderedDocs, buildSidebar } from '../../config/docs.ts';
 
 export async function getStaticPaths() {
-  const entries = await getCollection('docs');
-  const ordered = [...entries].sort((a, b) => a.data.order - b.data.order);
+  const ordered = await getOrderedDocs();
 
   return ordered.map((entry, i) => ({
     params: { slug: entry.id },
     props: {
       entry,
-      sidebar: ordered.map((e) => ({
-        title: e.data.title,
-        href: withBase(`docs/${e.id}`),
-        current: e.id === entry.id,
-      })),
+      sidebarGroups: buildSidebar(ordered, entry.id),
       prev: ordered[i - 1]
         ? { href: withBase(`docs/${ordered[i - 1].id}`), title: ordered[i - 1].data.title }
         : undefined,
@@ -37,7 +32,7 @@ export async function getStaticPaths() {
   }));
 }
 
-const { entry, sidebar, prev, next } = Astro.props;
+const { entry, sidebarGroups, prev, next } = Astro.props;
 const { Content, headings } = await render(entry);
 ---
 
@@ -49,22 +44,26 @@ const { Content, headings } = await render(entry);
   next={next}
 >
   <nav slot="sidebar" class="docs-nav" aria-label="Docs">
-    <p class="docs-nav__title">Guide</p>
-    <ul class="docs-nav__list">
-      {
-        sidebar.map((item) => (
-          <li>
-            <a
-              class="docs-nav__link"
-              href={item.href}
-              aria-current={item.current ? 'page' : undefined}
-            >
-              {item.title}
-            </a>
-          </li>
-        ))
-      }
-    </ul>
+    {
+      sidebarGroups.map((section) => (
+        <div class="docs-nav__group">
+          <p class="docs-nav__title">{section.group}</p>
+          <ul class="docs-nav__list">
+            {section.items.map((item) => (
+              <li>
+                <a
+                  class="docs-nav__link"
+                  href={item.href}
+                  aria-current={item.current ? 'page' : undefined}
+                >
+                  {item.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
   </nav>
 
   <header class="docs-head">
@@ -77,6 +76,9 @@ const { Content, headings } = await render(entry);
 </DocsLayout>
 
 <style>
+  .docs-nav__group:not(:last-child) {
+    margin-bottom: 1.5rem;
+  }
   .docs-nav__title {
     margin: 0 0 0.75rem;
     font-family: var(--font-mono);
