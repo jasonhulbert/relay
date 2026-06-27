@@ -26,3 +26,12 @@ await esbuild.build({
     js: '#!/usr/bin/env node',
   },
 });
+
+await esbuild.build({
+  entryPoints: ['src/spine/child-entry.ts'],
+  outfile: 'dist/child-entry.cjs',
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  target: 'node22',
+});
