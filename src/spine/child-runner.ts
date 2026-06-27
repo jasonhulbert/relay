@@ -7,6 +7,7 @@
 // piped back.
 import { spawn } from 'node:child_process';
 import type { ChildInjection } from './orchestrator';
+import type { ChildRuntimeConfig } from './child-runtime';
 
 // One child orchestrator invocation.
 export interface ChildSpawnInput {
@@ -17,6 +18,9 @@ export interface ChildSpawnInput {
   // extensionless, bundler-resolved imports, so Node cannot run it directly; the
   // child must be an esbuild bundle (the same shape the SEA binary will take).
   childEntry: string;
+  // Serializable production runtime forwarded to the child process. Test-only
+  // function injection remains local to the parent.
+  childRuntime?: ChildRuntimeConfig;
   // Test-only faults forwarded into the child's own run, as a JSON argv.
   injection?: ChildInjection;
 }
@@ -30,7 +34,13 @@ export interface ChildSpawnResult {
 // guarantee under test); a test may inject a stand-in to isolate the parent's own behavior.
 export type SpawnChild = (input: ChildSpawnInput) => Promise<ChildSpawnResult>;
 
-export const defaultSpawnChild: SpawnChild = ({ relayDir, nodeId, childEntry, injection }) => {
+export const defaultSpawnChild: SpawnChild = ({
+  relayDir,
+  nodeId,
+  childEntry,
+  childRuntime,
+  injection,
+}) => {
   return new Promise((resolve, reject) => {
     if (!childEntry) {
       reject(
@@ -41,8 +51,21 @@ export const defaultSpawnChild: SpawnChild = ({ relayDir, nodeId, childEntry, in
       return;
     }
     const args = [childEntry, relayDir, nodeId];
+    if (childRuntime) {
+      args.push(JSON.stringify(childRuntime));
+    } else if (injection) {
+      args.push('null');
+    }
     if (injection) {
       args.push(JSON.stringify(injection));
+    }
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      RELAY_CHILD_ENTRY: childEntry,
+      NODE_NO_WARNINGS: '1',
+    };
+    if (childRuntime) {
+      env.RELAY_CHILD_RUNTIME_CONFIG = JSON.stringify(childRuntime);
     }
     const child = spawn(process.execPath, args, {
       // stdout is intentionally ignored: the parent reads the child's verdict from
@@ -50,7 +73,7 @@ export const defaultSpawnChild: SpawnChild = ({ relayDir, nodeId, childEntry, in
       // inherited so a crashing child is debuggable.
       stdio: ['ignore', 'ignore', 'inherit'],
       // Propagate the entry so a deeper branch child can spawn its own children.
-      env: { ...process.env, RELAY_CHILD_ENTRY: childEntry, NODE_NO_WARNINGS: '1' },
+      env,
     });
     child.on('error', reject);
     child.on('close', (code) => {

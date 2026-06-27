@@ -77,6 +77,7 @@ import { stubBrain } from './brain';
 import type { Brain, ChildPlan, Decomposition } from './brain';
 import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
+import type { ChildRuntimeConfig } from './child-runtime';
 import { buildSchedule } from './schedule';
 import { FootprintViolation, footprintEscapes } from './footprint';
 import { runIntegrationGate } from './integration-gate';
@@ -168,6 +169,10 @@ export interface RunOptions {
   // RELAY_CHILD_ENTRY env var (which the spawner sets on each child, so deeper
   // levels inherit it). Required only when a branch child must actually spawn.
   childEntry?: string;
+  // Serializable production runtime for spawned branch children. Function
+  // injections stay in-process only; children rebuild real provider adapters from
+  // this payload.
+  childRuntime?: ChildRuntimeConfig;
   // The local price table for per-call cost derivation: used to turn a
   // table-driven provider's token counts (Codex, `costUsd === null`) into dollars.
   // Defaults to `DEFAULT_PRICE_TABLE`; tests inject a fixed table. A Claude call is
@@ -1106,9 +1111,14 @@ async function driveChild(
   const spawnChild = opts.spawnChild ?? defaultSpawnChild;
   const childEntry = opts.childEntry ?? process.env.RELAY_CHILD_ENTRY ?? '';
   const injection = opts.childInjections?.[child.id];
-  const input = injection
-    ? { relayDir, nodeId: child.id, childEntry, injection }
-    : { relayDir, nodeId: child.id, childEntry };
+  const childRuntime = opts.childRuntime;
+  const input = { relayDir, nodeId: child.id, childEntry };
+  if (injection !== undefined) {
+    Object.assign(input, { injection });
+  }
+  if (childRuntime !== undefined) {
+    Object.assign(input, { childRuntime });
+  }
   const { code } = await spawnChild(input);
   if (code !== 0) {
     // A failed child is surfaced by propagating here; the unified failure rule

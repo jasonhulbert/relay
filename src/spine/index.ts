@@ -106,6 +106,12 @@ export { capReached, checkGate, defaultGateConfig, GateRefusal } from './rails';
 export type { RailUsage, RailCaps, CapKind, GatedAction, GateConfig } from './rails';
 export { defaultSpawnChild } from './child-runner';
 export type { SpawnChild, ChildSpawnInput, ChildSpawnResult } from './child-runner';
+export {
+  CHILD_ENTRY_BUNDLE,
+  resolveChildEntry,
+  runOptionsFromChildRuntime,
+} from './child-runtime';
+export type { ChildRuntimeConfig, ResolveChildEntryOptions } from './child-runtime';
 export { seedFixture, seedHierarchy } from './seed';
 export type { SeedOptions, SeedResult, HierarchySeedResult } from './seed';
 // The user-global relay store resolver: real runs persist

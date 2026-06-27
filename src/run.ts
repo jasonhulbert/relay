@@ -35,10 +35,13 @@ import type {
   RunOptions,
 } from './spine/index';
 import type { CallUsage, CriticSpawn } from './relay-state/index';
+import type { McpServerConfig } from './relay-state/index';
 import { readRunUsage } from './relay-state/index';
 import { commitRoot, runIntake } from './intake/index';
 import type { AskHuman, Interviewer, IntakeOptions, IntakeSeed } from './intake/index';
 import type { CommitRootOptions } from './intake/index';
+import { resolveChildEntry } from './spine/child-runtime';
+import type { ChildRuntimeConfig } from './spine/child-runtime';
 
 export interface RelayRunOptions {
   // The project the run is for; its absolute path keys the global store and seeds the
@@ -59,6 +62,8 @@ export interface RelayRunOptions {
   provider?: Provider;
   // Per-role model overrides (the cost-guardrail knobs). Omitted → cheapest default.
   executorModel?: string;
+  // Granted MCP servers to route into provider CLIs.
+  mcpServers?: readonly McpServerConfig[];
   // Which provider renders the independent critic; defaults to the NOT-the-author one,
   // so the critic is cross-provider by default.
   criticProvider?: Provider;
@@ -155,6 +160,7 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
   const criticProvider: Provider = opts.criticProvider ?? otherProvider;
 
   const executor = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
+  const mcpServers = opts.mcpServers ?? [];
 
   const runOpts: RunOptions = {
     executor,
@@ -163,6 +169,7 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
     // The operator's resolved project path: the executor sandbox is seeded from it and
     // the verified result lands back into it (apply-back, inside runOrchestrator).
     projectPath: store.projectPath,
+    mcpServers,
   };
   // The swap-provider rung dispatches under the OTHER provider at its cheapest default;
   // skipped when a test injects its own executor (it then owns swap behavior too).
@@ -182,6 +189,24 @@ export async function relayRun(opts: RelayRunOptions): Promise<RelayRunResult> {
     const brainOpts: AgentBrainOptions = { provider: opts.brainProvider ?? provider };
     if (opts.brainModel !== undefined) brainOpts.model = opts.brainModel;
     runOpts.brain = agentBrain(brainOpts);
+  }
+  if (opts.executor === undefined) {
+    const childEntry = resolveChildEntry();
+    const childRuntime: ChildRuntimeConfig = {
+      projectPath: store.projectPath,
+      workRoot: store.workRoot,
+      provider,
+      swapProvider: otherProvider,
+      criticProvider,
+      brainProvider: opts.brainProvider ?? provider,
+      mcpServers,
+      childEntry,
+    };
+    if (opts.executorModel !== undefined) childRuntime.executorModel = opts.executorModel;
+    if (opts.criticModel !== undefined) childRuntime.criticModel = opts.criticModel;
+    if (opts.brainModel !== undefined) childRuntime.brainModel = opts.brainModel;
+    runOpts.childEntry = childEntry;
+    runOpts.childRuntime = childRuntime;
   }
 
   // 5. Activate the orchestrator on the committed root. It rolls forward any pending
