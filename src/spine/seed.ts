@@ -30,6 +30,10 @@ export interface HierarchySeedResult extends SeedResult {
   midId: string;
 }
 
+export interface DeepHierarchySeedResult extends HierarchySeedResult {
+  grandId: string;
+}
+
 function commandSpec(outcome: string, check: string): OutcomeSpec {
   return {
     outcome,
@@ -160,4 +164,90 @@ export async function seedHierarchy(
   await writeNode(relayDir, root);
 
   return { runId, rootId, midId, leafId };
+}
+
+// Hand-seeded depth-3 fixture: root branch → mid branch → grandchild branch →
+// leaves. This keeps the same deterministic ids/timestamps as the shallower
+// fixtures while proving recursive branch shape without live decomposition.
+export async function seedDeepHierarchy(
+  relayDir: string,
+  opts: SeedOptions & { midId?: string; grandId?: string; leafIds?: readonly string[] } = {},
+): Promise<DeepHierarchySeedResult & { leafIds: readonly string[] }> {
+  const runId = opts.runId ?? 'run-1';
+  const rootId = opts.rootId ?? 'root';
+  const midId = opts.midId ?? 'mid';
+  const grandId = opts.grandId ?? 'grand';
+  const leafIds = opts.leafIds ?? ['leaf-1', 'leaf-2'];
+  const check = opts.check ?? 'true';
+
+  const manifest: RootManifest = {
+    runId,
+    rootId,
+    spec: commandSpec('the seeded deep hierarchy completes end-to-end', check),
+    sketch: { notes: [] },
+    createdAt: '2026-06-18T00:00:00.000Z',
+  };
+  await writeManifest(relayDir, manifest);
+
+  for (const leafId of leafIds) {
+    const leaf: NodeRecord = {
+      id: leafId,
+      parentId: grandId,
+      kind: 'leaf',
+      status: 'pending',
+      spec: commandSpec(`leaf \`${leafId}\` produces its change and passes`, check),
+      children: [],
+      selfReport: null,
+      learnings: [],
+      verdict: null,
+      evidenceRefs: [],
+      blocked: null,
+    };
+    await writeNode(relayDir, leaf);
+  }
+
+  const grand: NodeRecord = {
+    id: grandId,
+    parentId: midId,
+    kind: 'branch',
+    status: 'pending',
+    spec: commandSpec('the grandchild sub-orchestrator integrates its leaves', check),
+    children: [...leafIds],
+    selfReport: null,
+    learnings: [],
+    verdict: null,
+    evidenceRefs: [],
+    blocked: null,
+  };
+  const mid: NodeRecord = {
+    id: midId,
+    parentId: rootId,
+    kind: 'branch',
+    status: 'pending',
+    spec: commandSpec('the mid sub-orchestrator integrates its branch child', check),
+    children: [grandId],
+    selfReport: null,
+    learnings: [],
+    verdict: null,
+    evidenceRefs: [],
+    blocked: null,
+  };
+  const root: NodeRecord = {
+    id: rootId,
+    parentId: null,
+    kind: 'branch',
+    status: 'pending',
+    spec: commandSpec('the seeded root integrates its recursive sub-orchestrator', check),
+    children: [midId],
+    selfReport: null,
+    learnings: [],
+    verdict: null,
+    evidenceRefs: [],
+    blocked: null,
+  };
+  await writeNode(relayDir, grand);
+  await writeNode(relayDir, mid);
+  await writeNode(relayDir, root);
+
+  return { runId, rootId, midId, grandId, leafId: leafIds[0], leafIds };
 }

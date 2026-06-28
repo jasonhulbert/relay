@@ -27,8 +27,14 @@ async function main(): Promise<number> {
   if (injection?.contractFault) {
     opts.injection = { contractFault: injection.contractFault };
   }
+  if (injection?.selfFaultAt) {
+    opts.selfFaultAt = injection.selfFaultAt;
+  }
   if (injection?.faultAt) {
     opts.faultAt = injection.faultAt;
+  }
+  if (injection?.childInjections) {
+    opts.childInjections = injection.childInjections;
   }
   const result = await runOrchestrator(relayDir, nodeId, opts);
 

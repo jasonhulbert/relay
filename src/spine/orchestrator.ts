@@ -124,9 +124,13 @@ export interface ChildInjection {
   // withhold case proving the parent gates on the committed contract, never on
   // the child's exit code or stdout.
   contractFault?: 'skip';
+  // Kill the child process at one of its own branch-driving seams.
+  selfFaultAt?: SelfFaultPoint;
   // Kill the child's leaf dispatch at a seam (forwarded to the child's own run),
   // so the parent observes a failed child and rehydration re-dispatches it.
   faultAt?: { leafId: string; point: FaultPoint };
+  // Faults the child should forward to its own branch children.
+  childInjections?: Record<string, ChildInjection>;
 }
 
 export interface RunOptions {
@@ -454,11 +458,7 @@ async function composeResultPatch(
 
   const resultDir = join(workRoot, `${rootId}__result`);
   await rm(resultDir, { recursive: true, force: true });
-  await composeMergeTree(
-    resultDir,
-    seedPlan,
-    patchFiles,
-  );
+  await composeMergeTree(resultDir, seedPlan, patchFiles);
   return await captureDiff(resultDir, captureBase);
 }
 
