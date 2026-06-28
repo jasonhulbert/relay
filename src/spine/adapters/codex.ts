@@ -23,7 +23,7 @@ import { mkdir } from 'node:fs/promises';
 import { captureDiff, establishBaseline } from './worktree-diff';
 // The executor prompt is provider-agnostic; reuse the Claude adapter's builder so
 // both providers aim the executor at the same outcome + verifications + learnings.
-import { buildExecutorPrompt } from './claude';
+import { buildExecutorPrompt, sizeSignalFromSelfReport } from './claude';
 import { codexMcpArgs } from '../../mcp/index';
 import type {
   Executor,
@@ -234,12 +234,14 @@ export function codexExecutor(opts: CodexAdapterOptions = {}): Executor {
         wallClockMs,
         costUsd: parsed.costUsd,
       };
+      const sizeSignal = sizeSignalFromSelfReport(parsed.selfReport);
 
       return {
         diff,
         selfReport: parsed.selfReport,
         usage,
         exitStatus: code,
+        ...(sizeSignal ? { sizeSignal } : {}),
       };
     },
   };
