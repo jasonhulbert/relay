@@ -156,7 +156,10 @@ describe('codexExecutor size signal', () => {
         usage: { input_tokens: 3, cached_input_tokens: 1, output_tokens: 2 },
       }),
     ];
-    await writeFile(bin, `#!/usr/bin/env node\nfor (const line of ${JSON.stringify(stream)}) console.log(line);\n`);
+    await writeFile(
+      bin,
+      `#!/usr/bin/env node\nfor (const line of ${JSON.stringify(stream)}) console.log(line);\n`,
+    );
     await chmod(bin, 0o755);
     try {
       const result = await codexExecutor({ bin }).run({

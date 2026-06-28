@@ -2,11 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { CriticSpawn } from '../relay-state/index';
 import type { AgentCriticOptions } from './agent-critic';
 import type { AgentBrainOptions, Brain } from './brain';
-import {
-  CHILD_ENTRY_BUNDLE,
-  resolveChildEntry,
-  runOptionsFromChildRuntime,
-} from './child-runtime';
+import { CHILD_ENTRY_BUNDLE, resolveChildEntry, runOptionsFromChildRuntime } from './child-runtime';
 import type { ChildRuntimeConfig, Provider, Executor } from './index';
 
 function fakeExecutor(provider: string, model: string | undefined): Executor {

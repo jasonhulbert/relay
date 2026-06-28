@@ -17,7 +17,13 @@ import {
   writeManifest,
   writeNode,
 } from '../relay-state/index';
-import type { EvidenceRef, Footprint, LayerManifest, NodeRecord, RootManifest } from '../relay-state/index';
+import type {
+  EvidenceRef,
+  Footprint,
+  LayerManifest,
+  NodeRecord,
+  RootManifest,
+} from '../relay-state/index';
 import { seedHierarchy } from './seed';
 
 const execFileP = promisify(execFile);
@@ -163,7 +169,12 @@ async function patchForRepoChange(
   return await captureDiff(worktree, plan.base);
 }
 
-async function writeEvidence(relayDir: string, runId: string, rel: string, body: string): Promise<void> {
+async function writeEvidence(
+  relayDir: string,
+  runId: string,
+  rel: string,
+  body: string,
+): Promise<void> {
   const file = join(relayPaths(relayDir).evidenceDir(runId), rel);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, body);
@@ -428,9 +439,9 @@ describe('result.patch — canonical verified result persisted at root done', ()
     try {
       await seedRootWithDoneBranch(relayDir, []);
 
-      await expect(runOrchestrator(relayDir, 'root', { workRoot, projectPath: repo })).rejects.toThrow(
-        'done branch child `mid` has no result-patch seam evidence',
-      );
+      await expect(
+        runOrchestrator(relayDir, 'root', { workRoot, projectPath: repo }),
+      ).rejects.toThrow('done branch child `mid` has no result-patch seam evidence');
       expect(await exists(join(relayPaths(relayDir).evidenceDir('run-1'), 'result.patch'))).toBe(
         false,
       );
