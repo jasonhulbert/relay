@@ -1,9 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
   DEFAULT_CLAUDE_MODEL,
+  SIZE_SIGNAL_TOO_BIG_MARKER,
   buildClaudeArgs,
   buildExecutorPrompt,
   claudeExecutor,
@@ -102,6 +103,56 @@ describe('buildExecutorPrompt', () => {
     expect(prompt).toContain('create hello.txt with the greeting');
     expect(prompt).toContain('[command] test -f hello.txt');
     expect(prompt).toContain('an earlier attempt over-scoped it');
+  });
+
+  test('instructs oversized leaves to emit the exact promotion marker', () => {
+    const spec: OutcomeSpec = { outcome: 'do the too-large thing', verifications: [] };
+    const prompt = buildExecutorPrompt(spec, { learnings: [] });
+
+    expect(prompt).toContain('too large to complete as one unit');
+    expect(prompt).toContain(SIZE_SIGNAL_TOO_BIG_MARKER);
+  });
+});
+
+// WHY: reactive promotion depends on the real adapter turning a bounded self-report
+// marker into the structured `sizeSignal` the orchestrator already consumes. A parser
+// that preserves the prose but drops the signal would leave real Claude runs unable to
+// self-repair an overlarge leaf.
+describe('claudeExecutor size signal', () => {
+  async function runFakeClaude(finalSelfReport: string) {
+    const base = await mkdtemp(join(tmpdir(), 'relay-claude-size-signal-'));
+    const bin = join(base, 'fake-claude.mjs');
+    const worktree = join(base, 'wt');
+    const streamLine = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: finalSelfReport,
+      usage: { input_tokens: 1, output_tokens: 2 },
+    });
+    await writeFile(bin, `#!/usr/bin/env node\nconsole.log(${JSON.stringify(streamLine)});\n`);
+    await chmod(bin, 0o755);
+    try {
+      const result = await claudeExecutor({ bin }).run({
+        spec: { outcome: 'do a thing', verifications: [] },
+        context: { learnings: [] },
+        worktree,
+        mcpServers: [],
+      });
+      return result.sizeSignal;
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  }
+
+  test('maps the exact final self-report marker line to too-big', async () => {
+    await expect(
+      runFakeClaude(`This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`),
+    ).resolves.toBe('too-big');
+  });
+
+  test('leaves sizeSignal undefined when the marker is absent', async () => {
+    await expect(runFakeClaude('Done. Created the file.')).resolves.toBeUndefined();
   });
 });
 

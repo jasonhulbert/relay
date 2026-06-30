@@ -33,6 +33,7 @@ import type { OutcomeSpec } from '../../relay-state/index';
 // auto-routing (Rule 5) — `ClaudeAdapterOptions.model` is the single knob that
 // raises it, and the later Codex adapter reuses the same per-role pattern.
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5';
+export const SIZE_SIGNAL_TOO_BIG_MARKER = 'RELAY_SIZE_SIGNAL: TOO_BIG';
 
 export interface ClaudeAdapterOptions {
   // Concrete model alias/name; omitted pins the cost-guardrail default
@@ -64,6 +65,9 @@ export function buildExecutorPrompt(spec: OutcomeSpec, context: ExecutorContext)
     'Achieve the following outcome by editing files in the current working directory.',
     '',
     `Outcome: ${spec.outcome}`,
+    '',
+    'If this leaf is too large to complete as one unit, stop, explain briefly, and include this final exact line in your self-report:',
+    SIZE_SIGNAL_TOO_BIG_MARKER,
   ];
   if (spec.verifications.length > 0) {
     lines.push('', 'It will be verified by:');
@@ -143,6 +147,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+export function sizeSignalFromSelfReport(
+  selfReport: string,
+): ExecutorResult['sizeSignal'] | undefined {
+  return selfReport.split(/\r?\n/).includes(SIZE_SIGNAL_TOO_BIG_MARKER) ? 'too-big' : undefined;
 }
 
 // Parse the `claude -p --output-format stream-json --verbose` JSONL. The stream is
@@ -259,12 +269,14 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
         wallClockMs,
         costUsd: parsed.costUsd,
       };
+      const sizeSignal = sizeSignalFromSelfReport(parsed.selfReport);
 
       return {
         diff,
         selfReport: parsed.selfReport,
         usage,
         exitStatus: code,
+        ...(sizeSignal ? { sizeSignal } : {}),
       };
     },
   };

@@ -30,6 +30,8 @@ import type { EnsureStoreOptions } from './relay-home';
 // points construct providers identically and emit an identical recap.
 import { buildProviderExecutor, renderRecap } from './run-support';
 import type { Provider } from './run-support';
+import { resolveChildEntry } from './child-runtime';
+import type { ChildRuntimeConfig } from './child-runtime';
 
 export type { Provider } from './run-support';
 
@@ -50,6 +52,8 @@ export interface DevRunOptions {
   // Per-role model override (the cost-guardrail knob). Omitted → the adapter's
   // cheapest default (`claude-haiku-4-5`).
   executorModel?: string;
+  // Granted MCP servers to route into provider CLIs.
+  mcpServers?: readonly import('../relay-state/index').McpServerConfig[];
   // Which provider renders the independent critic's verdict. Defaults
   // to the NOT-the-author provider, so the critic is cross-provider by default.
   criticProvider?: Provider;
@@ -127,6 +131,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
   const criticProvider: Provider = opts.criticProvider ?? otherProvider;
 
   const executor = opts.executor ?? buildProviderExecutor(provider, opts.executorModel);
+  const mcpServers = opts.mcpServers ?? [];
 
   const runOpts: RunOptions = {
     executor,
@@ -135,6 +140,7 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     // The operator's resolved absolute project path: the executor sandbox is seeded
     // from it on a real run, and the verified result lands back into it (a later step).
     projectPath: store.projectPath,
+    mcpServers,
   };
   // The swap-provider rung dispatches under the OTHER provider at its cheapest
   // default (the per-role override raises only the primary). Skipped when a test
@@ -165,6 +171,24 @@ export async function devRun(opts: DevRunOptions): Promise<DevRunResult> {
     const brainOpts: AgentBrainOptions = { provider: opts.brainProvider ?? provider };
     if (opts.brainModel !== undefined) brainOpts.model = opts.brainModel;
     runOpts.brain = agentBrain(brainOpts);
+  }
+  if (opts.executor === undefined) {
+    const childEntry = resolveChildEntry();
+    const childRuntime: ChildRuntimeConfig = {
+      projectPath: store.projectPath,
+      workRoot: store.workRoot,
+      provider,
+      swapProvider: otherProvider,
+      criticProvider,
+      brainProvider: opts.brainProvider ?? provider,
+      mcpServers,
+      childEntry,
+    };
+    if (opts.executorModel !== undefined) childRuntime.executorModel = opts.executorModel;
+    if (opts.criticModel !== undefined) childRuntime.criticModel = opts.criticModel;
+    if (opts.brainModel !== undefined) childRuntime.brainModel = opts.brainModel;
+    runOpts.childEntry = childEntry;
+    runOpts.childRuntime = childRuntime;
   }
 
   const result = await runOrchestrator(relayDir, 'root', runOpts);

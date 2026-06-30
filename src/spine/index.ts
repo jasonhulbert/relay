@@ -2,7 +2,13 @@
 // `.relay/` write, and the promotion / done-blocked transitions.
 // One OS process per active orchestrator.
 export { runOrchestrator, InjectedKill } from './orchestrator';
-export type { RunOptions, OrchestratorResult, FaultPoint, ChildInjection } from './orchestrator';
+export type {
+  RunOptions,
+  OrchestratorResult,
+  FaultPoint,
+  SelfFaultPoint,
+  ChildInjection,
+} from './orchestrator';
 export { stubExecutor, scriptedExecutor, stubCapabilities, STUB_USAGE } from './executor';
 export type {
   Executor,
@@ -106,8 +112,10 @@ export { capReached, checkGate, defaultGateConfig, GateRefusal } from './rails';
 export type { RailUsage, RailCaps, CapKind, GatedAction, GateConfig } from './rails';
 export { defaultSpawnChild } from './child-runner';
 export type { SpawnChild, ChildSpawnInput, ChildSpawnResult } from './child-runner';
-export { seedFixture, seedHierarchy } from './seed';
-export type { SeedOptions, SeedResult, HierarchySeedResult } from './seed';
+export { CHILD_ENTRY_BUNDLE, resolveChildEntry, runOptionsFromChildRuntime } from './child-runtime';
+export type { ChildRuntimeConfig, ResolveChildEntryOptions } from './child-runtime';
+export { seedFixture, seedHierarchy, seedDeepHierarchy } from './seed';
+export type { SeedOptions, SeedResult, HierarchySeedResult, DeepHierarchySeedResult } from './seed';
 // The user-global relay store resolver: real runs persist
 // to a stable, per-project, `git init`'d `.relay/` under `~/.relay/`.
 export {

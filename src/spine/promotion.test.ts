@@ -1,9 +1,10 @@
-import { access, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { pendingIntents, readNode, rollForwardPending } from '../relay-state/index';
 import type { Executor, ExecutorResult } from './index';
+import { SIZE_SIGNAL_TOO_BIG_MARKER, claudeExecutor } from './adapters/claude';
 import {
   InjectedKill,
   runOrchestrator,
@@ -158,6 +159,62 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
       expect(branch.kind).toBe('branch');
       // The reflection names the too-big judgment as the reason.
       expect(branch.learnings.at(-1)).toContain('too big');
+      const child = await readNode(relayDir, `${LEAF_ID}.c0`);
+      expect(child.learnings.at(-1)).toContain('too big');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test('provider-shaped Claude stream promotes through the real adapter parser', async () => {
+    const { base, relayDir, workRoot } = await freshRelay();
+    try {
+      await seedFixture(relayDir);
+
+      const bin = join(base, 'fake-claude.mjs');
+      const stream = [
+        JSON.stringify({ type: 'system', subtype: 'init', model: 'fake-claude' }),
+        JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: `This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`,
+          usage: { input_tokens: 1, output_tokens: 2 },
+        }),
+      ];
+      await writeFile(
+        bin,
+        `#!/usr/bin/env node\nfor (const line of ${JSON.stringify(stream)}) console.log(line);\n`,
+      );
+      await chmod(bin, 0o755);
+
+      let dispatches = 0;
+      const adapter = claudeExecutor({ bin });
+      const executor: Executor = {
+        capabilities: adapter.capabilities,
+        async run(input): Promise<ExecutorResult> {
+          dispatches += 1;
+          return adapter.run(input);
+        },
+      };
+      // The critic would pass if reached. Promotion must come from the adapter's
+      // parsed sizeSignal preempting the critic.
+      const critic = scriptedCritic({ results: ['pass'] });
+
+      const res = await runOrchestrator(relayDir, ROOT_ID, {
+        executor,
+        critic,
+        workRoot,
+      });
+
+      expect(res.promotedNodes).toEqual([LEAF_ID]);
+      expect(dispatches).toBe(1);
+
+      const branch = await readNode(relayDir, LEAF_ID);
+      expect(branch.kind).toBe('branch');
+      expect(branch.children).toEqual([`${LEAF_ID}.c0`, `${LEAF_ID}.c1`]);
+      expect(branch.learnings.at(-1)).toContain('too big');
+
       const child = await readNode(relayDir, `${LEAF_ID}.c0`);
       expect(child.learnings.at(-1)).toContain('too big');
     } finally {

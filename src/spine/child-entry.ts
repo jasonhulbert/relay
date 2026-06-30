@@ -10,20 +10,31 @@
 // the SEA single-binary will later carry.
 import { runOrchestrator } from './orchestrator';
 import type { ChildInjection, RunOptions } from './orchestrator';
+import { runOptionsFromChildRuntime } from './child-runtime';
+import type { ChildRuntimeConfig } from './child-runtime';
 
 async function main(): Promise<number> {
-  const [relayDir, nodeId, injectionRaw] = process.argv.slice(2);
+  const [relayDir, nodeId, runtimeRaw, injectionRaw] = process.argv.slice(2);
   if (!relayDir || !nodeId) {
-    process.stderr.write('child-entry: usage: <relayDir> <nodeId> [injectionJSON]\n');
+    process.stderr.write('child-entry: usage: <relayDir> <nodeId> [runtimeJSON] [injectionJSON]\n');
     return 2;
   }
+  const runtimeSource =
+    runtimeRaw && runtimeRaw !== 'null' ? runtimeRaw : process.env.RELAY_CHILD_RUNTIME_CONFIG;
+  const runtime = runtimeSource ? (JSON.parse(runtimeSource) as ChildRuntimeConfig) : undefined;
   const injection = injectionRaw ? (JSON.parse(injectionRaw) as ChildInjection) : undefined;
-  const opts: RunOptions = {};
+  const opts: RunOptions = runtime ? runOptionsFromChildRuntime(runtime) : {};
   if (injection?.contractFault) {
     opts.injection = { contractFault: injection.contractFault };
   }
+  if (injection?.selfFaultAt) {
+    opts.selfFaultAt = injection.selfFaultAt;
+  }
   if (injection?.faultAt) {
     opts.faultAt = injection.faultAt;
+  }
+  if (injection?.childInjections) {
+    opts.childInjections = injection.childInjections;
   }
   const result = await runOrchestrator(relayDir, nodeId, opts);
 

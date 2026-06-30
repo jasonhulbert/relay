@@ -1,8 +1,9 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_CODEX_MODEL, buildCodexArgs, codexExecutor, parseCodexStream } from './codex';
+import { SIZE_SIGNAL_TOO_BIG_MARKER } from './claude';
 import type { OutcomeSpec } from '../../relay-state/index';
 
 // A representative `codex exec --json` capture, trimmed from a real run so the
@@ -118,6 +119,7 @@ describe('buildCodexArgs cost guardrail', () => {
     ]);
     // The prompt is the trailing positional argument (after every flag).
     expect(args[args.length - 1]).toContain('do a thing');
+    expect(args[args.length - 1]).toContain(SIZE_SIGNAL_TOO_BIG_MARKER);
   });
 
   // WHY: Codex's MCP grant is wired through config (`-c mcp_servers.*`), not a
@@ -133,6 +135,53 @@ describe('buildCodexArgs cost guardrail', () => {
     expect(args).toContain('mcp_servers.probe.args=["--flag"]');
     // The prompt still trails every flag.
     expect(args[args.length - 1]).toContain('do a thing');
+  });
+});
+
+// WHY: provider parity matters at the adapter boundary. Codex's final agent message
+// is the orchestrator-visible self-report, so the exact marker there must become the
+// same structured promotion signal Claude emits.
+describe('codexExecutor size signal', () => {
+  async function runFakeCodex(finalSelfReport: string) {
+    const base = await mkdtemp(join(tmpdir(), 'relay-codex-size-signal-'));
+    const bin = join(base, 'fake-codex.mjs');
+    const worktree = join(base, 'wt');
+    const stream = [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { id: '1', type: 'agent_message', text: finalSelfReport },
+      }),
+      JSON.stringify({
+        type: 'turn.completed',
+        usage: { input_tokens: 3, cached_input_tokens: 1, output_tokens: 2 },
+      }),
+    ];
+    await writeFile(
+      bin,
+      `#!/usr/bin/env node\nfor (const line of ${JSON.stringify(stream)}) console.log(line);\n`,
+    );
+    await chmod(bin, 0o755);
+    try {
+      const result = await codexExecutor({ bin }).run({
+        spec: { outcome: 'do a thing', verifications: [] },
+        context: { learnings: [] },
+        worktree,
+        mcpServers: [],
+      });
+      return result.sizeSignal;
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  }
+
+  test('maps the exact final agent-message marker line to too-big', async () => {
+    await expect(
+      runFakeCodex(`This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`),
+    ).resolves.toBe('too-big');
+  });
+
+  test('leaves sizeSignal undefined when the marker is absent', async () => {
+    await expect(runFakeCodex('Done. Created the file.')).resolves.toBeUndefined();
   });
 });
 

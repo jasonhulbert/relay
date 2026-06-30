@@ -77,6 +77,7 @@ import { stubBrain } from './brain';
 import type { Brain, ChildPlan, Decomposition } from './brain';
 import { defaultSpawnChild } from './child-runner';
 import type { SpawnChild } from './child-runner';
+import type { ChildRuntimeConfig } from './child-runtime';
 import { buildSchedule } from './schedule';
 import { FootprintViolation, footprintEscapes } from './footprint';
 import { runIntegrationGate } from './integration-gate';
@@ -123,9 +124,13 @@ export interface ChildInjection {
   // withhold case proving the parent gates on the committed contract, never on
   // the child's exit code or stdout.
   contractFault?: 'skip';
+  // Kill the child process at one of its own branch-driving seams.
+  selfFaultAt?: SelfFaultPoint;
   // Kill the child's leaf dispatch at a seam (forwarded to the child's own run),
   // so the parent observes a failed child and rehydration re-dispatches it.
   faultAt?: { leafId: string; point: FaultPoint };
+  // Faults the child should forward to its own branch children.
+  childInjections?: Record<string, ChildInjection>;
 }
 
 export interface RunOptions {
@@ -168,6 +173,10 @@ export interface RunOptions {
   // RELAY_CHILD_ENTRY env var (which the spawner sets on each child, so deeper
   // levels inherit it). Required only when a branch child must actually spawn.
   childEntry?: string;
+  // Serializable production runtime for spawned branch children. Function
+  // injections stay in-process only; children rebuild real provider adapters from
+  // this payload.
+  childRuntime?: ChildRuntimeConfig;
   // The local price table for per-call cost derivation: used to turn a
   // table-driven provider's token counts (Codex, `costUsd === null`) into dollars.
   // Defaults to `DEFAULT_PRICE_TABLE`; tests inject a fixed table. A Claude call is
@@ -409,13 +418,12 @@ async function mergeLayerWorktrees(
   childIds: readonly string[],
   mergedDir: string,
   seedPlan: SeedPlan,
-  evDir: string,
+  patchFiles: readonly string[],
 ): Promise<void> {
   await rm(mergedDir, { recursive: true, force: true });
   if (seedPlan.mode !== 'empty') {
     // Project-seeded: compose each child's disjoint diff onto one fresh base, never
     // whole trees over each other. The patch is each leaf's persisted evidence diff.
-    const patchFiles = childIds.map((id) => join(evDir, id, 'diff.patch'));
     await composeMergeTree(mergedDir, seedPlan, patchFiles);
     return;
   }
@@ -428,6 +436,67 @@ async function mergeLayerWorktrees(
       // run) — there is nothing to merge from it.
     }
   }
+}
+
+async function composeResultPatch(
+  rootId: string,
+  patchFiles: readonly string[],
+  ranConcurrently: boolean,
+  workRoot: string,
+  seedPlan: SeedPlan,
+): Promise<string> {
+  const captureBase = seedPlan.mode === 'checkout' ? seedPlan.base : undefined;
+  if (patchFiles.length === 1) {
+    return await readFile(patchFiles[0], 'utf8');
+  }
+  if (ranConcurrently) {
+    return await captureDiff(join(workRoot, `${rootId}__merged`), captureBase);
+  }
+  if (seedPlan.mode === 'empty') {
+    throw new Error('cannot compose a project result patch without a seeded project');
+  }
+
+  const resultDir = join(workRoot, `${rootId}__result`);
+  await rm(resultDir, { recursive: true, force: true });
+  await composeMergeTree(resultDir, seedPlan, patchFiles);
+  return await captureDiff(resultDir, captureBase);
+}
+
+async function patchFilesForDoneChildren(
+  evDir: string,
+  childIds: readonly string[],
+  runId: string,
+  leafStatuses: Record<string, NodeStatus>,
+  childContracts: Record<string, OutcomeContract>,
+): Promise<string[]> {
+  const patchFiles: string[] = [];
+  for (const id of childIds) {
+    if (leafStatuses[id] === 'done') {
+      const patchFile = join(evDir, id, 'diff.patch');
+      await readFile(patchFile, 'utf8');
+      patchFiles.push(patchFile);
+      continue;
+    }
+    const contract = childContracts[id];
+    if (contract === undefined) continue;
+    const refs = contract.seamEvidence.filter((ref) => ref.kind === 'diff' && ref.runId === runId);
+    if (refs.length === 0) {
+      throw new Error(`done branch child \`${id}\` has no result-patch seam evidence`);
+    }
+    for (const ref of refs) {
+      const patchFile = join(evDir, ref.path);
+      try {
+        await readFile(patchFile, 'utf8');
+      } catch (err) {
+        throw new Error(
+          `done branch child \`${id}\` result-patch evidence \`${ref.path}\` is not readable`,
+          { cause: err },
+        );
+      }
+      patchFiles.push(patchFile);
+    }
+  }
+  return patchFiles;
 }
 
 // Materialize a brain decomposition into the durable layer the orchestrator commits.
@@ -1106,9 +1175,14 @@ async function driveChild(
   const spawnChild = opts.spawnChild ?? defaultSpawnChild;
   const childEntry = opts.childEntry ?? process.env.RELAY_CHILD_ENTRY ?? '';
   const injection = opts.childInjections?.[child.id];
-  const input = injection
-    ? { relayDir, nodeId: child.id, childEntry, injection }
-    : { relayDir, nodeId: child.id, childEntry };
+  const childRuntime = opts.childRuntime;
+  const input = { relayDir, nodeId: child.id, childEntry };
+  if (injection !== undefined) {
+    Object.assign(input, { injection });
+  }
+  if (childRuntime !== undefined) {
+    Object.assign(input, { childRuntime });
+  }
   const { code } = await spawnChild(input);
   if (code !== 0) {
     // A failed child is surfaced by propagating here; the unified failure rule
@@ -1506,14 +1580,25 @@ export async function runOrchestrator(
   ) {
     const mergedDir = join(workRoot, `${root.id}__merged`);
     const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
-    await mergeLayerWorktrees(workRoot, root.children, mergedDir, seedPlan, evDir);
+    const patchFiles = await patchFilesForDoneChildren(
+      evDir,
+      root.children,
+      manifest.runId,
+      leafStatuses,
+      childContracts,
+    );
+    await mergeLayerWorktrees(workRoot, root.children, mergedDir, seedPlan, patchFiles);
+    const mergedDiff =
+      seedPlan.mode === 'empty'
+        ? mergedDiffParts.join('\n')
+        : await composeResultPatch(root.id, patchFiles, ranConcurrently, workRoot, seedPlan);
     // The gate's own critic call is a metered model call attributed to this branch
     // node — collected via the sink and persisted like the leaf path;
     // the deterministic-only critic spends none, so the hermetic stub run is unchanged.
     const gateUsages: ExecutorUsage[] = [];
     const gate = await runIntegrationGate({
       parentNode: root,
-      mergedDiff: mergedDiffParts.join('\n'),
+      mergedDiff,
       mergedWorktree: mergedDir,
       layer,
       childWrites,
@@ -1568,6 +1653,35 @@ export async function runOrchestrator(
   if (root.status !== 'done' && root.status !== 'blocked' && root.children.every(childDone)) {
     root = { ...root, status: 'done' };
     writes.add(relativeNodePath(rootId));
+    const seamEvidence: EvidenceRef[] = [];
+    if (
+      root.parentId !== null &&
+      seedPlan.mode !== 'empty' &&
+      root.children.length > 0 &&
+      root.children.every(childDone)
+    ) {
+      const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
+      const patchFiles = await patchFilesForDoneChildren(
+        evDir,
+        root.children,
+        manifest.runId,
+        leafStatuses,
+        childContracts,
+      );
+      const resultPatch = await composeResultPatch(
+        root.id,
+        patchFiles,
+        ranConcurrently,
+        workRoot,
+        seedPlan,
+      );
+      const resultRel = `${root.id}/result.patch`;
+      await atomicWriteFile(join(evDir, resultRel), resultPatch);
+      writes.add(`evidence/${manifest.runId}/${resultRel}`);
+      seamEvidence.push(
+        evidenceRef(manifest.runId, resultRel, 'diff', 'composed branch result patch'),
+      );
+    }
     const txn: IntentWrite[] = [{ path: relativeNodePath(rootId), content: serializeNode(root) }];
     // A sub-orchestrator (one that has a parent) publishes its verified outcome
     // contract in the SAME atomic transaction as its done transition, so the
@@ -1580,7 +1694,7 @@ export async function runOrchestrator(
         claimedOutcome: root.spec.outcome,
         criticCertified: childVerdictRefs.length > 0,
         verdictRefs: childVerdictRefs,
-        seamEvidence: [],
+        seamEvidence,
       };
       writes.add(relativeContractPath(rootId));
       txn.push({ path: relativeContractPath(rootId), content: serializeContract(contract) });
@@ -1615,40 +1729,23 @@ export async function runOrchestrator(
     root.parentId === null &&
     seedPlan.mode !== 'empty' &&
     root.children.length > 0 &&
-    root.children.every((id) => leafStatuses[id] === 'done')
+    root.children.every(childDone)
   ) {
     const evDir = relayPaths(relayDir).evidenceDir(manifest.runId);
-    // On a snapshot run the base is the per-leaf snapshot baseline (no operator ref),
-    // so `captureDiff` takes no base; on a checkout run it diffs against the shared base.
-    const captureBase = seedPlan.mode === 'checkout' ? seedPlan.base : undefined;
-    const doneLeafIds = root.children.filter((id) => leafStatuses[id] === 'done');
-    let resultPatch: string;
-    if (doneLeafIds.length === 1) {
-      // Single-leaf run: the run's change IS that leaf's already-persisted diff,
-      // captured against the per-run base / snapshot baseline — apply-back-ready with
-      // no rebaselining. Reuse it verbatim (byte-identical to the critic's evidence),
-      // never re-derive it.
-      resultPatch = await readFile(join(evDir, doneLeafIds[0], 'diff.patch'), 'utf8');
-    } else if (ranConcurrently) {
-      // Concurrent multi-leaf: the integration gate already composed the layer's
-      // footprint-disjoint diffs onto one fresh base (`mergedDir`). Capture THAT tree
-      // against its base — not a concat of the per-leaf evidence diffs, which is the
-      // critic's evidence text, never a clean apply-back patch.
-      resultPatch = await captureDiff(join(workRoot, `${root.id}__merged`), captureBase);
-    } else {
-      // Serial multi-leaf: no gate ran (it is concurrency-only), so no `mergedDir`
-      // exists. Compose the per-leaf diffs onto one fresh rebuild of the run's base
-      // ourselves — the same disjoint-patch composition the gate uses — rather than
-      // silently dropping every leaf but the first (Rule 11).
-      const resultDir = join(workRoot, `${root.id}__result`);
-      await rm(resultDir, { recursive: true, force: true });
-      await composeMergeTree(
-        resultDir,
-        seedPlan,
-        doneLeafIds.map((id) => join(evDir, id, 'diff.patch')),
-      );
-      resultPatch = await captureDiff(resultDir, captureBase);
-    }
+    const patchFiles = await patchFilesForDoneChildren(
+      evDir,
+      root.children,
+      manifest.runId,
+      leafStatuses,
+      childContracts,
+    );
+    const resultPatch = await composeResultPatch(
+      root.id,
+      patchFiles,
+      ranConcurrently,
+      workRoot,
+      seedPlan,
+    );
     await atomicWriteFile(join(evDir, 'result.patch'), resultPatch);
     writes.add(`evidence/${manifest.runId}/result.patch`);
 

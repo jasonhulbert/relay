@@ -1,11 +1,11 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import esbuild from 'esbuild';
 import { pendingIntents, readNode, tryReadContract } from '../relay-state/index';
 import { InjectedKill, runOrchestrator, seedHierarchy } from './index';
-import type { FaultPoint, SpawnChild } from './index';
+import type { ChildRuntimeConfig, FaultPoint, SpawnChild } from './index';
 
 // The child sub-orchestrator runs in a fresh `node` process. The source uses
 // extensionless, bundler-resolved imports Node cannot run from raw `.ts`, so we
@@ -151,6 +151,47 @@ describe('ownership-partitioned regions', () => {
 });
 
 describe('verified outcome contract via the ledger', () => {
+  // WHY: real entry points now wire childEntry plus a serializable runtime config,
+  // and the default spawner must carry that payload across the process boundary.
+  // This proves the wired path without an injected spawnChild: the child process
+  // uses the runtime's workRoot, publishes its certified contract, and the parent
+  // accepts only the ledger record.
+  test('the default spawner forwards child runtime config through the real child entry', async () => {
+    const { base, relayDir } = await freshRelay();
+    try {
+      await seedHierarchy(relayDir);
+      const runtimeWorkRoot = join(base, 'runtime-worktrees');
+      const projectPath = join(base, 'project');
+      await mkdir(projectPath);
+      const childRuntime: ChildRuntimeConfig = {
+        projectPath,
+        workRoot: runtimeWorkRoot,
+        provider: 'claude',
+        executorModel: 'claude-test',
+        swapProvider: 'codex',
+        swapModel: 'codex-test',
+        criticProvider: 'codex',
+        criticModel: 'critic-test',
+        brainProvider: 'claude',
+        brainModel: 'brain-test',
+        mcpServers: [{ name: 'probe', command: 'srv', args: ['--flag'] }],
+        childEntry,
+        testMode: 'stub-providers',
+      };
+
+      const res = await runOrchestrator(relayDir, 'root', { childEntry, childRuntime });
+
+      expect(res.rootStatus).toBe('done');
+      expect(res.childStatuses.mid).toBe('done');
+      expect(res.childContracts.mid?.criticCertified).toBe(true);
+      expect(await tryReadContract(relayDir, 'mid')).toEqual(res.childContracts.mid);
+      await expect(access(join(runtimeWorkRoot, 'leaf-1', 'CHANGE.txt'))).resolves.toBeUndefined();
+      await expect(access(join(base, 'worktrees', 'leaf-1', 'CHANGE.txt'))).rejects.toThrow();
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
   // WHY: the parent must reach `done` by reading the child's committed contract —
   // the structural critic-certified fact — not by trusting the child's process. A
   // real subprocess publishes its contract; the parent accepts from the ledger and
