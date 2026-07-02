@@ -185,6 +185,15 @@ export function buildDecomposePrompt(req: DecomposeRequest): string {
     "child's resource footprint (the repo-relative globs it will write) and the seams",
     'between children (shared interfaces where their outputs must meet).',
     '',
+    'Sizing policy for each child:',
+    '- Classify a child as `branch` when its outcome contains separable outcomes,',
+    '  requires broad discovery before implementation can start, or cannot be',
+    '  verified as one coherent unit.',
+    '- Keep a child as `leaf` when the work is hard but cohesive, or when',
+    '  uncertainty can be resolved locally inside one executor run.',
+    '- This is initial decomposition only: choose the child `kind`; do not emit',
+    '  executor sizing markers or executor sizing rationale fields.',
+    '',
     `Outcome to decompose: ${req.spec.outcome}`,
   ];
   if (req.spec.verifications.length > 0) {
