@@ -95,6 +95,13 @@ plan, which is why they don't break laziness: they are what a layer is. The
 reasoning behind the split is persisted as node-attributed evidence the
 orchestrator and human can read but the critic never sees.
 
+The same sizing standard used by executor promotion applies here: a child becomes
+a branch when it has separable outcomes, needs broad discovery before
+implementation can start, or cannot be verified as one coherent unit. A hard but
+cohesive child remains a leaf. The signal is different at this boundary: the
+brain writes `kind: "leaf" | "branch"` in decomposition JSON, while an executor
+later requests promotion with a structured self-report marker.
+
 **Schedule by the concurrency law.** Two children may run at the same time only if
 both conditions hold: their footprints are disjoint, and the seam between them can
 be pinned now. Otherwise they serialize. The sharp corollary: if a seam cannot be
@@ -372,12 +379,12 @@ orchestrator writes them into `.relay/` context, promotes the leaf to a branch,
 and passes the rationale into re-decomposition so the new children do not repeat
 the same bad boundary.
 
-The critic does not validate a sizing signal. There is no gradeable change yet, so
-the critic would have no diff to judge. Code owns the promotion transaction and
-durable state, while the executor's rationale remains orchestrator-visible context
-only. Reviews of this path should focus on the sizing policy, strict marker
-parsing, rationale carry-forward, and the critic boundary, not only on parser
-plumbing.
+The critic does not validate decomposition sizing or executor sizing requests.
+There is no gradeable change yet, so the critic would have no diff to judge. Code
+owns the decomposition and promotion transactions, while decomposition rationale
+and executor sizing rationale remain orchestrator-visible context only. Reviews
+of this path should focus on the sizing policy, strict marker parsing, rationale
+carry-forward, and the critic boundary, not only on parser plumbing.
 
 ### Verification and the integration gate
 

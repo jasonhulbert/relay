@@ -179,13 +179,46 @@ describe('buildBrainArgs', () => {
 });
 
 describe('buildDecomposePrompt', () => {
-  test('carries the outcome, the prior learnings, and the JSON schema instruction', () => {
+  test('carries the outcome, verifications, prior learnings, child schema, footprints, and seams', () => {
     const prompt = buildDecomposePrompt(req);
     expect(prompt).toContain('build the widget');
+    expect(prompt).toContain('[command] true (grounding: exit 0)');
     expect(prompt).toContain('off-by-one');
     expect(prompt).toContain('"children"');
-    expect(prompt).toContain('leaf');
-    expect(prompt).toContain('branch');
+    expect(prompt).toContain('"kind": "leaf" | "branch"');
+    expect(prompt).toContain('"footprint": { "writeGlobs": [string] }');
+    expect(prompt).toContain('"seams"');
+    expect(prompt).toContain('file-boundary');
+    expect(prompt).toContain('interface');
+  });
+
+  test('tells the brain when a child is too large to remain a leaf', () => {
+    const prompt = buildDecomposePrompt(req);
+
+    expect(prompt).toContain('Classify a child as `branch`');
+    expect(prompt).toContain('contains separable outcomes');
+    expect(prompt).toContain('requires broad discovery before implementation can start');
+    expect(prompt).toContain('cannot be');
+    expect(prompt).toContain('verified as one coherent unit');
+  });
+
+  test('tells the brain to keep hard but cohesive children as leaves', () => {
+    const prompt = buildDecomposePrompt(req);
+
+    expect(prompt).toContain('Keep a child as `leaf`');
+    expect(prompt).toContain('hard but cohesive');
+    expect(prompt).toContain('uncertainty can be resolved locally');
+  });
+
+  test('keeps initial decomposition separate from executor sizing markers', () => {
+    const prompt = buildDecomposePrompt(req);
+
+    expect(prompt).toContain('choose the child `kind`');
+    expect(prompt).toContain('do not emit');
+    expect(prompt).toContain('executor sizing markers');
+    expect(prompt).not.toContain('RELAY_SIZE_SIGNAL');
+    expect(prompt).not.toContain('RELAY_SIZE_SIGNAL: TOO_BIG');
+    expect(prompt).not.toContain('RELAY_SIZE_RATIONALE_JSON');
   });
 });
 
