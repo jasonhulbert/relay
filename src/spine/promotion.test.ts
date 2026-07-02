@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { pendingIntents, readNode, rollForwardPending } from '../relay-state/index';
 import type { Executor, ExecutorResult } from './index';
-import { SIZE_SIGNAL_TOO_BIG_MARKER, claudeExecutor } from './adapters/claude';
+import {
+  SIZE_SIGNAL_RATIONALE_PREFIX,
+  SIZE_SIGNAL_TOO_BIG_MARKER,
+  claudeExecutor,
+} from './adapters/claude';
 import {
   InjectedKill,
   runOrchestrator,
@@ -133,18 +137,26 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
     const { base, relayDir, workRoot } = await freshRelay();
     try {
       await seedFixture(relayDir);
+      const sizingReason = 'parser updates and documentation are separable verifiable outcomes';
 
       let dispatches = 0;
       const tooBig: Executor = {
         capabilities: () => stubCapabilities,
         async run(input): Promise<ExecutorResult> {
           dispatches += 1;
-          return scriptedExecutor({ signals: ['too-big'] }).run(input);
+          return scriptedExecutor({ signals: ['too-big'], sizeRationale: sizingReason }).run(input);
         },
       };
-      // The critic would pass if reached — proving promotion came from the sizing
-      // signal preempting the critic, not from a critic rejection.
-      const critic = scriptedCritic({ results: ['pass'] });
+      let criticCalls = 0;
+      const critic = async () => {
+        criticCalls += 1;
+        return {
+          pass: true,
+          provider: 'counting-critic',
+          rationale: 'critic should not be reached for a sizing promotion',
+          evidenceRefs: [],
+        };
+      };
 
       const res = await runOrchestrator(relayDir, ROOT_ID, {
         executor: tooBig,
@@ -154,13 +166,17 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
 
       expect(res.promotedNodes).toEqual([LEAF_ID]);
       expect(dispatches).toBe(1);
+      expect(criticCalls).toBe(0);
 
       const branch = await readNode(relayDir, LEAF_ID);
       expect(branch.kind).toBe('branch');
-      // The reflection names the too-big judgment as the reason.
+      // The reflection names the concrete sizing rationale, not only a generic
+      // too-big judgment.
       expect(branch.learnings.at(-1)).toContain('too big');
+      expect(branch.learnings.at(-1)).toContain(sizingReason);
       const child = await readNode(relayDir, `${LEAF_ID}.c0`);
       expect(child.learnings.at(-1)).toContain('too big');
+      expect(child.learnings.at(-1)).toContain(sizingReason);
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -170,6 +186,7 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
     const { base, relayDir, workRoot } = await freshRelay();
     try {
       await seedFixture(relayDir);
+      const sizingReason = 'the leaf spans parser, promotion, and operator docs outcomes';
 
       const bin = join(base, 'fake-claude.mjs');
       const stream = [
@@ -178,7 +195,11 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
           type: 'result',
           subtype: 'success',
           is_error: false,
-          result: `This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`,
+          result: [
+            'This leaf needs decomposition.',
+            `${SIZE_SIGNAL_RATIONALE_PREFIX} {"reason":${JSON.stringify(sizingReason)}}`,
+            SIZE_SIGNAL_TOO_BIG_MARKER,
+          ].join('\n'),
           usage: { input_tokens: 1, output_tokens: 2 },
         }),
       ];
@@ -214,9 +235,11 @@ describe('a too-big executor signal promotes without walking the lower rungs', (
       expect(branch.kind).toBe('branch');
       expect(branch.children).toEqual([`${LEAF_ID}.c0`, `${LEAF_ID}.c1`]);
       expect(branch.learnings.at(-1)).toContain('too big');
+      expect(branch.learnings.at(-1)).toContain(sizingReason);
 
       const child = await readNode(relayDir, `${LEAF_ID}.c0`);
       expect(child.learnings.at(-1)).toContain('too big');
+      expect(child.learnings.at(-1)).toContain(sizingReason);
     } finally {
       await rm(base, { recursive: true, force: true });
     }

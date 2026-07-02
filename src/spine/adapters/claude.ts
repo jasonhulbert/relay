@@ -34,6 +34,7 @@ import type { OutcomeSpec } from '../../relay-state/index';
 // raises it, and the later Codex adapter reuses the same per-role pattern.
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5';
 export const SIZE_SIGNAL_TOO_BIG_MARKER = 'RELAY_SIZE_SIGNAL: TOO_BIG';
+export const SIZE_SIGNAL_RATIONALE_PREFIX = 'RELAY_SIZE_RATIONALE_JSON:';
 
 export interface ClaudeAdapterOptions {
   // Concrete model alias/name; omitted pins the cost-guardrail default
@@ -66,7 +67,11 @@ export function buildExecutorPrompt(spec: OutcomeSpec, context: ExecutorContext)
     '',
     `Outcome: ${spec.outcome}`,
     '',
-    'If this leaf is too large to complete as one unit, stop, explain briefly, and include this final exact line in your self-report:',
+    'Executor sizing policy:',
+    '- Emit the sizing signal only when the leaf is overlarge because it contains separable outcomes, requires broad exploratory discovery before implementation can start, or cannot be verified as one coherent unit.',
+    '- Do not emit the sizing signal for ordinary implementation difficulty, uncertainty you can resolve locally, a failing verification, or a cohesive change that is hard but still fits one outcome.',
+    '- When emitting the sizing signal, stop, include one machine-readable rationale line before the marker, and include this final exact line in your self-report:',
+    `${SIZE_SIGNAL_RATIONALE_PREFIX} {"reason":"<brief reason this leaf needs decomposition>"}`,
     SIZE_SIGNAL_TOO_BIG_MARKER,
   ];
   if (spec.verifications.length > 0) {
@@ -152,7 +157,31 @@ function numberOr(value: unknown, fallback: number): number {
 export function sizeSignalFromSelfReport(
   selfReport: string,
 ): ExecutorResult['sizeSignal'] | undefined {
-  return selfReport.split(/\r?\n/).includes(SIZE_SIGNAL_TOO_BIG_MARKER) ? 'too-big' : undefined;
+  const lines = selfReport.split(/\r?\n/);
+  while (lines.length > 0 && lines[lines.length - 1]?.trim() === '') {
+    lines.pop();
+  }
+  return lines.at(-1)?.trim() === SIZE_SIGNAL_TOO_BIG_MARKER ? 'too-big' : undefined;
+}
+
+export function sizeRationaleFromSelfReport(selfReport: string): string | undefined {
+  for (const raw of selfReport.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line.startsWith(SIZE_SIGNAL_RATIONALE_PREFIX)) continue;
+    const payload = line.slice(SIZE_SIGNAL_RATIONALE_PREFIX.length).trim();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return undefined;
+    }
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const reason = (parsed as { reason?: unknown }).reason;
+    if (typeof reason !== 'string') return undefined;
+    const trimmed = reason.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return undefined;
 }
 
 // Parse the `claude -p --output-format stream-json --verbose` JSONL. The stream is
@@ -270,6 +299,7 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
         costUsd: parsed.costUsd,
       };
       const sizeSignal = sizeSignalFromSelfReport(parsed.selfReport);
+      const sizeRationale = sizeSignal ? sizeRationaleFromSelfReport(parsed.selfReport) : undefined;
 
       return {
         diff,
@@ -277,6 +307,7 @@ export function claudeExecutor(opts: ClaudeAdapterOptions = {}): Executor {
         usage,
         exitStatus: code,
         ...(sizeSignal ? { sizeSignal } : {}),
+        ...(sizeRationale ? { sizeRationale } : {}),
       };
     },
   };

@@ -85,6 +85,10 @@ export interface ExecutorResult {
   // critic and drives the ladder straight to promote (leaf→branch). Absent means
   // a normal attempt the critic then grades.
   sizeSignal?: 'too-big';
+  // Machine-readable reason for the sizing judgment. Orchestrator-visible only:
+  // it may shape promotion/re-decomposition context, but it is never critic
+  // evidence.
+  sizeRationale?: string;
   // The repo-relative paths this attempt actually wrote, for the footprint
   // hint/loud-violation check (a footprint escape is loud): the orchestrator compares them to
   // the leaf's declared footprint and throws a `FootprintViolation` on a write that
@@ -161,6 +165,7 @@ export interface ScriptedExecutorOptions {
   // Size judgment per call, in order; the final entry repeats thereafter.
   // `ok` makes a normal gradeable change, `too-big` raises the sizing signal.
   signals: ('ok' | 'too-big')[];
+  sizeRationale?: string;
 }
 
 export function scriptedExecutor(opts: ScriptedExecutorOptions): Executor {
@@ -183,6 +188,7 @@ export function scriptedExecutor(opts: ScriptedExecutorOptions): Executor {
           usage: STUB_USAGE,
           exitStatus: 0,
           sizeSignal: 'too-big',
+          ...(opts.sizeRationale ? { sizeRationale: opts.sizeRationale } : {}),
         };
       }
       await atomicWriteFile(join(worktree, CHANGE_FILE), CHANGE_BODY);

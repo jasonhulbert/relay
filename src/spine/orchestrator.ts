@@ -317,8 +317,12 @@ function promotionReflection(
   leafId: string,
   signal: AttemptSignal,
   verdict: CriticVerdict | null,
+  sizeRationale?: string,
 ): string {
   if (signal === 'too-big') {
+    if (sizeRationale) {
+      return `leaf \`${leafId}\` was judged too big to complete as one outcome: ${sizeRationale}; promoted and re-decomposed.`;
+    }
     return `leaf \`${leafId}\` was judged too big to complete as one outcome; promoted and re-decomposed.`;
   }
   const why = verdict ? verdict.rationale : 'no passing critic verdict';
@@ -793,6 +797,7 @@ interface AttemptResult {
   // record so an exhaustion that began as a loud violation says so honestly,
   // instead of the generic "executor judged too big" fallback.
   failReason?: string;
+  sizeRationale?: string;
 }
 
 // Drive one leaf: (re-)dispatch under the escalation ladder until it reaches
@@ -955,10 +960,16 @@ async function dispatchLeaf(
     await commitNode(node);
     fault('after-self-report');
 
-    // The executor's sizing judgment preempts the critic: a too-big outcome is not
-    // graded, it is promoted ("judged too big → PROMOTE").
+    // The executor's sizing judgment preempts the critic because there is no
+    // gradeable change yet: promotion reshapes the work into smaller children,
+    // and only those children produce diffs for the independent critic.
     if (result.sizeSignal === 'too-big') {
-      return { node, signal: 'too-big', verdict: null };
+      return {
+        node,
+        signal: 'too-big',
+        verdict: null,
+        ...(result.sizeRationale ? { sizeRationale: result.sizeRationale } : {}),
+      };
     }
 
     // The evidence-only chokepoint: the critic sees ONLY the constructed projection
@@ -1023,13 +1034,18 @@ async function dispatchLeaf(
   // transaction, so rehydration sees the pre-promotion leaf or the post-promotion
   // branch, never a torn middle (the promotion-atomicity guarantee).
   const promote = async (failed: AttemptResult): Promise<LeafOutcome> => {
-    const reflection = promotionReflection(leafId, failed.signal, failed.verdict);
+    const reflection = promotionReflection(
+      leafId,
+      failed.signal,
+      failed.verdict,
+      failed.sizeRationale,
+    );
     // The brain judgment (an agent) is granted the failed worktree to inspect and
     // the same MCP servers as the executor; it returns data and writes nothing —
     // the code below is the sole writer of `.relay/`.
     const brainUsages: ExecutorUsage[] = [];
     const { decomposition, rationale } = await brain.decompose(
-      { spec: leaf.spec, context: { learnings: leaf.learnings } },
+      { spec: leaf.spec, context: { learnings: [...leaf.learnings, reflection] } },
       { worktree: join(workRoot, leafId), mcpServers, onUsage: (u) => brainUsages.push(u) },
     );
     // The re-decompose judgment's usage, attributed to the leaf it promoted.

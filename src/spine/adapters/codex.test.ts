@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_CODEX_MODEL, buildCodexArgs, codexExecutor, parseCodexStream } from './codex';
-import { SIZE_SIGNAL_TOO_BIG_MARKER } from './claude';
+import { SIZE_SIGNAL_RATIONALE_PREFIX, SIZE_SIGNAL_TOO_BIG_MARKER } from './claude';
 import type { OutcomeSpec } from '../../relay-state/index';
 
 // A representative `codex exec --json` capture, trimmed from a real run so the
@@ -120,6 +120,9 @@ describe('buildCodexArgs cost guardrail', () => {
     // The prompt is the trailing positional argument (after every flag).
     expect(args[args.length - 1]).toContain('do a thing');
     expect(args[args.length - 1]).toContain(SIZE_SIGNAL_TOO_BIG_MARKER);
+    expect(args[args.length - 1]).toContain('Emit the sizing signal only when');
+    expect(args[args.length - 1]).toContain('Do not emit the sizing signal');
+    expect(args[args.length - 1]).toContain(SIZE_SIGNAL_RATIONALE_PREFIX);
   });
 
   // WHY: Codex's MCP grant is wired through config (`-c mcp_servers.*`), not a
@@ -168,7 +171,7 @@ describe('codexExecutor size signal', () => {
         worktree,
         mcpServers: [],
       });
-      return result.sizeSignal;
+      return { sizeSignal: result.sizeSignal, sizeRationale: result.sizeRationale };
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -177,11 +180,38 @@ describe('codexExecutor size signal', () => {
   test('maps the exact final agent-message marker line to too-big', async () => {
     await expect(
       runFakeCodex(`This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`),
-    ).resolves.toBe('too-big');
+    ).resolves.toMatchObject({ sizeSignal: 'too-big' });
+  });
+
+  test('extracts a machine-readable rationale alongside the too-big signal', async () => {
+    await expect(
+      runFakeCodex(
+        [
+          'This leaf needs decomposition.',
+          `${SIZE_SIGNAL_RATIONALE_PREFIX} {"reason":"the requested changes split across three verifiable outcomes"}`,
+          SIZE_SIGNAL_TOO_BIG_MARKER,
+        ].join('\n'),
+      ),
+    ).resolves.toEqual({
+      sizeSignal: 'too-big',
+      sizeRationale: 'the requested changes split across three verifiable outcomes',
+    });
   });
 
   test('leaves sizeSignal undefined when the marker is absent', async () => {
-    await expect(runFakeCodex('Done. Created the file.')).resolves.toBeUndefined();
+    await expect(runFakeCodex('Done. Created the file.')).resolves.toEqual({
+      sizeSignal: undefined,
+      sizeRationale: undefined,
+    });
+  });
+
+  test('requires the exact marker to be the final agent-message line', async () => {
+    await expect(
+      runFakeCodex(`${SIZE_SIGNAL_TOO_BIG_MARKER}\nI can still finish this as one leaf.`),
+    ).resolves.toEqual({
+      sizeSignal: undefined,
+      sizeRationale: undefined,
+    });
   });
 });
 
