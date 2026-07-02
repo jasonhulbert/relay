@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
   DEFAULT_CLAUDE_MODEL,
+  SIZE_SIGNAL_RATIONALE_PREFIX,
   SIZE_SIGNAL_TOO_BIG_MARKER,
   buildClaudeArgs,
   buildExecutorPrompt,
@@ -105,12 +106,28 @@ describe('buildExecutorPrompt', () => {
     expect(prompt).toContain('an earlier attempt over-scoped it');
   });
 
-  test('instructs oversized leaves to emit the exact promotion marker', () => {
+  test('instructs oversized leaves when to emit the exact promotion marker', () => {
     const spec: OutcomeSpec = { outcome: 'do the too-large thing', verifications: [] };
     const prompt = buildExecutorPrompt(spec, { learnings: [] });
 
-    expect(prompt).toContain('too large to complete as one unit');
+    expect(prompt).toContain('Emit the sizing signal only when');
+    expect(prompt).toContain('contains separable outcomes');
+    expect(prompt).toContain('requires broad exploratory discovery');
+    expect(prompt).toContain('cannot be verified as one coherent unit');
+    expect(prompt).toContain(SIZE_SIGNAL_RATIONALE_PREFIX);
+    expect(prompt).toContain('{"reason":"<brief reason this leaf needs decomposition>"}');
     expect(prompt).toContain(SIZE_SIGNAL_TOO_BIG_MARKER);
+  });
+
+  test('instructs cohesive hard leaves not to emit the promotion marker', () => {
+    const spec: OutcomeSpec = { outcome: 'do the hard but cohesive thing', verifications: [] };
+    const prompt = buildExecutorPrompt(spec, { learnings: [] });
+
+    expect(prompt).toContain('Do not emit the sizing signal');
+    expect(prompt).toContain('ordinary implementation difficulty');
+    expect(prompt).toContain('uncertainty you can resolve locally');
+    expect(prompt).toContain('a failing verification');
+    expect(prompt).toContain('hard but still fits one outcome');
   });
 });
 
@@ -139,7 +156,7 @@ describe('claudeExecutor size signal', () => {
         worktree,
         mcpServers: [],
       });
-      return result.sizeSignal;
+      return { sizeSignal: result.sizeSignal, sizeRationale: result.sizeRationale };
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -148,11 +165,47 @@ describe('claudeExecutor size signal', () => {
   test('maps the exact final self-report marker line to too-big', async () => {
     await expect(
       runFakeClaude(`This leaf needs decomposition.\n${SIZE_SIGNAL_TOO_BIG_MARKER}`),
-    ).resolves.toBe('too-big');
+    ).resolves.toMatchObject({ sizeSignal: 'too-big' });
+  });
+
+  test('extracts a machine-readable rationale alongside the too-big signal', async () => {
+    await expect(
+      runFakeClaude(
+        [
+          'This leaf needs decomposition.',
+          `${SIZE_SIGNAL_RATIONALE_PREFIX} {"reason":"parser, promotion, and docs are separable outcomes"}`,
+          SIZE_SIGNAL_TOO_BIG_MARKER,
+        ].join('\n'),
+      ),
+    ).resolves.toEqual({
+      sizeSignal: 'too-big',
+      sizeRationale: 'parser, promotion, and docs are separable outcomes',
+    });
   });
 
   test('leaves sizeSignal undefined when the marker is absent', async () => {
-    await expect(runFakeClaude('Done. Created the file.')).resolves.toBeUndefined();
+    await expect(runFakeClaude('Done. Created the file.')).resolves.toEqual({
+      sizeSignal: undefined,
+      sizeRationale: undefined,
+    });
+  });
+
+  test('does not treat casual marker prose as a size signal', async () => {
+    await expect(
+      runFakeClaude(`Do not write ${SIZE_SIGNAL_TOO_BIG_MARKER} unless this is overlarge.`),
+    ).resolves.toEqual({
+      sizeSignal: undefined,
+      sizeRationale: undefined,
+    });
+  });
+
+  test('requires the exact marker to be the final self-report line', async () => {
+    await expect(
+      runFakeClaude(`${SIZE_SIGNAL_TOO_BIG_MARKER}\nI can still finish this as one leaf.`),
+    ).resolves.toEqual({
+      sizeSignal: undefined,
+      sizeRationale: undefined,
+    });
   });
 });
 

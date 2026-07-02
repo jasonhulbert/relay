@@ -357,6 +357,28 @@ change is persisted as patch evidence and then re-derived into a reviewable
 `relay/<runId>` branch — one commit off the per-run base, the operator's working
 tree untouched. The branch is durable output, never the system of record.
 
+### Executor sizing signals
+
+Executor sizing is a promotion request, not a failure grade or retry hint. An
+executor may emit it only when the leaf boundary is wrong: the outcome contains
+separable sub-outcomes, requires broad discovery before implementation can start,
+or cannot be verified as one coherent unit. A cohesive but difficult leaf should
+still be attempted and then judged by the critic.
+
+The signal is strict and structured. The final self-report line must be the exact
+too-big marker, and the report carries a machine-readable rationale field. The
+adapter turns those into `sizeSignal: 'too-big'` and `sizeRationale`; the
+orchestrator writes them into `.relay/` context, promotes the leaf to a branch,
+and passes the rationale into re-decomposition so the new children do not repeat
+the same bad boundary.
+
+The critic does not validate a sizing signal. There is no gradeable change yet, so
+the critic would have no diff to judge. Code owns the promotion transaction and
+durable state, while the executor's rationale remains orchestrator-visible context
+only. Reviews of this path should focus on the sizing policy, strict marker
+parsing, rationale carry-forward, and the critic boundary, not only on parser
+plumbing.
+
 ### Verification and the integration gate
 
 The critic grounds every verdict in whatever evidence the outcome admits, cheapest
